@@ -1,5 +1,8 @@
 import { Hono } from 'hono'
 import requerimentos from './routes/requerimentos'
+import forum from './routes/forum'
+import menu from './routes/menu'
+import paginas from './routes/paginas'
 
 // `Bindings` descreve os recursos do Cloudflare disponíveis no Worker
 // (bindings configurados em wrangler.toml). DB é o D1 (SQLite gerenciado).
@@ -17,6 +20,9 @@ app.get('/health', async (c) => {
 })
 
 app.route('/requerimentos', requerimentos)
+app.route('/forum', forum)
+app.route('/menu', menu)
+app.route('/paginas', paginas)
 
 // A partir daqui, novas rotas entram como módulos separados em
 // src/routes/ (ex: src/routes/grupos.ts), montadas com app.route(...).
