@@ -57,3 +57,37 @@ export async function podeAgirSobre(
 
   return { permitido, requerCfoOuPro: Boolean(diretriz.requer_pro_ou_cfo) }
 }
+
+/**
+ * Verifica se `usuarioId` tem a competência de promotor pro seu corpo
+ * (Art. 2º §1º da Seção III da Constituição): PRO concluído (Corpo
+ * Militar) ou CFO ativo/não expirado (Corpo Executivo).
+ */
+export async function possuiCompetenciaDePromotor(
+  db: D1Database,
+  usuarioId: number,
+  corpo: string
+): Promise<boolean> {
+  if (corpo === 'militar') {
+    const row = await db
+      .prepare(
+        `SELECT 1 FROM historico_cursos hc
+         JOIN cursos c ON c.id = hc.curso_id
+         WHERE hc.usuario_id = ? AND c.codigo = 'PRO' LIMIT 1`
+      )
+      .bind(usuarioId)
+      .first()
+    return row !== null
+  }
+
+  const row = await db
+    .prepare(
+      `SELECT 1 FROM certificados
+       WHERE usuario_id = ? AND tipo = 'CFO' AND ativo = 1
+         AND (valido_ate IS NULL OR valido_ate > strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+       LIMIT 1`
+    )
+    .bind(usuarioId)
+    .first()
+  return row !== null
+}

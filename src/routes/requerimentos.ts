@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { gerarTagRequerimento, podeGerirRequerimento, acaoHierarquiaDoTipo } from '../services/requerimentos'
-import { podeAgirSobre } from '../services/hierarquia'
+import { podeAgirSobre, possuiCompetenciaDePromotor } from '../services/hierarquia'
 import { aplicarEfeitoAprovacao, recalcularStatusRequerimento } from '../services/efeitos'
 import type { CriarRequerimentoInput } from '../types/requerimentos'
 
@@ -21,8 +21,8 @@ requerimentos.post('/', async (c) => {
   }
 
   const autor = await c.env.DB.prepare(
-    `SELECT patente_atual_id, administrador_sistema FROM usuarios WHERE id = ?`
-  ).bind(body.autor_id).first<{ patente_atual_id: number; administrador_sistema: number }>()
+    `SELECT patente_atual_id, corpo, administrador_sistema FROM usuarios WHERE id = ?`
+  ).bind(body.autor_id).first<{ patente_atual_id: number; corpo: string; administrador_sistema: number }>()
 
   if (!autor) return c.json({ erro: 'autor não encontrado' }, 404)
 
@@ -56,7 +56,11 @@ requerimentos.post('/', async (c) => {
       }
 
       if (requerCfoOuPro) {
-        // TODO: checar PRO/CFO ativo em `certificados` (depende da Fase 4).
+        const temCompetencia = await possuiCompetenciaDePromotor(c.env.DB, body.autor_id, autor.corpo)
+        if (!temCompetencia) {
+          const exigido = autor.corpo === 'militar' ? 'PRO (Aula para Promotor)' : 'CFO ativo'
+          return c.json({ erro: `autor não possui ${exigido}, exigido pra exercer competência de promotor` }, 403)
+        }
       }
     }
   }
