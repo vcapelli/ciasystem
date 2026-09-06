@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { gerarTagRequerimento, podeGerirRequerimento, acaoHierarquiaDoTipo } from '../services/requerimentos'
 import { podeAgirSobre } from '../services/hierarquia'
+import { aplicarEfeitoAprovacao, recalcularStatusRequerimento } from '../services/efeitos'
 import type { CriarRequerimentoInput } from '../types/requerimentos'
 
 type Bindings = {
@@ -145,15 +146,35 @@ requerimentos.post('/:id/alvos/:alvoId/decidir', async (c) => {
 
   if (!decisor) return c.json({ erro: 'usuário decisor não encontrado' }, 404)
 
-  const requerimento = await c.env.DB.prepare(`SELECT tipo FROM requerimentos WHERE id = ?`)
+  const requerimento = await c.env.DB.prepare(`SELECT tipo, dados_especificos FROM requerimentos WHERE id = ?`)
     .bind(id)
-    .first<{ tipo: string }>()
+    .first<{ tipo: string; dados_especificos: string | null }>()
 
   if (!requerimento) return c.json({ erro: 'requerimento não encontrado' }, 404)
 
   if (!decisor.administrador_sistema) {
     const pode = await podeGerirRequerimento(c.env.DB, decidido_por_id, requerimento.tipo, 'aprovar')
     if (!pode) return c.json({ erro: 'sem permissão para gerir requerimentos deste tipo' }, 403)
+  }
+
+  const alvo = await c.env.DB.prepare(`SELECT usuario_id FROM requerimento_alvos WHERE id = ? AND requerimento_id = ?`)
+    .bind(alvoId, id)
+    .first<{ usuario_id: number }>()
+
+  if (!alvo) return c.json({ erro: 'alvo não encontrado neste requerimento' }, 404)
+
+  let detalhesHistorico: unknown = null
+
+  // Aplica o efeito ANTES de confirmar a aprovação — se der erro (ex:
+  // faltou patente_destino_id), não marca nada como aprovado.
+  if (status === 'aprovado') {
+    const dadosEspecificos = requerimento.dados_especificos ? JSON.parse(requerimento.dados_especificos) : null
+    try {
+      detalhesHistorico = await aplicarEfeitoAprovacao(c.env.DB, requerimento.tipo, alvo.usuario_id, dadosEspecificos)
+    } catch (err) {
+      const mensagem = err instanceof Error ? err.message : 'erro ao aplicar efeito do requerimento'
+      return c.json({ erro: mensagem }, 400)
+    }
   }
 
   await c.env.DB.prepare(
@@ -164,12 +185,21 @@ requerimentos.post('/:id/alvos/:alvoId/decidir', async (c) => {
     .bind(status, decidido_por_id, motivo_recusa ?? null, alvoId, id)
     .run()
 
-  // TODO: se status = 'aprovado' → gravar em `historico` + aplicar o
-  // efeito real (mudar patente/status do usuário etc, conforme o tipo).
-  // TODO: recalcular requerimentos.status geral a partir dos alvos
-  // (ex: só vira 'aprovado' quando todos os alvos estiverem decididos).
+  // Historico só espelha ações efetivamente aprovadas (nunca reprovadas).
+  if (status === 'aprovado') {
+    await c.env.DB.prepare(
+      `INSERT INTO historico (usuario_id, tipo_acao, requerimento_id, requerimento_alvo_id, executado_por_id, detalhes)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    )
+      .bind(alvo.usuario_id, requerimento.tipo, id, alvoId, decidido_por_id, JSON.stringify(detalhesHistorico))
+      .run()
+  }
 
-  return c.json({ ok: true })
+  const statusGeral = await recalcularStatusRequerimento(c.env.DB, Number(id))
+
+  // TODO: dispara logs_eventos ('requerimento_decidido', ...)
+
+  return c.json({ ok: true, status_alvo: status, status_geral: statusGeral })
 })
 
 export default requerimentos
