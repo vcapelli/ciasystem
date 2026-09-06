@@ -6,8 +6,7 @@
  * Gera a TAG interna do requerimento (não confundir com a TAG pessoal
  * do policial). Formato provisório: prefixo do tipo + timestamp curto
  * + sufixo aleatório, só pra garantir unicidade sem round-trip ao
- * banco antes do INSERT. Ajuste o formato conforme a convenção que
- * vocês quiserem usar (ex: visível pro usuário nos posts do fórum).
+ * banco antes do INSERT.
  */
 export function gerarTagRequerimento(tipo: string): string {
   const prefixo = tipo.slice(0, 3).toUpperCase()
@@ -16,29 +15,74 @@ export function gerarTagRequerimento(tipo: string): string {
   return `${prefixo}-${timestamp}-${sufixo}`
 }
 
-/**
- * TODO (Fase 2, próximo passo): checagem de hierarquia.
- * Recebe a patente/cargo de quem está tentando agir (autor) e a
- * patente/cargo do alvo, consulta `diretrizes_hierarquia` pra saber
- * se a ação (`promover`/`rebaixar`/`advertir`/`demitir`/`exonerar`/
- * `licenciar`) é permitida. Isso SEMPRE roda no Worker, nunca confia
- * em dado vindo do cliente — ver seção 5 do doc-mestre.
- *
- * Assinatura sugerida:
- * async function podeAgirSobre(
- *   db: D1Database,
- *   acao: 'promover' | 'rebaixar' | 'advertir' | 'demitir' | 'exonerar' | 'licenciar',
- *   patenteOrigemId: number,
- *   patenteAlvoId: number,
- * ): Promise<boolean>
- */
+export type AcaoGestaoRequerimento = 'aprovar' | 'cancelar'
 
 /**
- * TODO (Fase 2, próximo passo): checagem de permissão de gestão.
- * Consulta `requerimentos_permissoes` (por usuario_id OU grupo_id,
- * respeitando o `tipo` NULL = todos) pra saber se quem está tentando
- * aprovar/reprovar/cancelar tem esse poder pro tipo do requerimento
- * em questão. Lembrar: concessão por grupo é dinâmica — se a pessoa
- * saiu do grupo, perde o poder na hora (resolver via JOIN em
- * usuario_grupos, nunca cache).
+ * Verifica se `usuarioId` pode aprovar/reprovar (ação 'aprovar') ou
+ * cancelar (ação 'cancelar') requerimentos do `tipo` informado,
+ * consultando `requerimentos_permissoes`.
+ *
+ * A concessão pode ter vindo por usuário direto OU por grupo — nesse
+ * segundo caso é sempre resolvida dinamicamente via `usuario_grupos`
+ * (ativo = 1), nunca cacheada: se a pessoa saiu do grupo, perde o
+ * poder na hora. `rp.tipo IS NULL` = a concessão vale pra todos os
+ * tipos de requerimento.
+ *
+ * `administrador_sistema` faz bypass total — checar isso ANTES de
+ * chamar esta função (evita uma query desnecessária pra quem já tem
+ * acesso total).
  */
+export async function podeGerirRequerimento(
+  db: D1Database,
+  usuarioId: number,
+  tipo: string,
+  acao: AcaoGestaoRequerimento
+): Promise<boolean> {
+  const coluna = acao === 'aprovar' ? 'pode_aprovar' : 'pode_cancelar'
+
+  const row = await db
+    .prepare(
+      `SELECT 1
+       FROM requerimentos_permissoes rp
+       LEFT JOIN usuario_grupos ug
+         ON ug.grupo_id = rp.grupo_id AND ug.usuario_id = ? AND ug.ativo = 1
+       WHERE (rp.usuario_id = ? OR ug.usuario_id IS NOT NULL)
+         AND (rp.tipo IS NULL OR rp.tipo = ?)
+         AND rp.${coluna} = 1
+       LIMIT 1`
+    )
+    .bind(usuarioId, usuarioId, tipo)
+    .first()
+
+  return row !== null
+}
+
+/** Mapeia o tipo de requerimento pra ação de hierarquia correspondente
+ * (usada em conjunto com services/hierarquia.ts::podeAgirSobre).
+ * `null` = tipo não representa uma ação de hierarquia sobre outro
+ * usuário (ex: instrucao_inicial, tag, turno_tarefa não têm "alvo
+ * hierárquico" no sentido de promover/rebaixar/etc).
+ */
+export function acaoHierarquiaDoTipo(
+  tipo: string
+): 'promover' | 'rebaixar' | 'advertir' | 'demitir' | 'exonerar' | 'licenciar' | null {
+  switch (tipo) {
+    case 'promocao':
+      return 'promover'
+    case 'rebaixamento':
+      return 'rebaixar'
+    case 'advertencia':
+      return 'advertir'
+    case 'desligamento_honroso':
+    case 'desligamento_desonroso':
+      return 'demitir'
+    case 'exoneracao':
+      return 'exonerar'
+    case 'licenca':
+    case 'volta_licenca':
+    case 'reserva':
+      return 'licenciar'
+    default:
+      return null
+  }
+}

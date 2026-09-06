@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
-import { gerarTagRequerimento } from '../services/requerimentos'
+import { gerarTagRequerimento, podeGerirRequerimento, acaoHierarquiaDoTipo } from '../services/requerimentos'
+import { podeAgirSobre } from '../services/hierarquia'
 import type { CriarRequerimentoInput } from '../types/requerimentos'
 
 type Bindings = {
@@ -16,9 +17,44 @@ requerimentos.post('/', async (c) => {
     return c.json({ erro: 'tipo, autor_id e ao menos 1 alvo são obrigatórios' }, 400)
   }
 
-  // TODO: checar requerimentos_permissoes / diretrizes_hierarquia
-  // antes de criar, conforme o tipo (ex: só quem tem PRO/CFO cria
-  // promoção; ver services/requerimentos.ts).
+  const autor = await c.env.DB.prepare(
+    `SELECT patente_atual_id, administrador_sistema FROM usuarios WHERE id = ?`
+  ).bind(body.autor_id).first<{ patente_atual_id: number; administrador_sistema: number }>()
+
+  if (!autor) return c.json({ erro: 'autor não encontrado' }, 404)
+
+  // Checagem de hierarquia — só se aplica a tipos que representam uma
+  // ação sobre a patente/status de outro usuário (promoção,
+  // rebaixamento, advertência, desligamento, exoneração, licença).
+  // Bypass total pra administrador_sistema.
+  const acao = acaoHierarquiaDoTipo(body.tipo)
+  if (acao && !autor.administrador_sistema) {
+    for (const alvoId of body.alvos) {
+      const alvo = await c.env.DB.prepare(`SELECT patente_atual_id FROM usuarios WHERE id = ?`)
+        .bind(alvoId)
+        .first<{ patente_atual_id: number }>()
+
+      if (!alvo) return c.json({ erro: `alvo ${alvoId} não encontrado` }, 404)
+
+      const { permitido, requerCfoOuPro } = await podeAgirSobre(
+        c.env.DB,
+        acao,
+        autor.patente_atual_id,
+        alvo.patente_atual_id
+      )
+
+      if (!permitido) {
+        return c.json({ erro: `sem competência hierárquica para '${acao}' sobre o alvo ${alvoId}` }, 403)
+      }
+
+      if (requerCfoOuPro) {
+        // TODO: checar se o autor tem PRO (Militar) ou CFO ativo
+        // (Executivo) em `certificados` antes de liberar. Deixado
+        // como TODO porque depende da Fase 4 (certificados) existir
+        // com dado populado.
+      }
+    }
+  }
 
   const tagRequerimento = gerarTagRequerimento(body.tipo)
 
@@ -41,7 +77,6 @@ requerimentos.post('/', async (c) => {
 
   const requerimentoId = meta.last_row_id
 
-  // 1 linha em requerimento_alvos por alvo informado
   for (const usuarioId of body.alvos) {
     await c.env.DB.prepare(
       `INSERT INTO requerimento_alvos (requerimento_id, usuario_id) VALUES (?, ?)`
@@ -50,7 +85,6 @@ requerimentos.post('/', async (c) => {
       .run()
   }
 
-  // anexos de prova/imagem, se houver
   if (body.anexos?.length) {
     for (const [ordem, url] of body.anexos.entries()) {
       await c.env.DB.prepare(
@@ -105,7 +139,22 @@ requerimentos.post('/:id/alvos/:alvoId/decidir', async (c) => {
     motivo_recusa?: string
   }>()
 
-  // TODO: checar requerimentos_permissoes.pode_aprovar antes de seguir.
+  const decisor = await c.env.DB.prepare(
+    `SELECT administrador_sistema FROM usuarios WHERE id = ?`
+  ).bind(decidido_por_id).first<{ administrador_sistema: number }>()
+
+  if (!decisor) return c.json({ erro: 'usuário decisor não encontrado' }, 404)
+
+  const requerimento = await c.env.DB.prepare(`SELECT tipo FROM requerimentos WHERE id = ?`)
+    .bind(id)
+    .first<{ tipo: string }>()
+
+  if (!requerimento) return c.json({ erro: 'requerimento não encontrado' }, 404)
+
+  if (!decisor.administrador_sistema) {
+    const pode = await podeGerirRequerimento(c.env.DB, decidido_por_id, requerimento.tipo, 'aprovar')
+    if (!pode) return c.json({ erro: 'sem permissão para gerir requerimentos deste tipo' }, 403)
+  }
 
   await c.env.DB.prepare(
     `UPDATE requerimento_alvos
