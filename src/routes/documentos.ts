@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { podeGerirDocumento } from '../services/documentos'
+import { notificar } from '../services/notificacoes'
 
 type Bindings = { DB: D1Database }
 
@@ -203,8 +204,8 @@ documentos.post('/:id/revisoes/:revisaoId/implementar', async (c) => {
   const revisaoId = c.req.param('revisaoId')
 
   const revisao = await c.env.DB.prepare(
-    `SELECT conteudo_proposto, numero_revisao, status FROM documento_revisoes WHERE id = ? AND documento_id = ?`
-  ).bind(revisaoId, documentoId).first<{ conteudo_proposto: string; numero_revisao: number; status: string }>()
+    `SELECT conteudo_proposto, numero_revisao, status, autor_id FROM documento_revisoes WHERE id = ? AND documento_id = ?`
+  ).bind(revisaoId, documentoId).first<{ conteudo_proposto: string; numero_revisao: number; status: string; autor_id: number }>()
 
   if (!revisao) return c.json({ erro: 'revisão não encontrada' }, 404)
   if (revisao.status !== 'agendado') {
@@ -218,6 +219,11 @@ documentos.post('/:id/revisoes/:revisaoId/implementar', async (c) => {
   await c.env.DB.prepare(
     `UPDATE documento_revisoes SET status = 'implementado', implementado_em = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
   ).bind(revisaoId).run()
+
+  await notificar(c.env.DB, revisao.autor_id, 'documento_revisao', 'Sua revisão de documento foi implementada', {
+    referenciaTipo: 'documento_revisao',
+    referenciaId: Number(revisaoId),
+  })
 
   return c.json({ ok: true })
 })

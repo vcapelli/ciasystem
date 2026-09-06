@@ -434,4 +434,57 @@ grupos.patch('/:slug/membros/:usuarioId', async (c) => {
   return c.json({ ok: true })
 })
 
+// --- Notícias de grupo ---
+
+grupos.post('/:slug/noticias', async (c) => {
+  const slug = c.req.param('slug')
+  const body = await c.req.json<{ titulo: string; conteudo: string; autor_id: number; operado_por_id?: number }>()
+
+  const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
+  if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
+
+  if (!(await ehAdminDoGrupo(c.env.DB, body.autor_id, grupo.id))) {
+    return c.json({ erro: 'sem permissão de administrador neste grupo' }, 403)
+  }
+
+  const { meta } = await c.env.DB.prepare(
+    `INSERT INTO grupo_noticias (grupo_id, titulo, conteudo, autor_id, operado_por_id) VALUES (?, ?, ?, ?, ?)`
+  )
+    .bind(grupo.id, body.titulo, body.conteudo, body.autor_id, body.operado_por_id ?? null)
+    .run()
+
+  return c.json({ id: meta.last_row_id }, 201)
+})
+
+grupos.post('/:slug/noticias/:noticiaId/publicar', async (c) => {
+  const { slug, noticiaId } = c.req.param()
+  const { publicado_por_id } = await c.req.json<{ publicado_por_id: number }>()
+
+  const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
+  if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
+
+  if (!(await ehAdminDoGrupo(c.env.DB, publicado_por_id, grupo.id))) {
+    return c.json({ erro: 'sem permissão de administrador neste grupo' }, 403)
+  }
+
+  await c.env.DB.prepare(
+    `UPDATE grupo_noticias SET status = 'publicada', publicado_em = strftime('%Y-%m-%dT%H:%M:%SZ','now')
+     WHERE id = ? AND grupo_id = ?`
+  ).bind(noticiaId, grupo.id).run()
+
+  return c.json({ ok: true })
+})
+
+grupos.get('/:slug/noticias', async (c) => {
+  const slug = c.req.param('slug')
+  const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
+  if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT * FROM grupo_noticias WHERE grupo_id = ? ORDER BY criado_em DESC`
+  ).bind(grupo.id).all()
+
+  return c.json(results)
+})
+
 export default grupos

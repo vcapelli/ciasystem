@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { gerarTagRequerimento, podeGerirRequerimento, acaoHierarquiaDoTipo } from '../services/requerimentos'
 import { podeAgirSobre, possuiCompetenciaDePromotor } from '../services/hierarquia'
 import { aplicarEfeitoAprovacao, recalcularStatusRequerimento } from '../services/efeitos'
+import { notificar } from '../services/notificacoes'
 import type { CriarRequerimentoInput } from '../types/requerimentos'
 
 type Bindings = {
@@ -223,6 +224,13 @@ requerimentos.post('/:id/alvos/:alvoId/decidir', async (c) => {
   }
 
   const statusGeral = await recalcularStatusRequerimento(c.env.DB, Number(id))
+
+  if (usuarioIdFinal !== null) {
+    await notificar(c.env.DB, usuarioIdFinal, 'requerimento_status', `Seu requerimento foi ${status}`, {
+      referenciaTipo: 'requerimento',
+      referenciaId: Number(id),
+    })
+  }
 
   // TODO: dispara logs_eventos ('requerimento_decidido', ...)
 
