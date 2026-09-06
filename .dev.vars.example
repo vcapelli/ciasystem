@@ -1,0 +1,4 @@
+# Copie este arquivo para .dev.vars (que é ignorado pelo Git) e
+# preencha com valores reais antes de rodar `npm run dev`.
+
+JWT_SECRET=troque-por-um-segredo-forte-aqui

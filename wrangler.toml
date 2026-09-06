@@ -1,0 +1,29 @@
+name = "ciasystem"
+main = "src/index.ts"
+compatibility_date = "2026-01-01"
+
+# --- Ambiente de desenvolvimento ---
+# wrangler deploy --env dev
+[env.dev]
+name = "ciasystem-dev"
+routes = [
+  { pattern = "api-rpg-dev.vitorcape.com.br/*", zone_name = "vitorcape.com.br" }
+]
+
+[[env.dev.d1_databases]]
+binding = "DB"
+database_name = "ciasystem-db-dev"
+database_id = "9a41e38c-c3ea-49b7-bec1-209ed45552d3"
+
+# --- Ambiente de produção ---
+# wrangler deploy --env production
+[env.production]
+name = "ciasystem"
+routes = [
+  { pattern = "api-rpg.vitorcape.com.br/*", zone_name = "vitorcape.com.br" }
+]
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "ciasystem-db"
+database_id = "80d9eef0-b4ed-4a65-b068-90ecfd0b5803"
