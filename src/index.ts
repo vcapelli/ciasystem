@@ -14,6 +14,9 @@ import noticias from './routes/noticias'
 import notificacoes from './routes/notificacoes'
 import twitter from './routes/twitter'
 import seguidores from './routes/seguidores'
+import sugestoes from './routes/sugestoes'
+import tickets from './routes/tickets'
+import logs from './routes/logs'
 
 // `Bindings` descreve os recursos do Cloudflare disponíveis no Worker
 // (bindings configurados em wrangler.toml). DB é o D1 (SQLite gerenciado).
@@ -46,6 +49,9 @@ app.route('/noticias', noticias)
 app.route('/notificacoes', notificacoes)
 app.route('/tweets', twitter)
 app.route('/seguidores', seguidores)
+app.route('/sugestoes', sugestoes)
+app.route('/tickets', tickets)
+app.route('/logs', logs)
 
 // A partir daqui, novas rotas entram como módulos separados em
 // src/routes/ (ex: src/routes/grupos.ts), montadas com app.route(...).

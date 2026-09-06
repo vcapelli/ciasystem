@@ -3,6 +3,7 @@ import { gerarTagRequerimento, podeGerirRequerimento, acaoHierarquiaDoTipo } fro
 import { podeAgirSobre, possuiCompetenciaDePromotor } from '../services/hierarquia'
 import { aplicarEfeitoAprovacao, recalcularStatusRequerimento } from '../services/efeitos'
 import { notificar } from '../services/notificacoes'
+import { registrarEvento } from '../services/logs'
 import type { CriarRequerimentoInput } from '../types/requerimentos'
 
 type Bindings = {
@@ -109,7 +110,11 @@ requerimentos.post('/', async (c) => {
     }
   }
 
-  // TODO: dispara logs_eventos ('requerimento_criado', ...)
+  await registrarEvento(c.env.DB, body.autor_id, 'requerimento_criado', {
+    referenciaTipo: 'requerimento',
+    referenciaId: Number(requerimentoId),
+    detalhes: { tipo: body.tipo, alvos: body.alvos },
+  })
 
   return c.json({ id: requerimentoId, tag_requerimento: tagRequerimento }, 201)
 })
@@ -232,7 +237,11 @@ requerimentos.post('/:id/alvos/:alvoId/decidir', async (c) => {
     })
   }
 
-  // TODO: dispara logs_eventos ('requerimento_decidido', ...)
+  await registrarEvento(c.env.DB, decidido_por_id, `requerimento_${status}`, {
+    referenciaTipo: 'requerimento',
+    referenciaId: Number(id),
+    detalhes: { tipo: requerimento.tipo, alvo_id: alvoId, usuario_id: usuarioIdFinal },
+  })
 
   return c.json({ ok: true, status_alvo: status, status_geral: statusGeral, usuario_id: usuarioIdFinal })
 })

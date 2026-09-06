@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { podeGerirDocumento } from '../services/documentos'
 import { notificar } from '../services/notificacoes'
+import { registrarEvento } from '../services/logs'
 
 type Bindings = { DB: D1Database }
 
@@ -223,6 +224,12 @@ documentos.post('/:id/revisoes/:revisaoId/implementar', async (c) => {
   await notificar(c.env.DB, revisao.autor_id, 'documento_revisao', 'Sua revisão de documento foi implementada', {
     referenciaTipo: 'documento_revisao',
     referenciaId: Number(revisaoId),
+  })
+
+  await registrarEvento(c.env.DB, null, 'documento_revisao_implementada', {
+    referenciaTipo: 'documento',
+    referenciaId: Number(documentoId),
+    detalhes: { revisao_id: Number(revisaoId), numero_revisao: revisao.numero_revisao },
   })
 
   return c.json({ ok: true })
