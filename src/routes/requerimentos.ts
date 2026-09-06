@@ -10,7 +10,9 @@ type Bindings = {
 
 const requerimentos = new Hono<{ Bindings: Bindings }>()
 
-// POST /requerimentos — cria um requerimento com N alvos (+ anexos, se houver)
+// POST /requerimentos — cria um requerimento com N alvos (+ anexos, se houver).
+// Cada alvo é `number` (usuario_id existente) ou `string` (nick de
+// quem ainda não tem conta — só válido pras 3 portas de entrada).
 requerimentos.post('/', async (c) => {
   const body = await c.req.json<CriarRequerimentoInput>()
 
@@ -25,17 +27,22 @@ requerimentos.post('/', async (c) => {
   if (!autor) return c.json({ erro: 'autor não encontrado' }, 404)
 
   // Checagem de hierarquia — só se aplica a tipos que representam uma
-  // ação sobre a patente/status de outro usuário (promoção,
+  // ação sobre a patente/status de um usuário JÁ EXISTENTE (promoção,
   // rebaixamento, advertência, desligamento, exoneração, licença).
-  // Bypass total pra administrador_sistema.
+  // Nunca se aplica às 3 portas de entrada (instrucao_inicial,
+  // contratacao, venda_cargo pra nick novo), já que acaoHierarquiaDoTipo
+  // retorna null pra esses tipos.
   const acao = acaoHierarquiaDoTipo(body.tipo)
   if (acao && !autor.administrador_sistema) {
-    for (const alvoId of body.alvos) {
+    for (const item of body.alvos) {
+      if (typeof item !== 'number') {
+        return c.json({ erro: `tipo '${body.tipo}' não aceita alvo por nick — usuário precisa já existir` }, 400)
+      }
       const alvo = await c.env.DB.prepare(`SELECT patente_atual_id FROM usuarios WHERE id = ?`)
-        .bind(alvoId)
+        .bind(item)
         .first<{ patente_atual_id: number }>()
 
-      if (!alvo) return c.json({ erro: `alvo ${alvoId} não encontrado` }, 404)
+      if (!alvo) return c.json({ erro: `alvo ${item} não encontrado` }, 404)
 
       const { permitido, requerCfoOuPro } = await podeAgirSobre(
         c.env.DB,
@@ -45,14 +52,11 @@ requerimentos.post('/', async (c) => {
       )
 
       if (!permitido) {
-        return c.json({ erro: `sem competência hierárquica para '${acao}' sobre o alvo ${alvoId}` }, 403)
+        return c.json({ erro: `sem competência hierárquica para '${acao}' sobre o alvo ${item}` }, 403)
       }
 
       if (requerCfoOuPro) {
-        // TODO: checar se o autor tem PRO (Militar) ou CFO ativo
-        // (Executivo) em `certificados` antes de liberar. Deixado
-        // como TODO porque depende da Fase 4 (certificados) existir
-        // com dado populado.
+        // TODO: checar PRO/CFO ativo em `certificados` (depende da Fase 4).
       }
     }
   }
@@ -78,12 +82,16 @@ requerimentos.post('/', async (c) => {
 
   const requerimentoId = meta.last_row_id
 
-  for (const usuarioId of body.alvos) {
-    await c.env.DB.prepare(
-      `INSERT INTO requerimento_alvos (requerimento_id, usuario_id) VALUES (?, ?)`
-    )
-      .bind(requerimentoId, usuarioId)
-      .run()
+  for (const item of body.alvos) {
+    if (typeof item === 'number') {
+      await c.env.DB.prepare(
+        `INSERT INTO requerimento_alvos (requerimento_id, usuario_id) VALUES (?, ?)`
+      ).bind(requerimentoId, item).run()
+    } else {
+      await c.env.DB.prepare(
+        `INSERT INTO requerimento_alvos (requerimento_id, nick_alvo) VALUES (?, ?)`
+      ).bind(requerimentoId, item).run()
+    }
   }
 
   if (body.anexos?.length) {
@@ -96,7 +104,7 @@ requerimentos.post('/', async (c) => {
     }
   }
 
-  // TODO: dispara logs_eventos ('requerimento_criado', referencia_tipo='requerimento', referencia_id=requerimentoId)
+  // TODO: dispara logs_eventos ('requerimento_criado', ...)
 
   return c.json({ id: requerimentoId, tag_requerimento: tagRequerimento }, 201)
 })
@@ -131,7 +139,9 @@ requerimentos.get('/:id', async (c) => {
   return c.json({ ...requerimento, alvos, anexos })
 })
 
-// POST /requerimentos/:id/alvos/:alvoId/decidir — aprova/reprova 1 alvo específico
+// POST /requerimentos/:id/alvos/:alvoId/decidir — aprova/reprova 1 alvo específico.
+// Se o alvo era só um nick (porta de entrada), a aprovação CRIA o
+// usuário e faz o backfill de requerimento_alvos.usuario_id.
 requerimentos.post('/:id/alvos/:alvoId/decidir', async (c) => {
   const { id, alvoId } = c.req.param()
   const { status, decidido_por_id, motivo_recusa } = await c.req.json<{
@@ -157,20 +167,34 @@ requerimentos.post('/:id/alvos/:alvoId/decidir', async (c) => {
     if (!pode) return c.json({ erro: 'sem permissão para gerir requerimentos deste tipo' }, 403)
   }
 
-  const alvo = await c.env.DB.prepare(`SELECT usuario_id FROM requerimento_alvos WHERE id = ? AND requerimento_id = ?`)
+  const alvo = await c.env.DB.prepare(
+    `SELECT usuario_id, nick_alvo FROM requerimento_alvos WHERE id = ? AND requerimento_id = ?`
+  )
     .bind(alvoId, id)
-    .first<{ usuario_id: number }>()
+    .first<{ usuario_id: number | null; nick_alvo: string | null }>()
 
   if (!alvo) return c.json({ erro: 'alvo não encontrado neste requerimento' }, 404)
 
   let detalhesHistorico: unknown = null
+  let usuarioIdFinal: number | null = alvo.usuario_id
 
-  // Aplica o efeito ANTES de confirmar a aprovação — se der erro (ex:
-  // faltou patente_destino_id), não marca nada como aprovado.
   if (status === 'aprovado') {
     const dadosEspecificos = requerimento.dados_especificos ? JSON.parse(requerimento.dados_especificos) : null
+    const identificador = alvo.usuario_id !== null ? { usuarioId: alvo.usuario_id } : { nickAlvo: alvo.nick_alvo! }
+
     try {
-      detalhesHistorico = await aplicarEfeitoAprovacao(c.env.DB, requerimento.tipo, alvo.usuario_id, dadosEspecificos)
+      const efeito = await aplicarEfeitoAprovacao(c.env.DB, requerimento.tipo, identificador, dadosEspecificos)
+      detalhesHistorico = { antes: efeito.antes, depois: efeito.depois }
+      usuarioIdFinal = efeito.usuarioId
+
+      // Backfill: se o alvo nasceu agora (era só nick), grava o
+      // usuario_id recém-criado na linha, pra ficar consistente daqui
+      // pra frente (histórico, consultas futuras).
+      if (alvo.usuario_id === null) {
+        await c.env.DB.prepare(`UPDATE requerimento_alvos SET usuario_id = ? WHERE id = ?`)
+          .bind(usuarioIdFinal, alvoId)
+          .run()
+      }
     } catch (err) {
       const mensagem = err instanceof Error ? err.message : 'erro ao aplicar efeito do requerimento'
       return c.json({ erro: mensagem }, 400)
@@ -185,13 +209,12 @@ requerimentos.post('/:id/alvos/:alvoId/decidir', async (c) => {
     .bind(status, decidido_por_id, motivo_recusa ?? null, alvoId, id)
     .run()
 
-  // Historico só espelha ações efetivamente aprovadas (nunca reprovadas).
-  if (status === 'aprovado') {
+  if (status === 'aprovado' && usuarioIdFinal !== null) {
     await c.env.DB.prepare(
       `INSERT INTO historico (usuario_id, tipo_acao, requerimento_id, requerimento_alvo_id, executado_por_id, detalhes)
        VALUES (?, ?, ?, ?, ?, ?)`
     )
-      .bind(alvo.usuario_id, requerimento.tipo, id, alvoId, decidido_por_id, JSON.stringify(detalhesHistorico))
+      .bind(usuarioIdFinal, requerimento.tipo, id, alvoId, decidido_por_id, JSON.stringify(detalhesHistorico))
       .run()
   }
 
@@ -199,7 +222,7 @@ requerimentos.post('/:id/alvos/:alvoId/decidir', async (c) => {
 
   // TODO: dispara logs_eventos ('requerimento_decidido', ...)
 
-  return c.json({ ok: true, status_alvo: status, status_geral: statusGeral })
+  return c.json({ ok: true, status_alvo: status, status_geral: statusGeral, usuario_id: usuarioIdFinal })
 })
 
 export default requerimentos

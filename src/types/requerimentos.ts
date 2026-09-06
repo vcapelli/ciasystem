@@ -25,10 +25,18 @@ export type TipoRequerimento =
 
 export type StatusRequerimento = 'pendente' | 'aprovado' | 'reprovado' | 'cancelado'
 
+/**
+ * Um alvo é `number` (usuario_id de alguém que já existe no sistema)
+ * OU `string` (nick de alguém que ainda não tem conta — só possível
+ * pras 3 portas de entrada: instrucao_inicial, contratacao, e
+ * venda_cargo quando é um ingresso novo no Corpo Executivo).
+ */
+export type AlvoRequerimento = number | string
+
 export interface CriarRequerimentoInput {
   tipo: TipoRequerimento
   autor_id: number
-  alvos: number[]              // um ou mais usuario_id — vira 1 linha por alvo em requerimento_alvos
+  alvos: AlvoRequerimento[]
   dados_especificos?: Record<string, unknown>
   crime_id?: number
   fundamentacao?: string
