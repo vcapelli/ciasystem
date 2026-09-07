@@ -1,0 +1,7 @@
+name = "ciasystem-frontend"
+compatibility_date = "2026-01-01"
+
+# Serve os arquivos estáticos desta mesma pasta (frontend/) — sem
+# nenhum código de Worker rodando, é puramente servir HTML/CSS/JS.
+[assets]
+directory = "./"
