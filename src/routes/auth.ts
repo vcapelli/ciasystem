@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { gerarToken } from '../services/auth'
+import { gerarAccessToken, criarSessao, validarRefreshToken, revogarSessao, revogarTodasSessoes } from '../services/auth'
 import { hashSenha, conferirSenha } from '../services/senha'
 import { verificarCodigoNaMissao } from '../services/habblet'
 import { registrarEvento } from '../services/logs'
@@ -13,15 +13,17 @@ function gerarCodigo(): string {
   return `CIA-${numeros}`
 }
 
-/**
- * POST /auth/solicitar-codigo — gera um código de verificação pra
- * `finalidade` ('login' ou 'senha'). A pessoa cola esse código na
- * missão do Habblet; o /login ou /definir-senha confirma via a API
- * do Habblet que o código está lá antes de aceitar — devolver o
- * código aqui não é o problema de segurança (é assim que a pessoa
- * fica sabendo o que digitar no jogo); o problema seria aceitar o
- * código sem checar a missão de verdade, o que já não acontece mais.
- */
+/** Emite os dois tokens de uma sessão nova e registra o evento de login. */
+async function emitirSessao(c: { env: Bindings; req: { header: (nome: string) => string | undefined } }, usuarioId: number, metodo: string) {
+  const accessToken = await gerarAccessToken(usuarioId, c.env.JWT_SECRET)
+  const { refreshToken, expiraEm } = await criarSessao(c.env.DB, usuarioId, {
+    userAgent: c.req.header('User-Agent'),
+  })
+  await registrarEvento(c.env.DB, usuarioId, 'login', { detalhes: { metodo } })
+
+  return { access_token: accessToken, refresh_token: refreshToken, refresh_expira_em: expiraEm }
+}
+
 auth.post('/solicitar-codigo', async (c) => {
   const { nick, finalidade } = await c.req.json<{ nick: string; finalidade: 'login' | 'senha' }>()
 
@@ -39,11 +41,6 @@ auth.post('/solicitar-codigo', async (c) => {
   })
 })
 
-/**
- * POST /auth/login — nick + código (finalidade='login'). Confirma o
- * código no banco (existe, não usado, não expirado) E na missão real
- * do Habblet (prova posse da conta) antes de emitir o token.
- */
 auth.post('/login', async (c) => {
   const { nick, codigo } = await c.req.json<{ nick: string; codigo: string }>()
 
@@ -61,7 +58,6 @@ auth.post('/login', async (c) => {
   } catch {
     return c.json({ erro: 'não foi possível confirmar a missão no Habblet no momento, tente novamente' }, 502)
   }
-
   if (!codigoNaMissao) {
     return c.json({ erro: 'código não encontrado na missão do Habblet — confirme que colocou certinho e tente de novo' }, 401)
   }
@@ -71,10 +67,7 @@ auth.post('/login', async (c) => {
 
   await c.env.DB.prepare(`UPDATE codigos_verificacao SET usado = 1 WHERE id = ?`).bind(verificacao.id).run()
 
-  const token = await gerarToken(usuario.id, c.env.JWT_SECRET)
-  await registrarEvento(c.env.DB, usuario.id, 'login', { detalhes: { metodo: 'codigo' } })
-
-  return c.json({ token })
+  return c.json(await emitirSessao(c, usuario.id, 'codigo'))
 })
 
 auth.post('/login-senha', async (c) => {
@@ -88,17 +81,9 @@ auth.post('/login-senha', async (c) => {
   const senhaCorreta = await conferirSenha(senha, usuario.senha_hash)
   if (!senhaCorreta) return c.json({ erro: 'nick ou senha inválidos' }, 401)
 
-  const token = await gerarToken(usuario.id, c.env.JWT_SECRET)
-  await registrarEvento(c.env.DB, usuario.id, 'login', { detalhes: { metodo: 'senha' } })
-
-  return c.json({ token })
+  return c.json(await emitirSessao(c, usuario.id, 'senha'))
 })
 
-/**
- * POST /auth/definir-senha — mesma checagem dupla (banco + missão
- * real do Habblet) que o login por código, já que criar/trocar senha
- * é tão sensível quanto logar.
- */
 auth.post('/definir-senha', async (c) => {
   const { nick, codigo, senha } = await c.req.json<{ nick: string; codigo: string; senha: string }>()
 
@@ -116,7 +101,6 @@ auth.post('/definir-senha', async (c) => {
   } catch {
     return c.json({ erro: 'não foi possível confirmar a missão no Habblet no momento, tente novamente' }, 502)
   }
-
   if (!codigoNaMissao) {
     return c.json({ erro: 'código não encontrado na missão do Habblet — confirme que colocou certinho e tente de novo' }, 401)
   }
@@ -132,6 +116,49 @@ auth.post('/definir-senha', async (c) => {
   await c.env.DB.prepare(`UPDATE codigos_verificacao SET usado = 1 WHERE id = ?`).bind(verificacao.id).run()
   await registrarEvento(c.env.DB, usuario.id, 'senha_definida')
 
+  return c.json({ ok: true })
+})
+
+/**
+ * POST /auth/refresh — troca um refresh token válido por um access
+ * token novo. Faz ROTAÇÃO: o refresh token usado é revogado e um novo
+ * é emitido no lugar — se alguém roubar um refresh token e usar
+ * depois do dono legítimo já ter usado (ou vice-versa), o token
+ * roubado já estará revogado, o que ajuda a detectar o vazamento.
+ */
+auth.post('/refresh', async (c) => {
+  const { refresh_token } = await c.req.json<{ refresh_token: string }>()
+  if (!refresh_token) return c.json({ erro: 'refresh_token é obrigatório' }, 400)
+
+  const usuarioId = await validarRefreshToken(c.env.DB, refresh_token)
+  if (!usuarioId) return c.json({ erro: 'refresh token inválido, expirado ou revogado — faça login novamente' }, 401)
+
+  await revogarSessao(c.env.DB, refresh_token)
+
+  const accessToken = await gerarAccessToken(usuarioId, c.env.JWT_SECRET)
+  const { refreshToken: novoRefreshToken, expiraEm } = await criarSessao(c.env.DB, usuarioId, {
+    userAgent: c.req.header('User-Agent'),
+  })
+
+  return c.json({ access_token: accessToken, refresh_token: novoRefreshToken, refresh_expira_em: expiraEm })
+})
+
+/** POST /auth/logout — revoga só a sessão desse refresh token. */
+auth.post('/logout', async (c) => {
+  const { refresh_token } = await c.req.json<{ refresh_token: string }>()
+  if (refresh_token) await revogarSessao(c.env.DB, refresh_token)
+  return c.json({ ok: true })
+})
+
+/** POST /auth/logout-todos — revoga TODAS as sessões do dono desse refresh token. */
+auth.post('/logout-todos', async (c) => {
+  const { refresh_token } = await c.req.json<{ refresh_token: string }>()
+  if (!refresh_token) return c.json({ erro: 'refresh_token é obrigatório' }, 400)
+
+  const usuarioId = await validarRefreshToken(c.env.DB, refresh_token)
+  if (!usuarioId) return c.json({ erro: 'refresh token inválido' }, 401)
+
+  await revogarTodasSessoes(c.env.DB, usuarioId)
   return c.json({ ok: true })
 })
 
