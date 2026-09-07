@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIASystem — Feed</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="assets/tailwind-config.js"></script>
+</head>
+<body class="bg-base text-white font-sans min-h-screen">
+
+  <div class="flex">
+    <aside id="layout-sidebar" class="w-60 shrink-0 border-r border-border min-h-[calc(100vh-57px)] p-4 sticky top-[57px]"></aside>
+
+    <main class="flex-1 max-w-xl mx-auto px-4 py-8">
+      <h1 class="text-xl font-bold mb-4">Feed</h1>
+
+      <form id="form-tweet" class="bg-card border border-border rounded-2xl p-4 mb-6">
+        <textarea id="tweet-conteudo" rows="3" maxlength="500" placeholder="O que está acontecendo na corporação?"
+          class="w-full bg-transparent resize-none text-white placeholder:text-muted/60 focus:outline-none text-sm"></textarea>
+        <div class="flex justify-end mt-2">
+          <button type="submit" class="bg-amber hover:bg-amber-dark text-base font-semibold rounded-xl px-5 py-2 text-sm transition-colors">
+            Publicar
+          </button>
+        </div>
+      </form>
+
+      <div id="lista-tweets" class="space-y-3">
+        <p class="text-sm text-muted">Carregando…</p>
+      </div>
+    </main>
+  </div>
+
+<script src="assets/api.js"></script>
+<script src="assets/layout.js"></script>
+<script>
+  function tempoRelativo(iso) {
+    const diffMs = Date.now() - new Date(iso).getTime();
+    const min = Math.floor(diffMs / 60000);
+    if (min < 1) return 'agora';
+    if (min < 60) return `${min}min`;
+    const h = Math.floor(min / 60);
+    if (h < 24) return `${h}h`;
+    return `${Math.floor(h / 24)}d`;
+  }
+
+  function renderTweet(t) {
+    return `
+      <div class="bg-card border border-border rounded-2xl p-4" data-tweet-id="${t.id}">
+        <div class="flex items-center gap-2 mb-1.5">
+          <span class="h-7 w-7 rounded-full bg-border flex items-center justify-center text-xs font-semibold">${t.autor_nick.slice(0,2).toUpperCase()}</span>
+          <span class="font-semibold text-sm">${t.autor_nick}</span>
+          <span class="text-xs text-muted">· ${tempoRelativo(t.criado_em)}</span>
+        </div>
+        ${t.conteudo ? `<p class="text-sm whitespace-pre-wrap">${t.conteudo}</p>` : ''}
+        <div class="flex items-center gap-6 mt-3 text-xs text-muted">
+          <span>💬 ${t.respostas}</span>
+          <span>🔁 ${t.retweets}</span>
+          <button class="btn-curtir flex items-center gap-1 ${t.curtido_por_mim ? 'text-amber' : 'hover:text-white'} transition-colors" data-id="${t.id}">
+            ${t.curtido_por_mim ? '★' : '☆'} <span class="contador-curtidas">${t.curtidas}</span>
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  async function carregarFeed() {
+    const resposta = await apiFetch('/tweets');
+    const lista = document.getElementById('lista-tweets');
+    if (!resposta.ok) {
+      lista.innerHTML = '<p class="text-sm text-red-400">Não foi possível carregar o feed.</p>';
+      return;
+    }
+    const tweets = await resposta.json();
+    lista.innerHTML = tweets.length
+      ? tweets.map(renderTweet).join('')
+      : '<p class="text-sm text-muted">Ainda não há publicações.</p>';
+
+    document.querySelectorAll('.btn-curtir').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const resp = await apiFetch(`/tweets/${btn.dataset.id}/curtir`, { method: 'POST' });
+        if (!resp.ok) return;
+        const { curtido } = await resp.json();
+        const contador = btn.querySelector('.contador-curtidas');
+        contador.textContent = Number(contador.textContent) + (curtido ? 1 : -1);
+        btn.classList.toggle('text-amber', curtido);
+        btn.firstChild.textContent = curtido ? '★ ' : '☆ ';
+      });
+    });
+  }
+
+  document.getElementById('form-tweet').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const textarea = document.getElementById('tweet-conteudo');
+    const conteudo = textarea.value.trim();
+    if (!conteudo) return;
+
+    const resposta = await apiFetch('/tweets', {
+      method: 'POST',
+      body: JSON.stringify({ conteudo }),
+    });
+
+    if (resposta.ok) {
+      textarea.value = '';
+      carregarFeed();
+    }
+  });
+
+  montarLayout('/feed.html').then((me) => { if (me) carregarFeed(); });
+</script>
+</body>
+</html>

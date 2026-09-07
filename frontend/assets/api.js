@@ -38,7 +38,7 @@ const Auth = {
         // refresh token expira sozinho em 30 dias.
       }
     }
-    window.location.href = '/index.html';
+    window.location.href = '/login.html';
   },
 
   async renovarSessao() {
@@ -85,7 +85,7 @@ async function apiFetch(caminho, opcoes = {}) {
     if (renovou) {
       resposta = await chamar();
     } else {
-      window.location.href = '/index.html';
+      window.location.href = '/login.html';
       return resposta;
     }
   }

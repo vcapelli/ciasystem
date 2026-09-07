@@ -99,11 +99,24 @@ twitter.post('/', async (c) => {
 })
 
 twitter.get('/', async (c) => {
+  const usuarioId = c.get('usuarioId')
   const autorId = c.req.query('autor_id')
-  const query = autorId
-    ? c.env.DB.prepare(`SELECT * FROM tweets WHERE autor_id = ? AND apagado = 0 ORDER BY criado_em DESC LIMIT 50`).bind(autorId)
-    : c.env.DB.prepare(`SELECT * FROM tweets WHERE apagado = 0 ORDER BY criado_em DESC LIMIT 50`)
-  const { results } = await query.all()
+
+  const base = `
+    SELECT t.*, u.nick AS autor_nick,
+      (SELECT COUNT(*) FROM tweet_curtidas WHERE tweet_id = t.id) AS curtidas,
+      (SELECT COUNT(*) FROM tweets r WHERE r.resposta_a_id = t.id AND r.apagado = 0) AS respostas,
+      (SELECT COUNT(*) FROM tweets r WHERE r.tweet_original_id = t.id AND r.apagado = 0) AS retweets,
+      EXISTS(SELECT 1 FROM tweet_curtidas WHERE tweet_id = t.id AND usuario_id = ?) AS curtido_por_mim
+    FROM tweets t JOIN usuarios u ON u.id = t.autor_id
+    WHERE t.apagado = 0 ${autorId ? 'AND t.autor_id = ?' : ''}
+    ORDER BY t.criado_em DESC LIMIT 50
+  `
+  const stmt = autorId
+    ? c.env.DB.prepare(base).bind(usuarioId, autorId)
+    : c.env.DB.prepare(base).bind(usuarioId)
+
+  const { results } = await stmt.all()
   return c.json(results)
 })
 
