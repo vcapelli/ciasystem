@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { gerarToken } from '../services/auth'
 import { hashSenha, conferirSenha } from '../services/senha'
+import { verificarCodigoNaMissao } from '../services/habblet'
 import { registrarEvento } from '../services/logs'
 
 type Bindings = { DB: D1Database; JWT_SECRET: string }
@@ -8,39 +9,40 @@ type Bindings = { DB: D1Database; JWT_SECRET: string }
 const auth = new Hono<{ Bindings: Bindings }>()
 
 function gerarCodigo(): string {
-  // 6 dígitos, fácil de digitar na missão do Habblet.
-  return Math.floor(100000 + Math.random() * 900000).toString()
+  const numeros = Math.floor(100000 + Math.random() * 900000)
+  return `CIA-${numeros}`
 }
 
 /**
  * POST /auth/solicitar-codigo — gera um código de verificação pra
- * `finalidade` ('login' ou 'senha'). Em produção, o próximo passo real
- * seria o usuário colar esse código na missão do Habblet e o sistema
- * confirmar via api.habblet.city — essa integração com a API do
- * Habblet ainda NÃO existe neste Worker, então por enquanto o código
- * é devolvido direto na resposta (só serve pra desenvolvimento/teste;
- * precisa ser substituído antes de qualquer uso real).
+ * `finalidade` ('login' ou 'senha'). A pessoa cola esse código na
+ * missão do Habblet; o /login ou /definir-senha confirma via a API
+ * do Habblet que o código está lá antes de aceitar — devolver o
+ * código aqui não é o problema de segurança (é assim que a pessoa
+ * fica sabendo o que digitar no jogo); o problema seria aceitar o
+ * código sem checar a missão de verdade, o que já não acontece mais.
  */
 auth.post('/solicitar-codigo', async (c) => {
   const { nick, finalidade } = await c.req.json<{ nick: string; finalidade: 'login' | 'senha' }>()
 
   const codigo = gerarCodigo()
-  const expiraEm = new Date(Date.now() + 10 * 60 * 1000).toISOString() // 10 minutos
+  const expiraEm = new Date(Date.now() + 10 * 60 * 1000).toISOString()
 
   await c.env.DB.prepare(
     `INSERT INTO codigos_verificacao (nick, codigo, finalidade, expira_em) VALUES (?, ?, ?, ?)`
   ).bind(nick, codigo, finalidade, expiraEm).run()
 
-  // TODO: em produção, não devolver o código na resposta — ele deve
-  // ir só pra missão do Habblet, verificado via api.habblet.city.
-  return c.json({ codigo, expira_em: expiraEm, aviso: 'TODO: integração real com Habblet ainda não existe' })
+  return c.json({
+    codigo,
+    expira_em: expiraEm,
+    instrucao: `Coloque o código ${codigo} na sua missão do Habblet e confirme em seguida.`,
+  })
 })
 
 /**
- * POST /auth/login — nick + código (finalidade='login'). Se o
- * usuário ainda não existe em `usuarios` (primeiro login), isso
- * falha — criação de conta acontece via as 3 portas de entrada
- * (Instrução Inicial/Contratação/Compra de Cargo), não aqui.
+ * POST /auth/login — nick + código (finalidade='login'). Confirma o
+ * código no banco (existe, não usado, não expirado) E na missão real
+ * do Habblet (prova posse da conta) antes de emitir o token.
  */
 auth.post('/login', async (c) => {
   const { nick, codigo } = await c.req.json<{ nick: string; codigo: string }>()
@@ -53,6 +55,17 @@ auth.post('/login', async (c) => {
 
   if (!verificacao) return c.json({ erro: 'código inválido ou expirado' }, 401)
 
+  let codigoNaMissao: boolean
+  try {
+    codigoNaMissao = await verificarCodigoNaMissao(nick, codigo)
+  } catch {
+    return c.json({ erro: 'não foi possível confirmar a missão no Habblet no momento, tente novamente' }, 502)
+  }
+
+  if (!codigoNaMissao) {
+    return c.json({ erro: 'código não encontrado na missão do Habblet — confirme que colocou certinho e tente de novo' }, 401)
+  }
+
   const usuario = await c.env.DB.prepare(`SELECT id FROM usuarios WHERE nick = ?`).bind(nick).first<{ id: number }>()
   if (!usuario) return c.json({ erro: 'nenhuma conta encontrada com esse nick' }, 404)
 
@@ -64,16 +77,11 @@ auth.post('/login', async (c) => {
   return c.json({ token })
 })
 
-/**
- * POST /auth/login-senha — nick + senha (só funciona se o usuário já
- * configurou uma senha antes via /auth/definir-senha).
- */
 auth.post('/login-senha', async (c) => {
   const { nick, senha } = await c.req.json<{ nick: string; senha: string }>()
 
   const usuario = await c.env.DB.prepare(`SELECT id, senha_hash FROM usuarios WHERE nick = ?`)
-    .bind(nick)
-    .first<{ id: number; senha_hash: string | null }>()
+    .bind(nick).first<{ id: number; senha_hash: string | null }>()
 
   if (!usuario?.senha_hash) return c.json({ erro: 'nick ou senha inválidos' }, 401)
 
@@ -87,10 +95,9 @@ auth.post('/login-senha', async (c) => {
 })
 
 /**
- * POST /auth/definir-senha — nick + código (finalidade='senha') +
- * nova senha. Serve tanto pra criar a senha pela primeira vez quanto
- * pra trocar — sempre exige um código novo da missão, nunca só a
- * senha atual.
+ * POST /auth/definir-senha — mesma checagem dupla (banco + missão
+ * real do Habblet) que o login por código, já que criar/trocar senha
+ * é tão sensível quanto logar.
  */
 auth.post('/definir-senha', async (c) => {
   const { nick, codigo, senha } = await c.req.json<{ nick: string; codigo: string; senha: string }>()
@@ -102,6 +109,17 @@ auth.post('/definir-senha', async (c) => {
   ).bind(nick, codigo).first<{ id: number }>()
 
   if (!verificacao) return c.json({ erro: 'código inválido ou expirado' }, 401)
+
+  let codigoNaMissao: boolean
+  try {
+    codigoNaMissao = await verificarCodigoNaMissao(nick, codigo)
+  } catch {
+    return c.json({ erro: 'não foi possível confirmar a missão no Habblet no momento, tente novamente' }, 502)
+  }
+
+  if (!codigoNaMissao) {
+    return c.json({ erro: 'código não encontrado na missão do Habblet — confirme que colocou certinho e tente de novo' }, 401)
+  }
 
   const usuario = await c.env.DB.prepare(`SELECT id FROM usuarios WHERE nick = ?`).bind(nick).first<{ id: number }>()
   if (!usuario) return c.json({ erro: 'nenhuma conta encontrada com esse nick' }, 404)
