@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { cors } from 'hono/cors'
 import auth from './routes/auth'
 import { requireAuth } from './services/auth'
 import requerimentos from './routes/requerimentos'
@@ -32,6 +33,22 @@ type Variables = {
 }
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
+
+// CORS: o frontend (ciasystem.vitorcape.com.br) fica em domínio
+// diferente da API (api-rpg[-dev].vitorcape.com.br) — precisa liberar
+// explicitamente. Os endereços locais cobrem o desenvolvimento do
+// frontend antes de subir pro domínio de verdade.
+app.use('*', cors({
+  origin: [
+    'https://ciasystem.vitorcape.com.br',
+    'http://localhost:8788',
+    'http://127.0.0.1:8788',
+    'http://localhost:5500',
+    'http://127.0.0.1:5500',
+  ],
+  allowHeaders: ['Content-Type', 'Authorization'],
+  allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'PUT', 'OPTIONS'],
+}))
 
 // Health check e login ficam FORA da autenticação.
 app.get('/health', async (c) => {
