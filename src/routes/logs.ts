@@ -1,21 +1,20 @@
 import { Hono } from 'hono'
 
 type Bindings = { DB: D1Database }
+type Variables = { usuarioId: number }
 
 async function ehAdmin(db: D1Database, usuarioId: number): Promise<boolean> {
   const u = await db.prepare(`SELECT administrador_sistema FROM usuarios WHERE id = ?`)
-    .bind(usuarioId)
-    .first<{ administrador_sistema: number }>()
+    .bind(usuarioId).first<{ administrador_sistema: number }>()
   return Boolean(u?.administrador_sistema)
 }
 
-const logs = new Hono<{ Bindings: Bindings }>()
+const logs = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
-// GET /logs?usuario_id=&ip=&tipo_evento=&admin_id=<quem está consultando>
-// Restrito a admin do sistema — é dado sensível de auditoria.
+// GET /logs?usuario_id=&ip=&tipo_evento= — restrito a admin do sistema.
 logs.get('/', async (c) => {
-  const adminId = Number(c.req.query('admin_id'))
-  if (!adminId || !(await ehAdmin(c.env.DB, adminId))) {
+  const usuarioAutenticado = c.get('usuarioId')
+  if (!(await ehAdmin(c.env.DB, usuarioAutenticado))) {
     return c.json({ erro: 'só administradores do sistema consultam logs' }, 403)
   }
 
@@ -30,9 +29,8 @@ logs.get('/', async (c) => {
   if (tipoEvento) { condicoes.push('tipo_evento = ?'); params.push(tipoEvento) }
 
   const where = condicoes.length ? `WHERE ${condicoes.join(' AND ')}` : ''
-  const { results } = await c.env.DB.prepare(
-    `SELECT * FROM logs_eventos ${where} ORDER BY criado_em DESC LIMIT 200`
-  ).bind(...params).all()
+  const { results } = await c.env.DB.prepare(`SELECT * FROM logs_eventos ${where} ORDER BY criado_em DESC LIMIT 200`)
+    .bind(...params).all()
 
   return c.json(results)
 })

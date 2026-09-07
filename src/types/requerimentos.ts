@@ -35,7 +35,6 @@ export type AlvoRequerimento = number | string
 
 export interface CriarRequerimentoInput {
   tipo: TipoRequerimento
-  autor_id: number
   alvos: AlvoRequerimento[]
   dados_especificos?: Record<string, unknown>
   crime_id?: number

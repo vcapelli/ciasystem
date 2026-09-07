@@ -1,47 +1,48 @@
 import { Hono } from 'hono'
 import { podeGerirNoticia } from '../services/noticias'
+import { resolverAutor } from '../services/autor'
 
 type Bindings = { DB: D1Database }
+type Variables = { usuarioId: number }
 
-const noticias = new Hono<{ Bindings: Bindings }>()
+const noticias = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
-// POST /noticias — cria rascunho (checa pode_escrever)
 noticias.post('/', async (c) => {
+  const usuarioId = c.get('usuarioId')
   const body = await c.req.json<{
-    titulo: string
-    resumo?: string
-    conteudo: string
-    imagem_capa_url?: string
-    autor_id: number
-    operado_por_id?: number
+    titulo: string; resumo?: string; conteudo: string; imagem_capa_url?: string; postar_como_conta_id?: number
   }>()
 
-  if (!(await podeGerirNoticia(c.env.DB, body.autor_id, 'escrever'))) {
+  if (!(await podeGerirNoticia(c.env.DB, usuarioId, 'escrever'))) {
     return c.json({ erro: 'sem permissão para escrever notícias' }, 403)
+  }
+
+  let autor
+  try {
+    autor = await resolverAutor(c.env.DB, usuarioId, body.postar_como_conta_id)
+  } catch (err) {
+    return c.json({ erro: err instanceof Error ? err.message : 'erro ao resolver autor' }, 403)
   }
 
   const { meta } = await c.env.DB.prepare(
     `INSERT INTO noticias (titulo, resumo, conteudo, imagem_capa_url, autor_id, operado_por_id)
      VALUES (?, ?, ?, ?, ?, ?)`
-  )
-    .bind(body.titulo, body.resumo ?? null, body.conteudo, body.imagem_capa_url ?? null, body.autor_id, body.operado_por_id ?? null)
-    .run()
+  ).bind(body.titulo, body.resumo ?? null, body.conteudo, body.imagem_capa_url ?? null, autor.autorId, autor.operadoPorId).run()
 
   return c.json({ id: meta.last_row_id }, 201)
 })
 
-// POST /noticias/:id/publicar — checa pode_publicar (separado de escrever)
 noticias.post('/:id/publicar', async (c) => {
+  const usuarioId = c.get('usuarioId')
   const id = c.req.param('id')
-  const { publicado_por_id } = await c.req.json<{ publicado_por_id: number }>()
 
-  if (!(await podeGerirNoticia(c.env.DB, publicado_por_id, 'publicar'))) {
+  if (!(await podeGerirNoticia(c.env.DB, usuarioId, 'publicar'))) {
     return c.json({ erro: 'sem permissão para publicar notícias' }, 403)
   }
 
   await c.env.DB.prepare(
     `UPDATE noticias SET status = 'publicada', publicado_por_id = ?, publicado_em = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
-  ).bind(publicado_por_id, id).run()
+  ).bind(usuarioId, id).run()
 
   return c.json({ ok: true })
 })

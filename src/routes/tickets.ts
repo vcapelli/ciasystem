@@ -1,92 +1,87 @@
 import { Hono } from 'hono'
 
 type Bindings = { DB: D1Database }
+type Variables = { usuarioId: number }
 
 async function ehAdmin(db: D1Database, usuarioId: number): Promise<boolean> {
   const u = await db.prepare(`SELECT administrador_sistema FROM usuarios WHERE id = ?`)
-    .bind(usuarioId)
-    .first<{ administrador_sistema: number }>()
+    .bind(usuarioId).first<{ administrador_sistema: number }>()
   return Boolean(u?.administrador_sistema)
 }
 
-const tickets = new Hono<{ Bindings: Bindings }>()
+const tickets = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
-// POST /tickets — abre um ticket (a descrição também já vira a primeira mensagem)
 tickets.post('/', async (c) => {
-  const body = await c.req.json<{ autor_id: number; titulo: string; descricao: string }>()
+  const autorId = c.get('usuarioId')
+  const body = await c.req.json<{ titulo: string; descricao: string }>()
 
-  const { meta } = await c.env.DB.prepare(
-    `INSERT INTO tickets_suporte (autor_id, titulo, descricao) VALUES (?, ?, ?)`
-  )
-    .bind(body.autor_id, body.titulo, body.descricao)
-    .run()
+  const { meta } = await c.env.DB.prepare(`INSERT INTO tickets_suporte (autor_id, titulo, descricao) VALUES (?, ?, ?)`)
+    .bind(autorId, body.titulo, body.descricao).run()
 
   const ticketId = meta.last_row_id
 
-  await c.env.DB.prepare(
-    `INSERT INTO ticket_mensagens (ticket_id, autor_id, conteudo) VALUES (?, ?, ?)`
-  )
-    .bind(ticketId, body.autor_id, body.descricao)
-    .run()
+  await c.env.DB.prepare(`INSERT INTO ticket_mensagens (ticket_id, autor_id, conteudo) VALUES (?, ?, ?)`)
+    .bind(ticketId, autorId, body.descricao).run()
 
   return c.json({ id: ticketId }, 201)
 })
 
-// GET /tickets?status=aberto&autor_id=123
 tickets.get('/', async (c) => {
+  const usuarioAutenticado = c.get('usuarioId')
   const status = c.req.query('status')
   const autorId = c.req.query('autor_id')
+
+  // Não-admin só enxerga os próprios tickets, mesmo sem filtro explícito.
+  const admin = await ehAdmin(c.env.DB, usuarioAutenticado)
+  const autorEfetivo = admin ? autorId : String(usuarioAutenticado)
 
   const condicoes: string[] = []
   const params: (string | number)[] = []
   if (status) { condicoes.push('status = ?'); params.push(status) }
-  if (autorId) { condicoes.push('autor_id = ?'); params.push(autorId) }
+  if (autorEfetivo) { condicoes.push('autor_id = ?'); params.push(autorEfetivo) }
 
   const where = condicoes.length ? `WHERE ${condicoes.join(' AND ')}` : ''
-  const { results } = await c.env.DB.prepare(
-    `SELECT * FROM tickets_suporte ${where} ORDER BY criado_em DESC`
-  ).bind(...params).all()
+  const { results } = await c.env.DB.prepare(`SELECT * FROM tickets_suporte ${where} ORDER BY criado_em DESC`)
+    .bind(...params).all()
 
   return c.json(results)
 })
 
-// GET /tickets/:id — detalhe com a thread de mensagens
 tickets.get('/:id', async (c) => {
+  const usuarioAutenticado = c.get('usuarioId')
   const id = c.req.param('id')
 
-  const ticket = await c.env.DB.prepare(`SELECT * FROM tickets_suporte WHERE id = ?`).bind(id).first()
+  const ticket = await c.env.DB.prepare(`SELECT * FROM tickets_suporte WHERE id = ?`).bind(id).first<{ autor_id: number }>()
   if (!ticket) return c.json({ erro: 'não encontrado' }, 404)
 
-  const { results: mensagens } = await c.env.DB.prepare(
-    `SELECT * FROM ticket_mensagens WHERE ticket_id = ? ORDER BY criado_em`
-  ).bind(id).all()
+  if (ticket.autor_id !== usuarioAutenticado && !(await ehAdmin(c.env.DB, usuarioAutenticado))) {
+    return c.json({ erro: 'sem acesso a este ticket' }, 403)
+  }
+
+  const { results: mensagens } = await c.env.DB.prepare(`SELECT * FROM ticket_mensagens WHERE ticket_id = ? ORDER BY criado_em`)
+    .bind(id).all()
 
   return c.json({ ...ticket, mensagens })
 })
 
-// POST /tickets/:id/mensagens — autor do ticket ou qualquer admin do sistema
 tickets.post('/:id/mensagens', async (c) => {
+  const autorId = c.get('usuarioId')
   const id = c.req.param('id')
-  const body = await c.req.json<{ autor_id: number; conteudo: string }>()
+  const { conteudo } = await c.req.json<{ conteudo: string }>()
 
   const ticket = await c.env.DB.prepare(`SELECT autor_id, status FROM tickets_suporte WHERE id = ?`)
-    .bind(id)
-    .first<{ autor_id: number; status: string }>()
+    .bind(id).first<{ autor_id: number; status: string }>()
   if (!ticket) return c.json({ erro: 'ticket não encontrado' }, 404)
   if (ticket.status === 'encerrado') return c.json({ erro: 'ticket encerrado' }, 403)
 
-  const admin = await ehAdmin(c.env.DB, body.autor_id)
-  if (ticket.autor_id !== body.autor_id && !admin) {
+  const admin = await ehAdmin(c.env.DB, autorId)
+  if (ticket.autor_id !== autorId && !admin) {
     return c.json({ erro: 'só o autor do ticket ou um administrador podem responder' }, 403)
   }
 
-  const { meta } = await c.env.DB.prepare(
-    `INSERT INTO ticket_mensagens (ticket_id, autor_id, conteudo) VALUES (?, ?, ?)`
-  )
-    .bind(id, body.autor_id, body.conteudo)
-    .run()
+  const { meta } = await c.env.DB.prepare(`INSERT INTO ticket_mensagens (ticket_id, autor_id, conteudo) VALUES (?, ?, ?)`)
+    .bind(id, autorId, conteudo).run()
 
-  // Primeira resposta de um admin move o ticket de 'aberto' pra 'em_andamento'.
   if (admin && ticket.status === 'aberto') {
     await c.env.DB.prepare(`UPDATE tickets_suporte SET status = 'em_andamento' WHERE id = ?`).bind(id).run()
   }
@@ -94,18 +89,17 @@ tickets.post('/:id/mensagens', async (c) => {
   return c.json({ id: meta.last_row_id }, 201)
 })
 
-// POST /tickets/:id/encerrar — só admin do sistema
 tickets.post('/:id/encerrar', async (c) => {
+  const encerradoPorId = c.get('usuarioId')
   const id = c.req.param('id')
-  const { encerrado_por_id } = await c.req.json<{ encerrado_por_id: number }>()
 
-  if (!(await ehAdmin(c.env.DB, encerrado_por_id))) {
+  if (!(await ehAdmin(c.env.DB, encerradoPorId))) {
     return c.json({ erro: 'só administradores do sistema encerram tickets' }, 403)
   }
 
   await c.env.DB.prepare(
     `UPDATE tickets_suporte SET status = 'encerrado', encerrado_por_id = ?, encerrado_em = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
-  ).bind(encerrado_por_id, id).run()
+  ).bind(encerradoPorId, id).run()
 
   return c.json({ ok: true })
 })
