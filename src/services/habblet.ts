@@ -44,6 +44,6 @@ export async function buscarJogadorHabblet(nick: string): Promise<HabbletPlayer 
  */
 export async function verificarCodigoNaMissao(nick: string, codigo: string): Promise<boolean> {
   const jogador = await buscarJogadorHabblet(nick)
-  if (!jogador) return false
+  if (!jogador || typeof jogador.motto !== 'string') return false
   return jogador.motto.includes(codigo)
 }
