@@ -5,7 +5,7 @@ compatibility_date = "2026-01-01"
 # --- Ambiente de desenvolvimento ---
 # wrangler deploy --env dev
 [env.dev]
-name = "ciasystem-dev"
+name = "ciasystem-worker"
 routes = [
   { pattern = "api-rpg-dev.vitorcape.com.br/*", zone_name = "vitorcape.com.br" }
 ]
@@ -18,7 +18,7 @@ database_id = "9a41e38c-c3ea-49b7-bec1-209ed45552d3"
 # --- Ambiente de produção ---
 # wrangler deploy --env production
 [env.production]
-name = "ciasystem"
+name = "ciasystem-worker-production"
 routes = [
   { pattern = "api-rpg.vitorcape.com.br/*", zone_name = "vitorcape.com.br" }
 ]
