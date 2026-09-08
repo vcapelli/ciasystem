@@ -10,10 +10,10 @@
 // pode não estar disponível.
 
 const REESCRITAS = [
-  { prefixo: '/perfil/', arquivo: '/perfil-dashboard.html' },
+  { prefixo: '/perfil/', arquivo: '/perfil-dashboard' },
   // outras entram aqui conforme construímos os próximos lotes:
-  // { prefixo: '/grupos/', arquivo: '/grupos-dashboard.html' },
-  // { prefixo: '/documentos/', arquivo: '/documento-ver.html' },
+  // { prefixo: '/grupos/', arquivo: '/grupos-dashboard' },
+  // { prefixo: '/documentos/', arquivo: '/documento-ver' },
 ];
 
 export default {
@@ -23,7 +23,20 @@ export default {
     for (const regra of REESCRITAS) {
       if (url.pathname.startsWith(regra.prefixo) && url.pathname !== regra.prefixo) {
         const urlInterna = new URL(regra.arquivo, url);
-        return env.ASSETS.fetch(new Request(urlInterna, request));
+        let resposta = await env.ASSETS.fetch(new Request(urlInterna, request));
+
+        // Se o serviço de arquivos estáticos devolver um redirect (ex:
+        // "URL limpa" apontando pra versão com/sem .html), segue esse
+        // redirect POR DENTRO do Worker — nunca repassa pro navegador,
+        // senão a URL visível muda e perdemos o parâmetro dinâmico.
+        let tentativas = 0;
+        while (resposta.status >= 300 && resposta.status < 400 && resposta.headers.get('Location') && tentativas < 5) {
+          const proximaUrl = new URL(resposta.headers.get('Location'), url);
+          resposta = await env.ASSETS.fetch(new Request(proximaUrl, request));
+          tentativas++;
+        }
+
+        return resposta;
       }
     }
 
