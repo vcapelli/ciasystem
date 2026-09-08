@@ -17,38 +17,68 @@
 
     <main class="flex-1 max-w-3xl mx-auto px-4 py-10">
       <div id="boas-vindas"></div>
-
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-8">
-        <a href="/requerimentos/instrucao-inicial.html" class="bg-card border border-border rounded-2xl p-5 hover:border-accent transition-colors">
-          <p class="text-2xl mb-2">📝</p>
-          <p class="font-semibold text-sm">Novo requerimento</p>
-          <p class="text-xs text-muted mt-1">Instrução Inicial, promoção, licença...</p>
-        </a>
-        <a href="/grupos.html" class="bg-card border border-border rounded-2xl p-5 hover:border-accent transition-colors">
-          <p class="text-2xl mb-2">🏢</p>
-          <p class="font-semibold text-sm">Meus grupos</p>
-          <p class="text-xs text-muted mt-1">Companhias, subcompanhias e órgãos</p>
-        </a>
-        <a href="/feed.html" class="bg-card border border-border rounded-2xl p-5 hover:border-accent transition-colors">
-          <p class="text-2xl mb-2">🗨️</p>
-          <p class="font-semibold text-sm">Feed</p>
-          <p class="text-xs text-muted mt-1">Últimas publicações da corporação</p>
-        </a>
-      </div>
     </main>
   </div>
 
 <script src="/assets/api.js"></script>
 <script src="/assets/layout.js"></script>
 <script>
+  const DIAS = ['domingo','segunda-feira','terça-feira','quarta-feira','quinta-feira','sexta-feira','sábado'];
+  const MESES = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+
+  function saudacaoPorHorario() {
+    const h = new Date().getHours();
+    if (h < 12) return 'Bom dia';
+    if (h < 18) return 'Boa tarde';
+    return 'Boa noite';
+  }
+
+  function atualizarRelogio() {
+    const agora = new Date();
+    const hora = String(agora.getHours()).padStart(2, '0');
+    const min = String(agora.getMinutes()).padStart(2, '0');
+    const horaEl = document.getElementById('relogio-hora');
+    const diaEl = document.getElementById('relogio-data');
+    if (horaEl) horaEl.textContent = `${hora}:${min}`;
+    if (diaEl) diaEl.textContent = `· ${DIAS[agora.getDay()]}, ${agora.getDate()} de ${MESES[agora.getMonth()]}`;
+  }
+
   montarLayout('/index.html').then((me) => {
     if (!me) return;
+
     document.getElementById('boas-vindas').innerHTML = `
-      <h1 class="text-2xl font-display font-bold">Bem-vindo(a), ${me.nick}</h1>
-      <p class="text-muted mt-1">
-        ${me.patente_nome ? `${me.patente_nome} · ` : ''}${me.corpo === 'militar' ? 'Corpo Militar' : me.corpo === 'executivo' ? 'Corpo Executivo' : 'Conta institucional'}
-      </p>
+      <div class="bg-[#191b1f] text-[#e2e6e9] rounded-2xl p-6 relative overflow-hidden">
+        <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <h1 class="font-display text-2xl md:text-3xl font-black tracking-tight leading-tight flex items-center gap-2">
+            <span>${saudacaoPorHorario()}, <span class="text-[#eaa506]">${me.nick}</span>!</span>
+          </h1>
+        </div>
+
+        <div class="relative flex flex-wrap items-center justify-between gap-4 border-b border-[#3b3f45]/40 pb-4 mt-4">
+          <div class="flex flex-wrap items-center gap-2">
+            <a href="/perfil/${me.nick}" class="rounded-xl bg-[#2a2e32]/45 hover:bg-[#2a2e32]/80 hover:text-[#eaa506] transition-all px-4 py-2 text-sm font-bold text-[#e2e6e9]/90">Meu Perfil</a>
+            <a href="/requerimentos/instrucao-inicial.html" class="rounded-xl bg-[#2a2e32]/45 hover:bg-[#2a2e32]/80 hover:text-[#eaa506] transition-all px-4 py-2 text-sm font-bold text-[#e2e6e9]/90">Requerimentos</a>
+            <a href="/membros.html" class="rounded-xl bg-[#2a2e32]/45 hover:bg-[#2a2e32]/80 hover:text-[#eaa506] transition-all px-4 py-2 text-sm font-bold text-[#e2e6e9]/90">Membros</a>
+            <a href="/feed.html" class="rounded-xl bg-[#2a2e32]/45 hover:bg-[#2a2e32]/80 hover:text-[#eaa506] transition-all px-4 py-2 text-sm font-bold text-[#e2e6e9]/90">Feed</a>
+          </div>
+
+          <div class="flex items-center gap-2 pr-20 md:pr-24 text-[#7b848e]">
+            <div id="relogio" class="flex items-baseline gap-1 text-[#e2e6e9]">
+              <span id="relogio-hora" class="font-display text-sm font-black tabular-nums leading-none"></span>
+              <span id="relogio-data" class="hidden md:inline text-[0.74rem] font-bold text-[#7b848e]/70"></span>
+            </div>
+          </div>
+
+          <div class="absolute -right-4 bottom-0 h-[150px] w-[110px] overflow-hidden pointer-events-none hidden sm:block">
+            <img class="absolute bottom-0 right-0 h-[140px] w-auto object-contain select-none"
+              src="https://imaging.habblet.city/avatarimage?user=${encodeURIComponent(me.nick)}&action=sit,crr=256,wav&direction=4&head_direction=3&img_format=png&gesture=sml&headonly=0&size=l">
+          </div>
+        </div>
+      </div>
     `;
+
+    atualizarRelogio();
+    setInterval(atualizarRelogio, 1000 * 30);
   });
 </script>
 </body>
