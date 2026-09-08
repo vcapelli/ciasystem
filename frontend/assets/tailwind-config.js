@@ -3,13 +3,14 @@
 tailwind.config = {
   theme: {
     extend: {
-      fontFamily: { sans: ['Plus Jakarta Sans', 'sans-serif'] },
+      fontFamily: { sans: ['industry', 'Oswald', 'sans-serif'] },
       colors: {
-        base: '#121218',
-        card: '#1b1b24',
-        border: '#2a2a36',
-        muted: '#8f8fa3',
-        amber: { DEFAULT: '#f2a93b', dark: '#d9932a' },
+        base: '#eef0f3',    // fundo geral das páginas internas
+        card: '#ffffff',    // cards e superfícies
+        border: '#e2e4e9',
+        muted: '#6b7280',
+        dark: '#212529',    // barra/cabeçalho escuro (navbar, topo dos cards)
+        accent: { DEFAULT: '#046b2f', dark: '#035423' }, // verde do botão principal
       },
       borderRadius: { '2xl': '1.25rem' },
     },

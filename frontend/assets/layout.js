@@ -45,25 +45,25 @@ function iniciais(nick) {
 
 function renderNavbar(me) {
   return `
-    <nav class="sticky top-0 z-20 bg-card/90 backdrop-blur border-b border-border px-6 py-3 flex items-center justify-between">
+    <nav class="sticky top-0 z-20 bg-dark text-white px-6 py-3 flex items-center justify-between shadow-md">
       <a href="/index.html" class="flex items-center gap-3">
-        <div class="h-8 w-8 rounded-lg bg-amber/20 flex items-center justify-center text-amber font-bold text-sm">CIA</div>
-        <span class="font-semibold">CIASystem</span>
+        <div class="h-8 w-8 rounded-lg bg-accent/25 flex items-center justify-center text-accent font-black text-sm">CIA</div>
+        <span class="font-bold uppercase tracking-wide text-sm">CIASystem</span>
       </a>
       <div class="flex items-center gap-4">
-        <a href="/perfil/${me.nick}" class="flex items-center gap-2 text-sm hover:text-amber transition-colors">
-          <span class="h-7 w-7 rounded-full bg-border flex items-center justify-center text-xs font-semibold">${iniciais(me.nick)}</span>
-          <span class="text-muted">${me.nick}${me.patente_nome ? ` · ${me.patente_nome}` : ''}</span>
+        <a href="/perfil/${me.nick}" class="flex items-center gap-2 text-sm hover:text-accent transition-colors">
+          <span class="h-7 w-7 rounded-full bg-white/10 flex items-center justify-center text-xs font-semibold">${iniciais(me.nick)}</span>
+          <span class="text-white/70">${me.nick}${me.patente_nome ? ` · ${me.patente_nome}` : ''}</span>
         </a>
-        ${me.administrador_sistema ? '<a href="/admin.html" class="text-sm text-muted hover:text-white transition-colors">Admin</a>' : ''}
-        <button id="btn-logout" class="text-sm text-muted hover:text-white transition-colors">Sair</button>
+        ${me.administrador_sistema ? '<a href="/admin.html" class="text-sm text-white/70 hover:text-white transition-colors">Admin</a>' : ''}
+        <button id="btn-logout" class="text-sm text-white/70 hover:text-white transition-colors">Sair</button>
       </div>
     </nav>
   `;
 }
 
 function linkAtivo(url, paginaAtiva) {
-  return url === paginaAtiva ? 'bg-amber/15 text-amber' : 'text-muted hover:bg-white/5 hover:text-white';
+  return url === paginaAtiva ? 'bg-accent/10 text-accent font-semibold' : 'text-muted hover:bg-black/5 hover:text-dark';
 }
 
 function renderItemMenu(item, paginaAtiva) {
@@ -71,7 +71,7 @@ function renderItemMenu(item, paginaAtiva) {
     const abrir = item.filhos.some((f) => f.url === paginaAtiva);
     return `
       <details class="group" ${abrir ? 'open' : ''}>
-        <summary class="flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer text-sm text-muted hover:bg-white/5 hover:text-white transition-colors">
+        <summary class="flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer text-sm text-muted hover:bg-black/5 hover:text-dark transition-colors">
           <span>${item.icone || ''}</span><span>${item.titulo}</span>
         </summary>
         <div class="ml-6 mt-1 space-y-0.5">
@@ -100,7 +100,7 @@ function renderSidebar(itensExtras, paginaAtiva) {
         <p class="px-3 text-xs uppercase tracking-wide text-muted mb-2">Mais</p>
         <div class="space-y-1">
           ${extras.map((item) => `
-            <a href="${item.url || '#'}" class="flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-muted hover:bg-white/5 hover:text-white transition-colors">
+            <a href="${item.url || '#'}" class="flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-muted hover:bg-black/5 hover:text-dark transition-colors">
               <span>${item.icone || '🔗'}</span><span>${item.titulo}</span>
             </a>
           `).join('')}

@@ -5,11 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CIASystem — Feed</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/assets/tailwind-config.js"></script>
+<link rel="stylesheet" href="/assets/theme.css">
 </head>
-<body class="bg-base text-white font-sans min-h-screen">
+<body class="bg-base text-dark font-sans min-h-screen">
 
   <div class="flex">
     <aside id="layout-sidebar" class="w-60 shrink-0 border-r border-border min-h-[calc(100vh-57px)] p-4 sticky top-[57px]"></aside>
@@ -19,9 +20,9 @@
 
       <form id="form-tweet" class="bg-card border border-border rounded-2xl p-4 mb-6">
         <textarea id="tweet-conteudo" rows="3" maxlength="500" placeholder="O que está acontecendo na corporação?"
-          class="w-full bg-transparent resize-none text-white placeholder:text-muted/60 focus:outline-none text-sm"></textarea>
+          class="w-full bg-transparent resize-none text-dark placeholder:text-muted/60 focus:outline-none text-sm"></textarea>
         <div class="flex justify-end mt-2">
-          <button type="submit" class="bg-amber hover:bg-amber-dark text-base font-semibold rounded-xl px-5 py-2 text-sm transition-colors">
+          <button type="submit" class="bg-accent hover:bg-accent-dark text-base font-semibold rounded-xl px-5 py-2 text-sm transition-colors">
             Publicar
           </button>
         </div>
@@ -58,7 +59,7 @@
         <div class="flex items-center gap-6 mt-3 text-xs text-muted">
           <span>💬 ${t.respostas}</span>
           <span>🔁 ${t.retweets}</span>
-          <button class="btn-curtir flex items-center gap-1 ${t.curtido_por_mim ? 'text-amber' : 'hover:text-white'} transition-colors" data-id="${t.id}">
+          <button class="btn-curtir flex items-center gap-1 ${t.curtido_por_mim ? 'text-accent' : 'hover:text-dark'} transition-colors" data-id="${t.id}">
             ${t.curtido_por_mim ? '★' : '☆'} <span class="contador-curtidas">${t.curtidas}</span>
           </button>
         </div>
@@ -85,7 +86,7 @@
         const { curtido } = await resp.json();
         const contador = btn.querySelector('.contador-curtidas');
         contador.textContent = Number(contador.textContent) + (curtido ? 1 : -1);
-        btn.classList.toggle('text-amber', curtido);
+        btn.classList.toggle('text-accent', curtido);
         btn.firstChild.textContent = curtido ? '★ ' : '☆ ';
       });
     });

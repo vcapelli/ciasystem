@@ -4,80 +4,70 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CIASystem — Entrar</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://kit-pro.fontawesome.com/releases/v6.2.1/css/pro.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/assets/tailwind-config.js"></script>
+<link rel="stylesheet" href="/assets/theme.css">
 </head>
-<body class="bg-base text-white font-sans min-h-screen flex items-center justify-center px-4">
+<body class="font-sans cia-bg min-h-screen flex items-center justify-center px-4 py-10 relative">
 
-  <div class="w-full max-w-md">
-    <div class="mb-8 text-center">
-      <p class="text-sm tracking-wide text-muted">Central de Inteligência e Ação</p>
-      <h1 class="text-2xl font-bold mt-1">CIASystem</h1>
-    </div>
+  <div class="w-full max-w-md relative z-10">
+    <div class="bg-card rounded-2xl overflow-hidden shadow-2xl">
 
-    <div class="bg-card border border-border rounded-2xl p-8 relative overflow-hidden">
-      <div class="absolute top-0 left-8 h-1 w-16 bg-amber rounded-b"></div>
-
-      <div class="flex gap-6 mb-6 border-b border-border">
-        <button id="tab-senha" class="pb-3 text-sm font-semibold border-b-2 border-amber text-white">Senha</button>
-        <button id="tab-codigo" class="pb-3 text-sm font-semibold border-b-2 border-transparent text-muted hover:text-white transition-colors">Código na missão</button>
+      <div class="bg-dark text-white px-8 py-8 text-center">
+        <div class="h-16 w-16 rounded-xl bg-accent/20 flex items-center justify-center text-accent font-black text-xl mx-auto mb-3">CIA</div>
+        <h1 class="text-2xl font-extrabold uppercase tracking-wide">Fazer Login</h1>
+        <p class="text-sm text-white/60 mt-1 normal-case">Use sua conta da Central de Inteligência e Ação</p>
       </div>
 
-      <form id="form-senha" class="space-y-4">
-        <div>
-          <label class="block text-sm text-muted mb-1.5" for="senha-nick">Nickname</label>
-          <input id="senha-nick" type="text" required autocomplete="username"
-            class="w-full bg-base border border-border rounded-xl px-4 py-2.5 text-white placeholder:text-muted/60 focus:outline-none focus:ring-2 focus:ring-amber"
-            placeholder="Seu nick do Habblet">
+      <div class="px-8 pt-6">
+        <div class="flex gap-6 mb-5 border-b border-border uppercase text-sm font-bold">
+          <button id="tab-senha" class="pb-3 border-b-2 border-accent text-dark">Senha</button>
+          <button id="tab-codigo" class="pb-3 border-b-2 border-transparent text-muted hover:text-dark transition-colors">Código na missão</button>
         </div>
-        <div>
-          <label class="block text-sm text-muted mb-1.5" for="senha-senha">Senha</label>
-          <input id="senha-senha" type="password" required autocomplete="current-password"
-            class="w-full bg-base border border-border rounded-xl px-4 py-2.5 text-white placeholder:text-muted/60 focus:outline-none focus:ring-2 focus:ring-amber"
-            placeholder="••••••••">
-        </div>
-        <button type="submit"
-          class="w-full bg-amber hover:bg-amber-dark text-base font-semibold rounded-xl py-2.5 transition-colors">
-          Entrar
-        </button>
-      </form>
+      </div>
 
-      <form id="form-codigo" class="space-y-4 hidden">
-        <div>
-          <label class="block text-sm text-muted mb-1.5" for="codigo-nick">Nickname</label>
-          <input id="codigo-nick" type="text" required autocomplete="username"
-            class="w-full bg-base border border-border rounded-xl px-4 py-2.5 text-white placeholder:text-muted/60 focus:outline-none focus:ring-2 focus:ring-amber"
-            placeholder="Seu nick do Habblet">
-        </div>
-
-        <div id="codigo-instrucao" class="hidden bg-base border border-border rounded-xl p-4 text-sm text-muted">
-          Coloque <span id="codigo-valor" class="text-amber font-semibold"></span> na sua missão do Habblet, salve e confirme abaixo.
-        </div>
-
-        <button type="button" id="btn-solicitar-codigo"
-          class="w-full bg-transparent border border-border hover:border-amber text-white font-semibold rounded-xl py-2.5 transition-colors">
-          Gerar código
-        </button>
-
-        <div id="codigo-confirmar-wrap" class="hidden space-y-4">
-          <div>
-            <label class="block text-sm text-muted mb-1.5" for="codigo-valor-input">Código gerado</label>
-            <input id="codigo-valor-input" type="text" disabled
-              class="w-full bg-base border border-border rounded-xl px-4 py-2.5 text-muted">
-          </div>
+      <div class="px-8 pb-8">
+        <form id="form-senha" class="space-y-3">
+          <input id="senha-nick" type="text" required autocomplete="username" placeholder="Digite o seu nick"
+            class="w-full border border-border rounded px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <input id="senha-senha" type="password" required autocomplete="current-password" placeholder="Digite a sua senha"
+            class="w-full border border-border rounded px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
           <button type="submit"
-            class="w-full bg-amber hover:bg-amber-dark text-base font-semibold rounded-xl py-2.5 transition-colors">
-            Já coloquei na missão — Entrar
+            class="w-full bg-accent hover:bg-accent-dark text-white font-bold uppercase text-sm rounded px-6 py-3.5 transition-colors">
+            Acessar conta
           </button>
-        </div>
-      </form>
+        </form>
 
-      <p id="erro" class="hidden mt-4 text-sm text-red-400 bg-red-400/10 border border-red-400/30 rounded-xl px-4 py-2.5"></p>
+        <form id="form-codigo" class="space-y-3 hidden">
+          <input id="codigo-nick" type="text" required autocomplete="username" placeholder="Digite o seu nick"
+            class="w-full border border-border rounded px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+
+          <div id="codigo-instrucao" class="hidden bg-base border border-border rounded px-4 py-3 text-xs normal-case text-muted">
+            Coloque <span id="codigo-valor" class="text-accent font-bold"></span> na sua missão do Habblet, salve e confirme abaixo.
+          </div>
+
+          <button type="button" id="btn-solicitar-codigo"
+            class="w-full border border-dark text-dark font-bold uppercase text-sm rounded px-6 py-3 hover:bg-dark hover:text-white transition-colors">
+            Gerar código
+          </button>
+
+          <div id="codigo-confirmar-wrap" class="hidden space-y-3">
+            <input id="codigo-valor-input" type="text" disabled
+              class="w-full border border-border rounded px-4 py-3 text-sm text-muted bg-base">
+            <button type="submit"
+              class="w-full bg-accent hover:bg-accent-dark text-white font-bold uppercase text-sm rounded px-6 py-3.5 transition-colors">
+              Já coloquei na missão — Entrar
+            </button>
+          </div>
+        </form>
+
+        <p id="erro" class="hidden mt-4 text-xs normal-case text-red-700 bg-red-50 border border-red-200 rounded px-4 py-2.5"></p>
+      </div>
     </div>
 
-    <p class="text-center text-xs text-muted mt-6">Ainda não tem senha? Use "Código na missão" e defina uma depois no seu perfil.</p>
+    <p class="text-center text-xs text-white/70 mt-6 normal-case">Ainda não tem senha? Use "Código na missão" e defina uma depois no seu perfil.</p>
   </div>
 
 <script src="/assets/api.js"></script>
@@ -101,12 +91,12 @@
     const ehSenha = aba === 'senha';
     formSenha.classList.toggle('hidden', !ehSenha);
     formCodigo.classList.toggle('hidden', ehSenha);
-    tabSenha.classList.toggle('border-amber', ehSenha);
-    tabSenha.classList.toggle('text-white', ehSenha);
+    tabSenha.classList.toggle('border-accent', ehSenha);
+    tabSenha.classList.toggle('text-dark', ehSenha);
     tabSenha.classList.toggle('border-transparent', !ehSenha);
     tabSenha.classList.toggle('text-muted', !ehSenha);
-    tabCodigo.classList.toggle('border-amber', !ehSenha);
-    tabCodigo.classList.toggle('text-white', !ehSenha);
+    tabCodigo.classList.toggle('border-accent', !ehSenha);
+    tabCodigo.classList.toggle('text-dark', !ehSenha);
     tabCodigo.classList.toggle('border-transparent', ehSenha);
     tabCodigo.classList.toggle('text-muted', ehSenha);
   }

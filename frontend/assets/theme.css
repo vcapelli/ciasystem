@@ -1,0 +1,64 @@
+/* Identidade visual do CIASystem, baseada no login histórico do fórum. */
+
+@font-face {
+  font-family: industry;
+  src: url(https://use.typekit.net/af/c6e293/00000000000000003b9adf5b/27/l?primer=7cdcb44be4a7db8877ffa5c0007b8dd865b3bbc383831fe2ea177f62257a9191&fvd=n8&v=3) format("woff2"),
+       url(https://use.typekit.net/af/c6e293/00000000000000003b9adf5b/27/d?primer=7cdcb44be4a7db8877ffa5c0007b8dd865b3bbc383831fe2ea177f62257a9191&fvd=n8&v=3) format("woff");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 800;
+}
+@font-face {
+  font-family: industry;
+  src: url(https://use.typekit.net/af/d6b712/00000000000000003b9adf58/27/l?primer=7cdcb44be4a7db8877ffa5c0007b8dd865b3bbc383831fe2ea177f62257a9191&fvd=n7&v=3) format("woff2"),
+       url(https://use.typekit.net/af/d6b712/00000000000000003b9adf58/27/d?primer=7cdcb44be4a7db8877ffa5c0007b8dd865b3bbc383831fe2ea177f62257a9191&fvd=n7&v=3) format("woff");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 700;
+}
+@font-face {
+  font-family: industry;
+  src: url(https://use.typekit.net/af/6dc482/00000000000000003b9adf53/27/l?primer=7cdcb44be4a7db8877ffa5c0007b8dd865b3bbc383831fe2ea177f62257a9191&fvd=n4&v=3) format("woff2"),
+       url(https://use.typekit.net/af/6dc482/00000000000000003b9adf53/27/d?primer=7cdcb44be4a7db8877ffa5c0007b8dd865b3bbc383831fe2ea177f62257a9191&fvd=n4&v=3) format("woff");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+}
+@font-face {
+  font-family: industry;
+  src: url(https://use.typekit.net/af/685a23/00000000000000003b9adf56/27/l?primer=7cdcb44be4a7db8877ffa5c0007b8dd865b3bbc383831fe2ea177f62257a9191&fvd=n6&v=3) format("woff2"),
+       url(https://use.typekit.net/af/685a23/00000000000000003b9adf56/27/d?primer=7cdcb44be4a7db8877ffa5c0007b8dd865b3bbc383831fe2ea177f62257a9191&fvd=n6&v=3) format("woff");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 600;
+}
+
+/* Se o Typekit estiver travado pro domínio do fórum e não carregar,
+   cai pro Oswald (condensada/pesada, mesma vibe industrial) em vez de
+   ficar sem estilo nenhum. */
+.font-industry {
+  font-family: 'industry', 'Oswald', sans-serif;
+}
+
+/* Fundo animado full-bleed, só usado na tela de login. */
+.cia-bg {
+  background-image: url(https://2img.net/i.imgur.com/Hd7TdDr.png);
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center;
+  position: relative;
+}
+.cia-bg::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  animation: cia-bg-cycle 60s infinite;
+  pointer-events: none;
+}
+@keyframes cia-bg-cycle {
+  0%   { background-color: #0f1923e6; }
+  20%  { background-color: #ffd60059; }
+  40%  { background-color: #e95f325e; }
+  80%  { background-color: #0f192387; }
+  100% { background-color: #0f1923e6; }
+}
