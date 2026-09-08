@@ -1,7 +1,9 @@
 name = "ciasystem-frontend"
+main = "worker.js"
 compatibility_date = "2026-01-01"
 
-# Serve os arquivos estáticos desta mesma pasta (frontend/) — sem
-# nenhum código de Worker rodando, é puramente servir HTML/CSS/JS.
+# `binding = "ASSETS"` é o que o worker.js usa (env.ASSETS.fetch) pra
+# buscar o conteúdo dos arquivos estáticos desta mesma pasta.
 [assets]
 directory = "./"
+binding = "ASSETS"
