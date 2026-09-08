@@ -3,7 +3,10 @@
 tailwind.config = {
   theme: {
     extend: {
-      fontFamily: { sans: ['industry', 'Oswald', 'sans-serif'] },
+      fontFamily: {
+        sans: ['Poppins', 'sans-serif'],          // texto corrido, menu, botões
+        display: ['industry', 'Oswald', 'sans-serif'], // títulos grandes e a marca
+      },
       colors: {
         base: '#eef0f3',    // fundo geral das páginas internas
         card: '#ffffff',    // cards e superfícies

@@ -1,5 +1,7 @@
 /* Identidade visual do CIASystem, baseada no login histórico do fórum. */
 
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap');
+
 @font-face {
   font-family: industry;
   src: url(https://use.typekit.net/af/c6e293/00000000000000003b9adf5b/27/l?primer=7cdcb44be4a7db8877ffa5c0007b8dd865b3bbc383831fe2ea177f62257a9191&fvd=n8&v=3) format("woff2"),
@@ -33,9 +35,9 @@
   font-weight: 600;
 }
 
-/* Se o Typekit estiver travado pro domínio do fórum e não carregar,
-   cai pro Oswald (condensada/pesada, mesma vibe industrial) em vez de
-   ficar sem estilo nenhum. */
+/* .font-sans (Poppins) é o padrão do corpo do texto — menus, botões,
+   parágrafos. .font-display (industry, com fallback Oswald) é só pra
+   títulos grandes e a marca "CIASystem" — nunca pro texto corrido. */
 .font-industry {
   font-family: 'industry', 'Oswald', sans-serif;
 }

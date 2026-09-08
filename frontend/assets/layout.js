@@ -48,7 +48,7 @@ function renderNavbar(me) {
     <nav class="sticky top-0 z-20 bg-dark text-white px-6 py-3 flex items-center justify-between shadow-md">
       <a href="/index.html" class="flex items-center gap-3">
         <div class="h-8 w-8 rounded-lg bg-accent/25 flex items-center justify-center text-accent font-black text-sm">CIA</div>
-        <span class="font-bold uppercase tracking-wide text-sm">CIASystem</span>
+        <span class="font-display font-bold uppercase tracking-wide text-sm">CIASystem</span>
       </a>
       <div class="flex items-center gap-4">
         <a href="/perfil/${me.nick}" class="flex items-center gap-2 text-sm hover:text-accent transition-colors">
