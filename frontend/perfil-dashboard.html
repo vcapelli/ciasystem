@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIASystem — Perfil</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="assets/tailwind-config.js"></script>
+</head>
+<body class="bg-base text-white font-sans min-h-screen">
+
+  <div class="flex">
+    <aside id="layout-sidebar" class="w-60 shrink-0 border-r border-border min-h-[calc(100vh-57px)] p-4 sticky top-[57px]"></aside>
+
+    <main class="flex-1 max-w-2xl mx-auto px-4 py-8">
+      <div id="conteudo">
+        <p class="text-sm text-muted">Carregando…</p>
+      </div>
+    </main>
+  </div>
+
+<script src="assets/api.js"></script>
+<script src="assets/layout.js"></script>
+<script>
+  const nickAlvo = decodeURIComponent(location.pathname.split('/').filter(Boolean).pop());
+
+  const BADGE_STATUS = {
+    ativo: 'bg-green-500/15 text-green-400',
+    licenca: 'bg-amber/15 text-amber',
+    reformado: 'bg-white/10 text-muted',
+    desligado_honroso: 'bg-white/10 text-muted',
+    desligado_desonroso: 'bg-red-500/15 text-red-400',
+    exonerado: 'bg-red-500/15 text-red-400',
+  };
+
+  function renderDistincoes(titulo, lista) {
+    if (!lista.length) return '';
+    return `
+      <div class="mt-4">
+        <p class="text-xs uppercase tracking-wide text-muted mb-2">${titulo}</p>
+        <div class="flex flex-wrap gap-2">
+          ${lista.map((d) => `
+            <span title="${d.descricao || ''}" class="flex items-center gap-1.5 bg-base border border-border rounded-full pl-1 pr-3 py-1 text-xs">
+              <img src="${d.imagem_url}" class="h-5 w-5 rounded-full object-cover" onerror="this.style.display='none'">
+              ${d.titulo}
+            </span>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  async function carregar(me) {
+    const resposta = await apiFetch(`/usuarios/nick/${encodeURIComponent(nickAlvo)}`);
+    const container = document.getElementById('conteudo');
+
+    if (!resposta.ok) {
+      container.innerHTML = '<p class="text-sm text-red-400">Usuário não encontrado.</p>';
+      return;
+    }
+
+    const perfil = await resposta.json();
+    const ehMeuPerfil = me.nick === perfil.nick;
+
+    const [emblemasResp, honrariasResp, conquistasResp, tweetsResp] = await Promise.all([
+      apiFetch(`/emblemas/usuario/${perfil.id}`),
+      apiFetch(`/honrarias/usuario/${perfil.id}`),
+      apiFetch(`/conquistas/usuario/${perfil.id}`),
+      apiFetch(`/tweets?autor_id=${perfil.id}`),
+    ]);
+    const emblemas = emblemasResp.ok ? await emblemasResp.json() : [];
+    const honrarias = honrariasResp.ok ? await honrariasResp.json() : [];
+    const conquistas = conquistasResp.ok ? await conquistasResp.json() : [];
+    const tweets = tweetsResp.ok ? await tweetsResp.json() : [];
+
+    container.innerHTML = `
+      <div class="bg-card border border-border rounded-2xl p-6 relative overflow-hidden">
+        <div class="absolute top-0 left-8 h-1 w-16 bg-amber rounded-b"></div>
+        <div class="flex items-start justify-between">
+          <div class="flex items-center gap-3">
+            <span class="h-14 w-14 rounded-full bg-border flex items-center justify-center text-lg font-bold">
+              ${perfil.nick.slice(0,2).toUpperCase()}
+            </span>
+            <div>
+              <h1 class="text-xl font-bold">${perfil.nick}${perfil.tag ? ` <span class="text-muted font-normal">[${perfil.tag}]</span>` : ''}</h1>
+              <p class="text-sm text-muted">${perfil.patente_nome || 'Conta institucional'}${perfil.corpo ? ` · ${perfil.corpo === 'militar' ? 'Corpo Militar' : 'Corpo Executivo'}` : ''}</p>
+            </div>
+          </div>
+          <span class="text-xs font-semibold px-3 py-1 rounded-full capitalize ${BADGE_STATUS[perfil.status] || 'bg-white/10 text-white'}">
+            ${perfil.status.replace(/_/g, ' ')}
+          </span>
+        </div>
+
+        <div id="bio-area" class="mt-4"></div>
+
+        ${renderDistincoes('Emblemas', emblemas)}
+        ${renderDistincoes('Honrarias', honrarias)}
+        ${renderDistincoes('Conquistas', conquistas)}
+      </div>
+
+      <h2 class="text-sm font-semibold text-muted mt-6 mb-2">Publicações</h2>
+      <div class="space-y-3">
+        ${tweets.length ? tweets.map((t) => `
+          <div class="bg-card border border-border rounded-2xl p-4">
+            <p class="text-sm whitespace-pre-wrap">${t.conteudo || ''}</p>
+            <p class="text-xs text-muted mt-2">${new Date(t.criado_em).toLocaleString('pt-BR')}</p>
+          </div>
+        `).join('') : '<p class="text-sm text-muted">Nenhuma publicação ainda.</p>'}
+      </div>
+    `;
+
+    const bioArea = document.getElementById('bio-area');
+    if (ehMeuPerfil) {
+      bioArea.innerHTML = `
+        <textarea id="bio-textarea" rows="3" maxlength="500" placeholder="Escreva algo sobre você…"
+          class="w-full bg-base border border-border rounded-xl px-3 py-2 text-sm text-white placeholder:text-muted/60 focus:outline-none focus:ring-2 focus:ring-amber">${perfil.biografia || ''}</textarea>
+        <div class="flex justify-end mt-1.5">
+          <button id="btn-salvar-bio" class="text-xs bg-amber hover:bg-amber-dark text-base font-semibold rounded-lg px-3 py-1.5 transition-colors">Salvar</button>
+        </div>
+      `;
+      document.getElementById('btn-salvar-bio').addEventListener('click', async () => {
+        const biografia = document.getElementById('bio-textarea').value.trim();
+        await apiFetch('/usuarios/me', { method: 'PATCH', body: JSON.stringify({ biografia }) });
+      });
+    } else {
+      bioArea.innerHTML = perfil.biografia
+        ? `<p class="text-sm text-muted whitespace-pre-wrap">${perfil.biografia}</p>`
+        : '';
+    }
+  }
+
+  montarLayout('/perfil').then((me) => { if (me) carregar(me); });
+</script>
+</body>
+</html>

@@ -22,6 +22,18 @@ usuarios.get('/me', async (c) => {
   return c.json(usuario)
 })
 
+// PATCH /usuarios/me — só a biografia é editável por enquanto.
+usuarios.patch('/me', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  const { biografia } = await c.req.json<{ biografia?: string }>()
+
+  await c.env.DB.prepare(
+    `UPDATE usuarios SET biografia = ?, atualizado_em = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
+  ).bind(biografia ?? null, usuarioId).run()
+
+  return c.json({ ok: true })
+})
+
 // GET /usuarios?busca=texto — busca simples por nick (autocomplete de
 // alvos em formulários, listagem de membros etc.)
 usuarios.get('/', async (c) => {

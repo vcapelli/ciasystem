@@ -51,7 +51,7 @@ function renderNavbar(me) {
         <span class="font-semibold">CIASystem</span>
       </a>
       <div class="flex items-center gap-4">
-        <a href="/perfil/${me.nick}.html" class="flex items-center gap-2 text-sm hover:text-amber transition-colors">
+        <a href="/perfil/${me.nick}" class="flex items-center gap-2 text-sm hover:text-amber transition-colors">
           <span class="h-7 w-7 rounded-full bg-border flex items-center justify-center text-xs font-semibold">${iniciais(me.nick)}</span>
           <span class="text-muted">${me.nick}${me.patente_nome ? ` · ${me.patente_nome}` : ''}</span>
         </a>

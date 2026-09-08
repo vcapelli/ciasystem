@@ -1,0 +1,5 @@
+# /perfil/{nick} → sempre serve o mesmo arquivo (perfil-dashboard.html),
+# que lê o nick direto da URL via JavaScript. O "200" no fim é o que
+# faz isso ser uma reescrita (a URL na barra do navegador continua
+# bonita, /perfil/vcapelli), em vez de um redirecionamento de verdade.
+/perfil/*  /perfil-dashboard.html  200

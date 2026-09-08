@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIASystem — Membros</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="assets/tailwind-config.js"></script>
+</head>
+<body class="bg-base text-white font-sans min-h-screen">
+
+  <div class="flex">
+    <aside id="layout-sidebar" class="w-60 shrink-0 border-r border-border min-h-[calc(100vh-57px)] p-4 sticky top-[57px]"></aside>
+
+    <main class="flex-1 max-w-2xl mx-auto px-4 py-8">
+      <h1 class="text-xl font-bold mb-4">Membros</h1>
+
+      <input id="busca" type="text" placeholder="Buscar por nick…"
+        class="w-full bg-card border border-border rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-muted/60 focus:outline-none focus:ring-2 focus:ring-amber mb-4">
+
+      <div id="lista" class="bg-card border border-border rounded-2xl divide-y divide-border overflow-hidden">
+        <p class="text-sm text-muted p-4">Carregando…</p>
+      </div>
+    </main>
+  </div>
+
+<script src="assets/api.js"></script>
+<script src="assets/layout.js"></script>
+<script>
+  const BADGE_STATUS = {
+    ativo: 'bg-green-500/15 text-green-400',
+    licenca: 'bg-amber/15 text-amber',
+    reformado: 'bg-white/10 text-muted',
+    desligado_honroso: 'bg-white/10 text-muted',
+    desligado_desonroso: 'bg-red-500/15 text-red-400',
+    exonerado: 'bg-red-500/15 text-red-400',
+  };
+
+  function renderLinha(u) {
+    return `
+      <a href="/perfil/${u.nick}" class="flex items-center justify-between px-4 py-3 hover:bg-white/5 transition-colors">
+        <div class="flex items-center gap-3">
+          <span class="h-9 w-9 rounded-full bg-border flex items-center justify-center text-xs font-semibold">${u.nick.slice(0,2).toUpperCase()}</span>
+          <div>
+            <p class="text-sm font-medium">${u.nick}${u.tag ? ` <span class="text-muted font-normal">[${u.tag}]</span>` : ''}</p>
+            <p class="text-xs text-muted">${u.patente_nome || 'Conta institucional'}</p>
+          </div>
+        </div>
+        <span class="text-xs font-semibold px-2.5 py-1 rounded-full capitalize ${BADGE_STATUS[u.status] || 'bg-white/10 text-white'}">
+          ${u.status.replace(/_/g, ' ')}
+        </span>
+      </a>
+    `;
+  }
+
+  async function carregar(busca) {
+    const lista = document.getElementById('lista');
+    const resposta = await apiFetch(`/usuarios${busca ? `?busca=${encodeURIComponent(busca)}` : ''}`);
+    if (!resposta.ok) {
+      lista.innerHTML = '<p class="text-sm text-red-400 p-4">Não foi possível carregar os membros.</p>';
+      return;
+    }
+    const membros = await resposta.json();
+    lista.innerHTML = membros.length
+      ? membros.map(renderLinha).join('')
+      : '<p class="text-sm text-muted p-4">Nenhum membro encontrado.</p>';
+  }
+
+  let debounce;
+  document.getElementById('busca').addEventListener('input', (e) => {
+    clearTimeout(debounce);
+    debounce = setTimeout(() => carregar(e.target.value.trim()), 300);
+  });
+
+  montarLayout('/membros.html').then((me) => { if (me) carregar(''); });
+</script>
+</body>
+</html>
