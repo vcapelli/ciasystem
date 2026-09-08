@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
-<script src="assets/tailwind-config.js"></script>
+<script src="/assets/tailwind-config.js"></script>
 </head>
 <body class="bg-base text-white font-sans min-h-screen flex items-center justify-center px-4">
 
@@ -80,7 +80,7 @@
     <p class="text-center text-xs text-muted mt-6">Ainda não tem senha? Use "Código na missão" e defina uma depois no seu perfil.</p>
   </div>
 
-<script src="assets/api.js"></script>
+<script src="/assets/api.js"></script>
 <script>
   const tabSenha = document.getElementById('tab-senha');
   const tabCodigo = document.getElementById('tab-codigo');
@@ -130,7 +130,7 @@
     if (!resposta.ok) return mostrarErro(dados.erro || 'Não foi possível entrar.');
 
     Auth.salvarSessao(dados);
-    window.location.href = 'index.html';
+    window.location.href = '/index.html';
   });
 
   document.getElementById('btn-solicitar-codigo').addEventListener('click', async () => {
@@ -169,10 +169,10 @@
     if (!resposta.ok) return mostrarErro(dados.erro || 'Não foi possível entrar.');
 
     Auth.salvarSessao(dados);
-    window.location.href = 'index.html';
+    window.location.href = '/index.html';
   });
 
-  if (Auth.estaLogado()) window.location.href = 'index.html';
+  if (Auth.estaLogado()) window.location.href = '/index.html';
 </script>
 </body>
 </html>
