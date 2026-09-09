@@ -43,11 +43,13 @@ function iniciais(nick) {
   return (nick || '?').slice(0, 2).toUpperCase();
 }
 
-function renderNavbar(me) {
+function renderNavbar(me, logoUrl) {
   return `
     <nav class="sticky top-0 z-20 bg-dark text-white h-[72px] px-6 pr-28 flex items-center justify-between relative overflow-hidden shadow-md">
       <a href="/index.html" class="flex items-center gap-3 shrink-0 z-10">
-        <div class="h-8 w-8 rounded-lg bg-accent/25 flex items-center justify-center text-accent font-black text-sm">CIA</div>
+        <div class="h-8 w-8 rounded-lg bg-accent/25 flex items-center justify-center text-accent font-black text-sm overflow-hidden">
+          ${logoUrl ? `<img src="${logoUrl}" class="w-full h-full object-contain" alt="Logo">` : 'CIA'}
+        </div>
         <span class="font-display font-bold uppercase tracking-wide text-sm">CIASystem</span>
       </a>
       <a href="/perfil/${me.nick}" class="text-sm text-white/80 hover:text-accent transition-colors z-10">
@@ -123,7 +125,11 @@ async function montarLayout(paginaAtiva) {
     return null;
   }
 
-  const [meResp, menuResp] = await Promise.all([apiFetch('/usuarios/me'), apiFetch('/menu')]);
+  const [meResp, menuResp, config] = await Promise.all([
+    apiFetch('/usuarios/me'),
+    apiFetch('/menu'),
+    buscarConfiguracoes(),
+  ]);
 
   if (!meResp.ok) {
     Auth.logout();
@@ -133,7 +139,7 @@ async function montarLayout(paginaAtiva) {
   const me = await meResp.json();
   const itensExtras = menuResp.ok ? await menuResp.json() : [];
 
-  document.body.insertAdjacentHTML('afterbegin', renderNavbar(me));
+  document.body.insertAdjacentHTML('afterbegin', renderNavbar(me, config.logo_url));
 
   const sidebarHost = document.getElementById('layout-sidebar');
   if (sidebarHost) sidebarHost.innerHTML = renderSidebar(itensExtras, paginaAtiva);

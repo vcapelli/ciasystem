@@ -40,7 +40,7 @@
     `;
   }
 
-  async function carregar() {
+  async function carregar(me) {
     const container = document.getElementById('conteudo');
 
     const grupoResp = await apiFetch(`/grupos/${encodeURIComponent(slug)}`);
@@ -60,8 +60,10 @@
     const noticias = noticiasResp.ok ? (await noticiasResp.json()).filter((n) => n.status === 'publicada') : [];
 
     container.innerHTML = `
-      <div class="bg-card border border-border rounded-2xl p-5 flex items-center gap-3 mt-2 mb-6">
-        <span class="h-12 w-12 rounded-xl bg-base border border-border flex items-center justify-center text-sm font-bold">${grupo.codigo}</span>
+      <div class="bg-card border border-border rounded-2xl p-5 flex items-center gap-3 mt-2 mb-6" ${grupo.cor ? `style="border-left: 4px solid ${grupo.cor}"` : ''}>
+        <span class="h-12 w-12 rounded-xl bg-base border border-border flex items-center justify-center text-sm font-bold overflow-hidden">
+          ${grupo.imagem_url ? `<img src="${grupo.imagem_url}" class="w-full h-full object-cover" alt="">` : grupo.codigo}
+        </span>
         <div>
           <h1 class="text-xl font-display font-bold">${grupo.nome}</h1>
           <p class="text-xs text-muted">${TIPO_LABEL[grupo.tipo] || grupo.tipo}</p>
@@ -109,10 +111,36 @@
           </div>
         </div>
       </div>
+
+      ${me.administrador_sistema ? `
+        <div class="bg-card border border-border rounded-2xl p-5 mt-6">
+          <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Editar aparência</h2>
+          <form id="form-aparencia" class="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-3 items-center">
+            <input id="ga-imagem" placeholder="URL da imagem/logo" value="${grupo.imagem_url || ''}"
+              class="bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            <input id="ga-cor" type="color" value="${grupo.cor || '#046b2f'}" class="h-9 w-14 bg-base border border-border rounded-lg cursor-pointer">
+            <button type="submit" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Salvar</button>
+          </form>
+        </div>
+      ` : ''}
     `;
+
+    if (me.administrador_sistema) {
+      document.getElementById('form-aparencia').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        await apiFetch(`/grupos/${slug}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            imagem_url: document.getElementById('ga-imagem').value.trim() || undefined,
+            cor: document.getElementById('ga-cor').value,
+          }),
+        });
+        carregar(me);
+      });
+    }
   }
 
-  montarLayout('/grupos.html').then((me) => { if (me) carregar(); });
+  montarLayout('/grupos.html').then((me) => { if (me) carregar(me); });
 </script>
 </body>
 </html>

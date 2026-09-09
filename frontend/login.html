@@ -16,7 +16,7 @@
     <div class="bg-card rounded-2xl overflow-hidden shadow-2xl">
 
       <div class="bg-dark text-white px-8 py-8 text-center">
-        <div class="h-16 w-16 rounded-xl bg-accent/20 flex items-center justify-center text-accent font-display font-black text-xl mx-auto mb-3">CIA</div>
+        <div id="login-logo" class="h-16 w-16 rounded-xl bg-accent/20 flex items-center justify-center text-accent font-display font-black text-xl mx-auto mb-3 overflow-hidden">CIA</div>
         <h1 class="text-2xl font-display font-extrabold uppercase tracking-wide">Fazer Login</h1>
         <p class="text-sm text-white/60 mt-1 normal-case">Use sua conta da Central de Inteligência e Ação</p>
       </div>
@@ -72,6 +72,12 @@
 
 <script src="/assets/api.js"></script>
 <script>
+  buscarConfiguracoes().then((config) => {
+    if (config.logo_url) {
+      document.getElementById('login-logo').innerHTML = `<img src="${config.logo_url}" class="w-full h-full object-contain" alt="Logo">`;
+    }
+  });
+
   const tabSenha = document.getElementById('tab-senha');
   const tabCodigo = document.getElementById('tab-codigo');
   const formSenha = document.getElementById('form-senha');

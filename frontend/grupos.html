@@ -35,10 +35,13 @@
   };
 
   function renderGrupo(g) {
+    const corEstilo = g.cor ? `style="border-left: 4px solid ${g.cor}"` : '';
     return `
-      <a href="/grupos/${g.slug}" class="flex items-center justify-between bg-base border border-border rounded-xl px-4 py-3 hover:border-accent transition-colors">
+      <a href="/grupos/${g.slug}" ${corEstilo} class="flex items-center justify-between bg-base border border-border rounded-xl px-4 py-3 hover:border-accent transition-colors">
         <div class="flex items-center gap-3">
-          <span class="h-10 w-10 rounded-xl bg-card border border-border flex items-center justify-center text-xs font-bold">${g.codigo}</span>
+          <span class="h-10 w-10 rounded-xl bg-card border border-border flex items-center justify-center text-xs font-bold overflow-hidden">
+            ${g.imagem_url ? `<img src="${g.imagem_url}" class="w-full h-full object-cover" alt="">` : g.codigo}
+          </span>
           <div>
             <p class="text-sm font-semibold">${g.nome}</p>
             <p class="text-xs text-muted">${g.total_membros} membro${g.total_membros === 1 ? '' : 's'}</p>
@@ -66,6 +69,11 @@
             <option value="orgao_topo">Órgão de Topo</option>
             <option value="setor_inteligencia">Setor de Inteligência</option>
           </select>
+          <input id="g-imagem" placeholder="URL da imagem/logo (opcional)"
+            class="bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <label class="flex items-center gap-2 text-sm">
+            Cor <input id="g-cor" type="color" value="#046b2f" class="h-9 w-14 bg-base border border-border rounded-lg cursor-pointer">
+          </label>
           <label class="flex items-center gap-2 text-sm sm:col-span-2">
             <input id="g-aulas" type="checkbox"> Permite aulas
           </label>
@@ -124,6 +132,8 @@
             slug: document.getElementById('g-slug').value.trim(),
             tipo: document.getElementById('g-tipo').value,
             permite_aulas: document.getElementById('g-aulas').checked,
+            imagem_url: document.getElementById('g-imagem').value.trim() || undefined,
+            cor: document.getElementById('g-cor').value,
           }),
         });
 

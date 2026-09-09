@@ -94,6 +94,19 @@ async function apiFetch(caminho, opcoes = {}) {
 }
 
 /**
+ * Configurações públicas do sistema (logo etc.) — endpoint sem
+ * autenticação, então usa fetch puro em vez de apiFetch.
+ */
+async function buscarConfiguracoes() {
+  try {
+    const resposta = await fetch(`${API_BASE}/configuracoes`);
+    return resposta.ok ? await resposta.json() : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
  * Monta a URL do avatar do Habblet a partir do `figure` (vem do backend,
  * que busca em api.habblet.city — nunca chamar essa API direto do
  * navegador, ela não libera CORS pra qualquer domínio).
