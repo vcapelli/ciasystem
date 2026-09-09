@@ -15,6 +15,17 @@ async function ehAdmin(db: D1Database, usuarioId: number): Promise<boolean> {
 
 // --- Leitura do hub ---
 
+// GET /grupos — lista todos os grupos ativos, com contagem de membros
+// (pra tela de listagem geral).
+grupos.get('/', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT g.*,
+       (SELECT COUNT(*) FROM usuario_grupos ug WHERE ug.grupo_id = g.id AND ug.ativo = 1) AS total_membros
+     FROM grupos g WHERE g.ativo = 1 ORDER BY g.tipo, g.nome`
+  ).all()
+  return c.json(results)
+})
+
 grupos.get('/:slug', async (c) => {
   const slug = c.req.param('slug')
   const grupo = await c.env.DB.prepare(`SELECT * FROM grupos WHERE slug = ? AND ativo = 1`).bind(slug).first()

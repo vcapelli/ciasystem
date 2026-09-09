@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIASystem — Grupos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="/assets/tailwind-config.js"></script>
+<link rel="stylesheet" href="/assets/theme.css">
+</head>
+<body class="bg-base text-dark font-sans min-h-screen">
+
+  <div class="flex">
+    <aside id="layout-sidebar" class="w-60 shrink-0 border-r border-border min-h-[calc(100vh-72px)] p-4 sticky top-[72px]"></aside>
+
+    <main class="flex-1 max-w-4xl mx-auto px-4 py-8">
+      <h1 class="text-xl font-display font-bold mb-4">Grupos</h1>
+      <div id="lista">
+        <p class="text-sm text-muted">Carregando…</p>
+      </div>
+    </main>
+  </div>
+
+<script src="/assets/api.js"></script>
+<script src="/assets/layout.js"></script>
+<script>
+  const TIPO_LABEL = {
+    companhia: 'Companhias',
+    subcompanhia: 'Subcompanhias',
+    orgao_topo: 'Órgãos de Topo',
+    setor_inteligencia: 'Setor de Inteligência',
+  };
+
+  function renderGrupo(g) {
+    return `
+      <a href="/grupos/${g.slug}" class="flex items-center justify-between bg-card border border-border rounded-xl px-4 py-3 hover:border-accent transition-colors">
+        <div class="flex items-center gap-3">
+          <span class="h-10 w-10 rounded-xl bg-base border border-border flex items-center justify-center text-xs font-bold">${g.codigo}</span>
+          <div>
+            <p class="text-sm font-semibold">${g.nome}</p>
+            <p class="text-xs text-muted">${g.total_membros} membro${g.total_membros === 1 ? '' : 's'}</p>
+          </div>
+        </div>
+        <span class="text-muted">→</span>
+      </a>
+    `;
+  }
+
+  async function carregar() {
+    const resposta = await apiFetch('/grupos');
+    const lista = document.getElementById('lista');
+    if (!resposta.ok) {
+      lista.innerHTML = '<p class="text-sm text-red-400">Não foi possível carregar os grupos.</p>';
+      return;
+    }
+
+    const grupos = await resposta.json();
+    if (!grupos.length) {
+      lista.innerHTML = '<p class="text-sm text-muted">Nenhum grupo cadastrado ainda.</p>';
+      return;
+    }
+
+    const porTipo = {};
+    for (const g of grupos) {
+      (porTipo[g.tipo] ||= []).push(g);
+    }
+
+    lista.innerHTML = Object.entries(porTipo).map(([tipo, itens]) => `
+      <div class="mb-6">
+        <p class="text-xs uppercase tracking-wide text-muted mb-2">${TIPO_LABEL[tipo] || tipo}</p>
+        <div class="space-y-2">${itens.map(renderGrupo).join('')}</div>
+      </div>
+    `).join('');
+  }
+
+  montarLayout('/grupos.html').then((me) => { if (me) carregar(); });
+</script>
+</body>
+</html>

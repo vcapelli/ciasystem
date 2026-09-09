@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIASystem — Grupo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="/assets/tailwind-config.js"></script>
+<link rel="stylesheet" href="/assets/theme.css">
+</head>
+<body class="bg-base text-dark font-sans min-h-screen">
+
+  <div class="flex">
+    <aside id="layout-sidebar" class="w-60 shrink-0 border-r border-border min-h-[calc(100vh-72px)] p-4 sticky top-[72px]"></aside>
+
+    <main class="flex-1 max-w-4xl mx-auto px-4 py-8">
+      <a href="/grupos.html" class="text-xs text-muted hover:text-dark transition-colors">← Grupos</a>
+      <div id="conteudo" class="mt-2">
+        <p class="text-sm text-muted">Carregando…</p>
+      </div>
+    </main>
+  </div>
+
+<script src="/assets/api.js"></script>
+<script src="/assets/layout.js"></script>
+<script>
+  const slug = decodeURIComponent(location.pathname.split('/').filter(Boolean)[1] || '');
+
+  const TIPO_LABEL = {
+    companhia: 'Companhia', subcompanhia: 'Subcompanhia',
+    orgao_topo: 'Órgão de Topo', setor_inteligencia: 'Setor de Inteligência',
+  };
+
+  function renderMembro(m) {
+    return `
+      <a href="/perfil/${m.nick}" class="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-base transition-colors">
+        <span class="text-sm font-medium">${m.nick}${m.tag ? ` <span class="text-muted font-normal">[${m.tag}]</span>` : ''}</span>
+        <span class="text-xs text-muted">${m.nivel}${m.administrador_grupo ? ' · Admin' : ''}</span>
+      </a>
+    `;
+  }
+
+  async function carregar() {
+    const container = document.getElementById('conteudo');
+
+    const grupoResp = await apiFetch(`/grupos/${encodeURIComponent(slug)}`);
+    if (!grupoResp.ok) {
+      container.innerHTML = '<p class="text-sm text-red-400">Grupo não encontrado.</p>';
+      return;
+    }
+    const grupo = await grupoResp.json();
+
+    const [membrosResp, aulasResp, noticiasResp] = await Promise.all([
+      apiFetch(`/grupos/${slug}/membros`),
+      grupo.permite_aulas ? apiFetch(`/grupos/${slug}/aulas`) : Promise.resolve(null),
+      apiFetch(`/grupos/${slug}/noticias`),
+    ]);
+    const membros = membrosResp.ok ? await membrosResp.json() : [];
+    const aulas = aulasResp && aulasResp.ok ? await aulasResp.json() : [];
+    const noticias = noticiasResp.ok ? (await noticiasResp.json()).filter((n) => n.status === 'publicada') : [];
+
+    container.innerHTML = `
+      <div class="flex items-center gap-3 mt-2 mb-6">
+        <span class="h-12 w-12 rounded-xl bg-card border border-border flex items-center justify-center text-sm font-bold">${grupo.codigo}</span>
+        <div>
+          <h1 class="text-xl font-display font-bold">${grupo.nome}</h1>
+          <p class="text-xs text-muted">${TIPO_LABEL[grupo.tipo] || grupo.tipo}</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-[1fr_260px] gap-6">
+        <div class="space-y-6">
+          ${noticias.length ? `
+            <div>
+              <h2 class="text-sm font-semibold text-muted uppercase tracking-wide mb-2">Notícias</h2>
+              <div class="space-y-3">
+                ${noticias.map((n) => `
+                  <div class="bg-card border border-border rounded-xl p-4">
+                    <p class="text-sm font-semibold">${n.titulo}</p>
+                    <p class="text-sm text-muted mt-1 whitespace-pre-wrap">${n.conteudo}</p>
+                    <p class="text-xs text-muted mt-2">${new Date(n.publicado_em || n.criado_em).toLocaleDateString('pt-BR')}</p>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          ` : ''}
+
+          ${grupo.permite_aulas ? `
+            <div>
+              <h2 class="text-sm font-semibold text-muted uppercase tracking-wide mb-2">Aulas</h2>
+              ${aulas.length ? `
+                <div class="space-y-2">
+                  ${aulas.map((a) => `
+                    <div class="bg-card border border-border rounded-xl p-4">
+                      <p class="text-sm font-semibold">${a.titulo}</p>
+                      ${a.descricao ? `<p class="text-xs text-muted mt-1">${a.descricao}</p>` : ''}
+                    </div>
+                  `).join('')}
+                </div>
+              ` : '<p class="text-sm text-muted">Nenhuma aula cadastrada ainda.</p>'}
+            </div>
+          ` : ''}
+        </div>
+
+        <div>
+          <h2 class="text-sm font-semibold text-muted uppercase tracking-wide mb-2">Membros (${membros.length})</h2>
+          <div class="bg-card border border-border rounded-xl divide-y divide-border overflow-hidden">
+            ${membros.length ? membros.map(renderMembro).join('') : '<p class="text-sm text-muted p-3">Nenhum membro ainda.</p>'}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  montarLayout('/grupos.html').then((me) => { if (me) carregar(); });
+</script>
+</body>
+</html>
