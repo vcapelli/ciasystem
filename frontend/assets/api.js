@@ -106,7 +106,7 @@ async function apiFetch(caminho, opcoes = {}) {
  */
 function avatarUrl(figure, modo = 'mini') {
   if (!figure) return null;
-  const params = new URLSearchParams({ figure, img_format: 'gif' });
+  const params = new URLSearchParams({ figure, img_format: 'png' });
   if (modo === 'pose') {
     params.set('action', 'sit,crr=256,wav');
     params.set('direction', '4');

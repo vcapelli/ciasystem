@@ -45,23 +45,21 @@ function iniciais(nick) {
 
 function renderNavbar(me) {
   return `
-    <nav class="sticky top-0 z-20 bg-dark text-white px-6 py-3 flex items-center justify-between shadow-md">
-      <a href="/index.html" class="flex items-center gap-3">
-        <div class="h-8 w-8 rounded-lg bg-accent/25 flex items-center justify-center text-accent font-black text-sm">CIA</div>
-        <span class="font-display font-bold uppercase tracking-wide text-sm">CIASystem</span>
-      </a>
-      <div class="flex items-center gap-4">
-        <a href="/perfil/${me.nick}" class="flex items-center gap-2 text-sm hover:text-accent transition-colors">
-          <span class="h-9 w-9 rounded-full bg-white/10 overflow-hidden inline-block shrink-0">
-            ${me.figure
-              ? `<img src="${avatarUrl(me.figure, 'mini')}" class="w-full h-[190%] object-cover object-top" alt="">`
-              : `<span class="w-full h-full flex items-center justify-center text-xs font-semibold">${iniciais(me.nick)}</span>`}
-          </span>
-          <span class="text-white/70">${me.nick}${me.patente_nome ? ` · ${me.patente_nome}` : ''}</span>
+    <nav class="sticky top-0 z-20 bg-dark text-white h-[72px] px-6 flex items-center justify-between relative overflow-hidden shadow-md">
+      <div class="flex items-center gap-4 z-10">
+        <a href="/index.html" class="flex items-center gap-3 shrink-0">
+          <div class="h-8 w-8 rounded-lg bg-accent/25 flex items-center justify-center text-accent font-black text-sm">CIA</div>
+          <span class="font-display font-bold uppercase tracking-wide text-sm">CIASystem</span>
         </a>
-        ${me.administrador_sistema ? '<a href="/admin.html" class="text-sm text-white/70 hover:text-white transition-colors">Admin</a>' : ''}
-        <button id="btn-logout" class="text-sm text-white/70 hover:text-white transition-colors">Sair</button>
+        <a href="/perfil/${me.nick}" class="text-sm text-white/70 hover:text-accent transition-colors">
+          ${me.nick}${me.patente_nome ? ` · ${me.patente_nome}` : ''}
+        </a>
       </div>
+      ${me.figure ? `
+      <div class="absolute top-0 right-6 h-full w-20 overflow-hidden">
+        <img src="${avatarUrl(me.figure, 'mini')}" class="absolute inset-0 w-full h-full object-cover object-center" alt="">
+      </div>
+      ` : ''}
     </nav>
   `;
 }
