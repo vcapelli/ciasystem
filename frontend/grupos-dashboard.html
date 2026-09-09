@@ -128,13 +128,18 @@
     if (me.administrador_sistema) {
       document.getElementById('form-aparencia').addEventListener('submit', async (e) => {
         e.preventDefault();
-        await apiFetch(`/grupos/${slug}`, {
+        const resposta = await apiFetch(`/grupos/${slug}`, {
           method: 'PATCH',
           body: JSON.stringify({
             imagem_url: document.getElementById('ga-imagem').value.trim() || undefined,
             cor: document.getElementById('ga-cor').value,
           }),
         });
+        if (!resposta.ok) {
+          const dados = await resposta.json().catch(() => ({}));
+          alert(dados.erro || 'Não foi possível salvar a aparência do grupo.');
+          return;
+        }
         carregar(me);
       });
     }
