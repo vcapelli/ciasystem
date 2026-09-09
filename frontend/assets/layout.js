@@ -45,16 +45,14 @@ function iniciais(nick) {
 
 function renderNavbar(me) {
   return `
-    <nav class="sticky top-0 z-20 bg-dark text-white h-[72px] px-6 flex items-center justify-between relative overflow-hidden shadow-md">
-      <div class="flex items-center gap-4 z-10">
-        <a href="/index.html" class="flex items-center gap-3 shrink-0">
-          <div class="h-8 w-8 rounded-lg bg-accent/25 flex items-center justify-center text-accent font-black text-sm">CIA</div>
-          <span class="font-display font-bold uppercase tracking-wide text-sm">CIASystem</span>
-        </a>
-        <a href="/perfil/${me.nick}" class="text-sm text-white/70 hover:text-accent transition-colors">
-          ${me.nick}${me.patente_nome ? ` · ${me.patente_nome}` : ''}
-        </a>
-      </div>
+    <nav class="sticky top-0 z-20 bg-dark text-white h-[72px] px-6 pr-28 flex items-center justify-between relative overflow-hidden shadow-md">
+      <a href="/index.html" class="flex items-center gap-3 shrink-0 z-10">
+        <div class="h-8 w-8 rounded-lg bg-accent/25 flex items-center justify-center text-accent font-black text-sm">CIA</div>
+        <span class="font-display font-bold uppercase tracking-wide text-sm">CIASystem</span>
+      </a>
+      <a href="/perfil/${me.nick}" class="text-sm text-white/80 hover:text-accent transition-colors z-10">
+        ${me.nick}
+      </a>
       ${me.figure ? `
       <div class="absolute top-0 right-6 h-full w-20 overflow-hidden">
         <img src="${avatarUrl(me.figure, 'mini')}" class="absolute inset-0 w-full h-full object-cover object-center" alt="">

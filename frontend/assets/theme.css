@@ -65,19 +65,11 @@
   100% { background-color: #0f1923e6; }
 }
 
-/* Banner de perfil — mesma imagem/animação do login, mas contido
+/* Banner de perfil — mesma imagem do login, sem animação, contido
    dentro de um card em vez de cobrir a tela inteira. */
 .perfil-banner {
   background-image: url(https://2img.net/i.imgur.com/Hd7TdDr.png);
   background-repeat: no-repeat;
   background-size: cover;
   background-position: center;
-  position: relative;
-}
-.perfil-banner::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  animation: cia-bg-cycle 60s infinite;
-  pointer-events: none;
 }

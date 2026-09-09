@@ -15,7 +15,7 @@
   <div class="flex">
     <aside id="layout-sidebar" class="w-60 shrink-0 border-r border-border min-h-[calc(100vh-72px)] p-4 sticky top-[72px]"></aside>
 
-    <main class="flex-1 max-w-5xl mx-auto px-4 py-8">
+    <main class="flex-1 max-w-6xl mx-auto px-4 py-8">
       <div id="conteudo">
         <p class="text-sm text-muted">Carregando…</p>
       </div>
@@ -167,45 +167,55 @@
     const tweets = tweetsResp.ok ? await tweetsResp.json() : [];
 
     const ultimoRequerimento = requerimentos[0]?.criado_em;
-    const avatarGrande = perfil.figure ? avatarUrl(perfil.figure, 'mini') : null;
+    const avatarCirculo = perfil.figure ? avatarUrl(perfil.figure, 'mini', '2') : null;
+    const avatarGrande = perfil.figure ? avatarUrl(perfil.figure, 'grande', '2') : null;
 
     container.innerHTML = `
-      <div class="perfil-banner h-36 rounded-2xl relative overflow-hidden mb-16">
-        <div class="absolute -bottom-14 left-6 h-28 w-28 rounded-full ring-4 ring-base bg-border overflow-hidden">
-          ${avatarGrande
-            ? `<img src="${avatarGrande}" class="w-full h-[190%] object-cover object-top" alt="">`
+      <div class="relative mb-16">
+        <div class="perfil-banner h-44 rounded-2xl overflow-hidden"></div>
+        <div class="absolute left-6 -bottom-14 h-28 w-28 rounded-full ring-4 ring-base bg-border overflow-hidden">
+          ${avatarCirculo
+            ? `<img src="${avatarCirculo}" class="absolute inset-0 w-full h-full object-cover object-center" alt="">`
             : `<div class="w-full h-full flex items-center justify-center text-2xl font-bold">${perfil.nick.slice(0,2).toUpperCase()}</div>`}
         </div>
       </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6">
+      <div class="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6">
         <div>
-          <h1 class="text-xl font-display font-bold">${perfil.nick}${perfil.tag ? ` <span class="text-muted font-normal text-base">[${perfil.tag}]</span>` : ''}</h1>
-          <p class="text-xs text-muted mt-1">${perfil.nick}${perfil.tag ? ` [${perfil.tag}]` : ''} · ${formatarDataCurta(perfil.data_ultimo_ato_funcional)}</p>
-          <p class="text-xs text-muted mt-0.5">Último requerimento: ${formatarDataCurta(ultimoRequerimento)}</p>
-
-          <div class="mt-2">
-            <span class="text-xs font-semibold px-2.5 py-1 rounded-full capitalize ${BADGE_STATUS[perfil.status] || 'bg-white/10 text-white'}">
-              ${(perfil.status || '').replace(/_/g, ' ')}
-            </span>
-          </div>
-
-          <p class="text-sm mt-2">${perfil.patente_nome || 'Conta institucional'}${perfil.corpo ? ` · ${perfil.corpo === 'militar' ? 'Corpo Militar' : 'Corpo Executivo'}` : ''}</p>
-
-          ${grupos.length ? `
-            <div class="mt-4">
-              <p class="text-xs uppercase tracking-wide text-muted mb-2">Grupos</p>
-              <div class="flex flex-wrap gap-2">
-                ${grupos.map((g) => `
-                  <span title="${g.nome} · ${g.nivel_nome}" class="h-9 w-9 rounded-xl bg-card border border-border flex items-center justify-center text-xs font-bold">
-                    ${g.codigo}
-                  </span>
-                `).join('')}
+          <div class="bg-card border border-border rounded-2xl p-5">
+            ${avatarGrande ? `
+              <div class="flex justify-center mb-4">
+                <img src="${avatarGrande}" class="max-h-64 object-contain" alt="Avatar de ${perfil.nick}">
               </div>
-            </div>
-          ` : ''}
+            ` : ''}
 
-          <div id="bio-area" class="mt-4"></div>
+            <h1 class="text-xl font-display font-bold">${perfil.nick}${perfil.tag ? ` <span class="text-muted font-normal text-base">[${perfil.tag}]</span>` : ''}</h1>
+            <p class="text-xs text-muted mt-1">${perfil.nick}${perfil.tag ? ` [${perfil.tag}]` : ''} · ${formatarDataCurta(perfil.data_ultimo_ato_funcional)}</p>
+            <p class="text-xs text-muted mt-0.5">Último requerimento: ${formatarDataCurta(ultimoRequerimento)}</p>
+
+            <div class="mt-2">
+              <span class="text-xs font-semibold px-2.5 py-1 rounded-full capitalize ${BADGE_STATUS[perfil.status] || 'bg-white/10 text-white'}">
+                ${(perfil.status || '').replace(/_/g, ' ')}
+              </span>
+            </div>
+
+            <p class="text-sm mt-2">${perfil.patente_nome || 'Conta institucional'}${perfil.corpo ? ` · ${perfil.corpo === 'militar' ? 'Corpo Militar' : 'Corpo Executivo'}` : ''}</p>
+
+            ${grupos.length ? `
+              <div class="mt-4">
+                <p class="text-xs uppercase tracking-wide text-muted mb-2">Grupos</p>
+                <div class="flex flex-wrap gap-2">
+                  ${grupos.map((g) => `
+                    <span title="${g.nome} · ${g.nivel_nome}" class="h-9 w-9 rounded-xl bg-base border border-border flex items-center justify-center text-xs font-bold">
+                      ${g.codigo}
+                    </span>
+                  `).join('')}
+                </div>
+              </div>
+            ` : ''}
+
+            <div id="bio-area" class="mt-4"></div>
+          </div>
 
           <div class="bg-card border border-border rounded-2xl p-4 mt-4">
             <p class="text-xs uppercase tracking-wide text-muted mb-1">Distinções</p>

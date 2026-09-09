@@ -104,7 +104,7 @@ async function apiFetch(caminho, opcoes = {}) {
  *   só a cabeça via CSS (o parâmetro headonly não funciona direito
  *   nesse clone da API do Habblet).
  */
-function avatarUrl(figure, modo = 'mini') {
+function avatarUrl(figure, modo = 'mini', direcao = '4') {
   if (!figure) return null;
   const params = new URLSearchParams({ figure, img_format: 'png' });
   if (modo === 'pose') {
@@ -113,9 +113,14 @@ function avatarUrl(figure, modo = 'mini') {
     params.set('head_direction', '3');
     params.set('gesture', 'sml');
     params.set('headonly', '0');
+  } else if (modo === 'grande') {
+    // Corpo inteiro, de frente, tamanho grande — pra conferir farda/visual.
+    params.set('size', 'l');
+    params.set('direction', direcao);
+    params.set('head_direction', direcao);
   } else {
-    params.set('direction', '4');
-    params.set('head_direction', '4');
+    params.set('direction', direcao);
+    params.set('head_direction', direcao);
     params.set('gesture', '0');
   }
   return `https://imaging.habblet.city/avatarimage?${params.toString()}`;
