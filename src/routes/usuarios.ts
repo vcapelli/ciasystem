@@ -11,7 +11,7 @@ const usuarios = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 async function figuraSegura(nick: string): Promise<string | null> {
   try {
     const jogador = await buscarJogadorHabblet(nick)
-    return jogador?.figureString ?? null
+    return jogador?.figure ?? null
   } catch {
     return null
   }

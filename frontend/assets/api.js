@@ -98,12 +98,15 @@ async function apiFetch(caminho, opcoes = {}) {
  * que busca em api.habblet.city — nunca chamar essa API direto do
  * navegador, ela não libera CORS pra qualquer domínio).
  *
- * modo 'pose'  — corpo inteiro sentado, pro card de boas-vindas
- * modo 'cabeca' — só a cabeça, pra avatares pequenos (navbar, listas)
+ * modo 'pose' — corpo inteiro sentado, pro card de boas-vindas
+ * modo 'mini' — corpo inteiro parado; usar dentro de um container
+ *   pequeno com overflow-hidden + object-cover/object-top pra cortar
+ *   só a cabeça via CSS (o parâmetro headonly não funciona direito
+ *   nesse clone da API do Habblet).
  */
-function avatarUrl(figure, modo = 'cabeca', tamanho = 'm') {
+function avatarUrl(figure, modo = 'mini') {
   if (!figure) return null;
-  const params = new URLSearchParams({ figure, img_format: 'png', size: tamanho });
+  const params = new URLSearchParams({ figure, img_format: 'gif' });
   if (modo === 'pose') {
     params.set('action', 'sit,crr=256,wav');
     params.set('direction', '4');
@@ -111,9 +114,9 @@ function avatarUrl(figure, modo = 'cabeca', tamanho = 'm') {
     params.set('gesture', 'sml');
     params.set('headonly', '0');
   } else {
-    params.set('headonly', '1');
-    params.set('direction', '2');
-    params.set('head_direction', '3');
+    params.set('direction', '4');
+    params.set('head_direction', '4');
+    params.set('gesture', '0');
   }
   return `https://imaging.habblet.city/avatarimage?${params.toString()}`;
 }

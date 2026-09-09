@@ -14,7 +14,7 @@ export interface HabbletPlayer {
   uniqueId?: string
   name: string
   motto: string
-  figureString?: string
+  figure?: string
   online?: boolean
 }
 

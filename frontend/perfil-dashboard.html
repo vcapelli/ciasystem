@@ -81,8 +81,8 @@
         <div class="absolute top-0 left-8 h-1 w-16 bg-accent rounded-b"></div>
         <div class="flex items-start justify-between">
           <div class="flex items-center gap-3">
-            <span class="h-14 w-14 rounded-full bg-border overflow-hidden flex items-center justify-center text-lg font-bold">
-              ${perfil.figure ? `<img src="${avatarUrl(perfil.figure, 'cabeca', 'l')}" class="w-full h-full object-cover" alt="">` : perfil.nick.slice(0,2).toUpperCase()}
+            <span class="h-14 w-14 rounded-full bg-border overflow-hidden inline-block shrink-0">
+              ${perfil.figure ? `<img src="${avatarUrl(perfil.figure, 'mini')}" class="w-full h-[190%] object-cover object-top" alt="">` : `<span class="w-full h-full flex items-center justify-center text-lg font-bold">${perfil.nick.slice(0,2).toUpperCase()}</span>`}
             </span>
             <div>
               <h1 class="text-xl font-display font-bold">${perfil.nick}${perfil.tag ? ` <span class="text-muted font-normal">[${perfil.tag}]</span>` : ''}</h1>
