@@ -52,7 +52,9 @@ function renderNavbar(me) {
       </a>
       <div class="flex items-center gap-4">
         <a href="/perfil/${me.nick}" class="flex items-center gap-2 text-sm hover:text-accent transition-colors">
-          <span class="h-7 w-7 rounded-full bg-white/10 flex items-center justify-center text-xs font-semibold">${iniciais(me.nick)}</span>
+          ${me.figure
+            ? `<img src="${avatarUrl(me.figure, 'cabeca', 's')}" class="h-7 w-7 rounded-full bg-white/10 object-cover" alt="">`
+            : `<span class="h-7 w-7 rounded-full bg-white/10 flex items-center justify-center text-xs font-semibold">${iniciais(me.nick)}</span>`}
           <span class="text-white/70">${me.nick}${me.patente_nome ? ` · ${me.patente_nome}` : ''}</span>
         </a>
         ${me.administrador_sistema ? '<a href="/admin.html" class="text-sm text-white/70 hover:text-white transition-colors">Admin</a>' : ''}

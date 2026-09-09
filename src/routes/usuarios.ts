@@ -1,13 +1,25 @@
 import { Hono } from 'hono'
+import { buscarJogadorHabblet } from '../services/habblet'
 
 type Bindings = { DB: D1Database }
 type Variables = { usuarioId: number }
 
 const usuarios = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
+/** Busca o `figure` (visual do avatar) direto na API do Habblet — nunca
+ * derruba a resposta principal se essa chamada falhar, só devolve null. */
+async function figuraSegura(nick: string): Promise<string | null> {
+  try {
+    const jogador = await buscarJogadorHabblet(nick)
+    return jogador?.figureString ?? null
+  } catch {
+    return null
+  }
+}
+
 // GET /usuarios/me — dados do próprio usuário autenticado (nick, tag,
-// patente, se é admin do sistema, biografia). O layout do frontend usa
-// isso pra montar a navbar.
+// patente, se é admin do sistema, biografia, figure do Habblet). O
+// layout do frontend usa isso pra montar a navbar e o card de início.
 usuarios.get('/me', async (c) => {
   const usuarioId = c.get('usuarioId')
 
@@ -16,10 +28,12 @@ usuarios.get('/me', async (c) => {
             p.nome AS patente_nome, p.ordem AS patente_ordem
      FROM usuarios u LEFT JOIN patentes p ON p.id = u.patente_atual_id
      WHERE u.id = ?`
-  ).bind(usuarioId).first()
+  ).bind(usuarioId).first<{ nick: string }>()
 
   if (!usuario) return c.json({ erro: 'usuário não encontrado' }, 404)
-  return c.json(usuario)
+
+  const figure = await figuraSegura(usuario.nick)
+  return c.json({ ...usuario, figure })
 })
 
 // PATCH /usuarios/me — só a biografia é editável por enquanto.
@@ -35,7 +49,9 @@ usuarios.patch('/me', async (c) => {
 })
 
 // GET /usuarios?busca=texto — busca simples por nick (autocomplete de
-// alvos em formulários, listagem de membros etc.)
+// alvos em formulários, listagem de membros etc.) — sem figure aqui de
+// propósito: uma lista de até 100 usuários faria 100 chamadas externas
+// à API do Habblet, o que é caro e lento demais pra uma listagem.
 usuarios.get('/', async (c) => {
   const busca = c.req.query('busca')
 
@@ -55,7 +71,7 @@ usuarios.get('/', async (c) => {
   return c.json(results)
 })
 
-// GET /usuarios/nick/:nick — perfil público de qualquer usuário
+// GET /usuarios/nick/:nick — perfil público de qualquer usuário, com figure.
 usuarios.get('/nick/:nick', async (c) => {
   const nick = c.req.param('nick')
 
@@ -64,10 +80,12 @@ usuarios.get('/nick/:nick', async (c) => {
             p.nome AS patente_nome, p.ordem AS patente_ordem
      FROM usuarios u LEFT JOIN patentes p ON p.id = u.patente_atual_id
      WHERE u.nick = ?`
-  ).bind(nick).first()
+  ).bind(nick).first<{ nick: string }>()
 
   if (!usuario) return c.json({ erro: 'usuário não encontrado' }, 404)
-  return c.json(usuario)
+
+  const figure = await figuraSegura(usuario.nick)
+  return c.json({ ...usuario, figure })
 })
 
 export default usuarios

@@ -92,3 +92,28 @@ async function apiFetch(caminho, opcoes = {}) {
 
   return resposta;
 }
+
+/**
+ * Monta a URL do avatar do Habblet a partir do `figure` (vem do backend,
+ * que busca em api.habblet.city — nunca chamar essa API direto do
+ * navegador, ela não libera CORS pra qualquer domínio).
+ *
+ * modo 'pose'  — corpo inteiro sentado, pro card de boas-vindas
+ * modo 'cabeca' — só a cabeça, pra avatares pequenos (navbar, listas)
+ */
+function avatarUrl(figure, modo = 'cabeca', tamanho = 'm') {
+  if (!figure) return null;
+  const params = new URLSearchParams({ figure, img_format: 'png', size: tamanho });
+  if (modo === 'pose') {
+    params.set('action', 'sit,crr=256,wav');
+    params.set('direction', '4');
+    params.set('head_direction', '3');
+    params.set('gesture', 'sml');
+    params.set('headonly', '0');
+  } else {
+    params.set('headonly', '1');
+    params.set('direction', '2');
+    params.set('head_direction', '3');
+  }
+  return `https://imaging.habblet.city/avatarimage?${params.toString()}`;
+}

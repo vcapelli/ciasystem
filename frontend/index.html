@@ -70,8 +70,10 @@
           </div>
 
           <div class="absolute -right-4 bottom-0 h-[150px] w-[110px] overflow-hidden pointer-events-none hidden sm:block">
+            ${me.figure ? `
             <img class="absolute bottom-0 right-0 h-[140px] w-auto object-contain select-none"
-              src="https://imaging.habblet.city/avatarimage?user=${encodeURIComponent(me.nick)}&action=sit,crr=256,wav&direction=4&head_direction=3&img_format=png&gesture=sml&headonly=0&size=l">
+              src="${avatarUrl(me.figure, 'pose', 'l')}">
+            ` : ''}
           </div>
         </div>
       </div>
