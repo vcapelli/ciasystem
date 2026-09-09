@@ -60,6 +60,8 @@ grupos.post('/', async (c) => {
     slug: string
     tipo: 'companhia' | 'subcompanhia' | 'orgao_topo' | 'setor_inteligencia'
     permite_aulas?: boolean
+    imagem_url?: string
+    cor?: string
   }>()
 
   if (!(await ehAdmin(c.env.DB, usuarioId))) {
@@ -68,8 +70,8 @@ grupos.post('/', async (c) => {
 
   try {
     const { meta } = await c.env.DB.prepare(
-      `INSERT INTO grupos (codigo, nome, slug, tipo, permite_aulas) VALUES (?, ?, ?, ?, ?)`
-    ).bind(body.codigo, body.nome, body.slug, body.tipo, body.permite_aulas ? 1 : 0).run()
+      `INSERT INTO grupos (codigo, nome, slug, tipo, permite_aulas, imagem_url, cor) VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).bind(body.codigo, body.nome, body.slug, body.tipo, body.permite_aulas ? 1 : 0, body.imagem_url ?? null, body.cor ?? null).run()
     return c.json({ id: meta.last_row_id }, 201)
   } catch {
     return c.json({ erro: 'já existe um grupo com esse código ou slug' }, 409)
@@ -79,7 +81,10 @@ grupos.post('/', async (c) => {
 grupos.patch('/:slug', async (c) => {
   const usuarioId = c.get('usuarioId')
   const slug = c.req.param('slug')
-  const body = await c.req.json<{ nome?: string; tipo?: string; permite_aulas?: boolean; ativo?: boolean }>()
+  const body = await c.req.json<{
+    nome?: string; tipo?: string; permite_aulas?: boolean; ativo?: boolean
+    imagem_url?: string; cor?: string
+  }>()
 
   if (!(await ehAdmin(c.env.DB, usuarioId))) {
     return c.json({ erro: 'só administradores do sistema editam grupos' }, 403)
@@ -91,13 +96,15 @@ grupos.patch('/:slug', async (c) => {
   await c.env.DB.prepare(
     `UPDATE grupos SET
       nome = COALESCE(?, nome), tipo = COALESCE(?, tipo),
-      permite_aulas = COALESCE(?, permite_aulas), ativo = COALESCE(?, ativo)
+      permite_aulas = COALESCE(?, permite_aulas), ativo = COALESCE(?, ativo),
+      imagem_url = COALESCE(?, imagem_url), cor = COALESCE(?, cor)
      WHERE id = ?`
   )
     .bind(
       body.nome ?? null, body.tipo ?? null,
       body.permite_aulas === undefined ? null : (body.permite_aulas ? 1 : 0),
       body.ativo === undefined ? null : (body.ativo ? 1 : 0),
+      body.imagem_url ?? null, body.cor ?? null,
       grupo.id
     )
     .run()

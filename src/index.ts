@@ -2,6 +2,8 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import auth from './routes/auth'
 import { requireAuth } from './services/auth'
+import configuracoesPublico from './routes/configuracoes-publico'
+import configuracoesAdmin from './routes/configuracoes-admin'
 import requerimentos from './routes/requerimentos'
 import forum from './routes/forum'
 import menu from './routes/menu'
@@ -57,6 +59,7 @@ app.get('/health', async (c) => {
   return c.json({ status: 'ok', db: result })
 })
 app.route('/auth', auth)
+app.route('/configuracoes', configuracoesPublico)
 
 // Sub-app separado pra tudo que exige login — o middleware é
 // registrado ANTES de qualquer rota dentro dele, então roda sempre
@@ -84,6 +87,7 @@ protegido.route('/sugestoes', sugestoes)
 protegido.route('/tickets', tickets)
 protegido.route('/logs', logs)
 protegido.route('/usuarios', usuarios)
+protegido.route('/configuracoes', configuracoesAdmin)
 
 app.route('/', protegido)
 
