@@ -200,4 +200,22 @@ requerimentos.post('/:id/alvos/:alvoId/decidir', async (c) => {
   return c.json({ ok: true, status_alvo: status, status_geral: statusGeral, usuario_id: usuarioIdFinal })
 })
 
+// GET /requerimentos/alvo/:usuarioId — linha do tempo de todos os
+// requerimentos onde esse usuário foi alvo (pra página de perfil).
+requerimentos.get('/alvo/:usuarioId', async (c) => {
+  const usuarioId = c.req.param('usuarioId')
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT ra.id AS alvo_id, ra.status, ra.decidido_em, ra.motivo_recusa,
+            r.id AS requerimento_id, r.tipo, r.tag_requerimento, r.criado_em, r.tag_aplicada
+     FROM requerimento_alvos ra
+     JOIN requerimentos r ON r.id = ra.requerimento_id
+     WHERE ra.usuario_id = ?
+     ORDER BY r.criado_em DESC
+     LIMIT 100`
+  ).bind(usuarioId).all()
+
+  return c.json(results)
+})
+
 export default requerimentos

@@ -412,4 +412,21 @@ grupos.get('/:slug/noticias', async (c) => {
   return c.json(results)
 })
 
+// GET /grupos/usuario/:usuarioId — grupos que esse usuário integra
+// (pra página de perfil).
+grupos.get('/usuario/:usuarioId', async (c) => {
+  const usuarioId = c.req.param('usuarioId')
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT g.id, g.codigo, g.nome, g.slug, g.tipo, gn.nome AS nivel_nome
+     FROM usuario_grupos ug
+     JOIN grupos g ON g.id = ug.grupo_id
+     JOIN grupo_niveis gn ON gn.id = ug.nivel_id
+     WHERE ug.usuario_id = ? AND ug.ativo = 1
+     ORDER BY g.nome`
+  ).bind(usuarioId).all()
+
+  return c.json(results)
+})
+
 export default grupos

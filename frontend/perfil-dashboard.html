@@ -15,7 +15,7 @@
   <div class="flex">
     <aside id="layout-sidebar" class="w-60 shrink-0 border-r border-border min-h-[calc(100vh-72px)] p-4 sticky top-[72px]"></aside>
 
-    <main class="flex-1 max-w-2xl mx-auto px-4 py-8">
+    <main class="flex-1 max-w-5xl mx-auto px-4 py-8">
       <div id="conteudo">
         <p class="text-sm text-muted">Carregando…</p>
       </div>
@@ -25,7 +25,9 @@
 <script src="/assets/api.js"></script>
 <script src="/assets/layout.js"></script>
 <script>
-  const nickAlvo = decodeURIComponent(location.pathname.split('/').filter(Boolean).pop());
+  const partes = location.pathname.split('/').filter(Boolean); // ['perfil', nick, aba?]
+  const nickAlvo = decodeURIComponent(partes[1] || '');
+  const aba = partes[2] || 'linha-do-tempo';
 
   const BADGE_STATUS = {
     ativo: 'bg-green-500/15 text-green-400',
@@ -36,10 +38,36 @@
     exonerado: 'bg-red-500/15 text-red-400',
   };
 
+  const ICONE_TIPO = {
+    instrucao_inicial: '🎓', promocao: '↑', rebaixamento: '↓', advertencia: '⚠',
+    licenca: '⏸', volta_licenca: '▶', reserva: '💤', transferencia_conta: '⇄',
+    transferencia_corpo: '⇄', venda_cargo: '💰', contratacao: '➕', tag: '🏷',
+    turno_tarefa: '🕒', reforma: '🎖', desligado_honroso: '🚪', desligamento_honroso: '🚪',
+    desligamento_desonroso: '🚪', exoneracao: '⛔', bonificacao: '⭐', cancelamento: '✖',
+  };
+
+  const COR_STATUS = {
+    pendente: { anel: 'ring-gray-400/40', bg: 'bg-gray-500/20', texto: 'text-gray-300' },
+    aprovado: { anel: 'ring-green-400/40', bg: 'bg-green-500/20', texto: 'text-green-400' },
+    reprovado: { anel: 'ring-red-400/40', bg: 'bg-red-500/20', texto: 'text-red-400' },
+    cancelado: { anel: 'ring-red-400/40', bg: 'bg-red-500/20', texto: 'text-red-400' },
+  };
+
+  function formatarDataCurta(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    return `${String(d.getDate()).padStart(2,'0')} ${MESES[d.getMonth()]} ${d.getFullYear()}`;
+  }
+
+  function tituloTipo(tipo) {
+    return tipo.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+  }
+
   function renderDistincoes(titulo, lista) {
     if (!lista.length) return '';
     return `
-      <div class="mt-4">
+      <div class="mt-3">
         <p class="text-xs uppercase tracking-wide text-muted mb-2">${titulo}</p>
         <div class="flex flex-wrap gap-2">
           ${lista.map((d) => `
@@ -53,62 +81,145 @@
     `;
   }
 
-  async function carregar(me) {
-    const resposta = await apiFetch(`/usuarios/nick/${encodeURIComponent(nickAlvo)}`);
-    const container = document.getElementById('conteudo');
+  function renderAbas(nick) {
+    const abas = [
+      { id: 'linha-do-tempo', label: 'Linha do tempo', href: `/perfil/${nick}` },
+      { id: 'postagens', label: 'Postagens', href: `/perfil/${nick}/postagens` },
+    ];
+    return `
+      <div class="flex gap-6 border-b border-border mb-4">
+        ${abas.map((a) => `
+          <a href="${a.href}" class="pb-3 text-sm font-semibold border-b-2 transition-colors ${aba === a.id ? 'border-accent text-dark' : 'border-transparent text-muted hover:text-dark'}">
+            ${a.label}
+          </a>
+        `).join('')}
+      </div>
+    `;
+  }
 
-    if (!resposta.ok) {
+  function renderTimeline(itens) {
+    if (!itens.length) return '<p class="text-sm text-muted">Nenhum requerimento registrado ainda.</p>';
+    return `
+      <div class="space-y-4">
+        ${itens.map((item) => {
+          const cor = COR_STATUS[item.status] || COR_STATUS.pendente;
+          const icone = ICONE_TIPO[item.tipo] || '📄';
+          return `
+            <div class="flex gap-3">
+              <div class="flex flex-col items-center">
+                <span class="h-9 w-9 rounded-full ${cor.bg} ring-2 ${cor.anel} flex items-center justify-center text-sm shrink-0">${icone}</span>
+                <span class="flex-1 w-px bg-border mt-1"></span>
+              </div>
+              <div class="bg-card border border-border rounded-xl px-4 py-3 flex-1 mb-1">
+                <div class="flex items-center justify-between gap-2">
+                  <p class="text-sm font-semibold">${tituloTipo(item.tipo)}</p>
+                  <span class="text-xs font-semibold ${cor.texto} capitalize">${item.status}</span>
+                </div>
+                <p class="text-xs text-muted mt-0.5">${item.tag_requerimento} · ${formatarDataCurta(item.criado_em)}</p>
+                ${item.motivo_recusa ? `<p class="text-xs text-red-400 mt-1">${item.motivo_recusa}</p>` : ''}
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }
+
+  function renderPostagens(tweets) {
+    if (!tweets.length) return '<p class="text-sm text-muted">Nenhuma publicação ainda.</p>';
+    return `
+      <div class="space-y-3">
+        ${tweets.map((t) => `
+          <div class="bg-card border border-border rounded-2xl p-4">
+            <p class="text-sm whitespace-pre-wrap">${t.conteudo || ''}</p>
+            <p class="text-xs text-muted mt-2">${new Date(t.criado_em).toLocaleString('pt-BR')}</p>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  async function carregar(me) {
+    const container = document.getElementById('conteudo');
+    const respPerfil = await apiFetch(`/usuarios/nick/${encodeURIComponent(nickAlvo)}`);
+
+    if (!respPerfil.ok) {
       container.innerHTML = '<p class="text-sm text-red-400">Usuário não encontrado.</p>';
       return;
     }
 
-    const perfil = await resposta.json();
+    const perfil = await respPerfil.json();
     const ehMeuPerfil = me.nick === perfil.nick;
 
-    const [emblemasResp, honrariasResp, conquistasResp, tweetsResp] = await Promise.all([
+    const [emblemasResp, honrariasResp, conquistasResp, gruposResp, requerimentosResp, tweetsResp] = await Promise.all([
       apiFetch(`/emblemas/usuario/${perfil.id}`),
       apiFetch(`/honrarias/usuario/${perfil.id}`),
       apiFetch(`/conquistas/usuario/${perfil.id}`),
+      apiFetch(`/grupos/usuario/${perfil.id}`),
+      apiFetch(`/requerimentos/alvo/${perfil.id}`),
       apiFetch(`/tweets?autor_id=${perfil.id}`),
     ]);
     const emblemas = emblemasResp.ok ? await emblemasResp.json() : [];
     const honrarias = honrariasResp.ok ? await honrariasResp.json() : [];
     const conquistas = conquistasResp.ok ? await conquistasResp.json() : [];
+    const grupos = gruposResp.ok ? await gruposResp.json() : [];
+    const requerimentos = requerimentosResp.ok ? await requerimentosResp.json() : [];
     const tweets = tweetsResp.ok ? await tweetsResp.json() : [];
 
+    const ultimoRequerimento = requerimentos[0]?.criado_em;
+    const avatarGrande = perfil.figure ? avatarUrl(perfil.figure, 'mini') : null;
+
     container.innerHTML = `
-      <div class="bg-card border border-border rounded-2xl p-6 relative overflow-hidden">
-        <div class="absolute top-0 left-8 h-1 w-16 bg-accent rounded-b"></div>
-        <div class="flex items-start justify-between">
-          <div class="flex items-center gap-3">
-            <span class="h-14 w-14 rounded-full bg-border overflow-hidden inline-block shrink-0">
-              ${perfil.figure ? `<img src="${avatarUrl(perfil.figure, 'mini')}" class="w-full h-[190%] object-cover object-top" alt="">` : `<span class="w-full h-full flex items-center justify-center text-lg font-bold">${perfil.nick.slice(0,2).toUpperCase()}</span>`}
-            </span>
-            <div>
-              <h1 class="text-xl font-display font-bold">${perfil.nick}${perfil.tag ? ` <span class="text-muted font-normal">[${perfil.tag}]</span>` : ''}</h1>
-              <p class="text-sm text-muted">${perfil.patente_nome || 'Conta institucional'}${perfil.corpo ? ` · ${perfil.corpo === 'militar' ? 'Corpo Militar' : 'Corpo Executivo'}` : ''}</p>
-            </div>
-          </div>
-          <span class="text-xs font-semibold px-3 py-1 rounded-full capitalize ${BADGE_STATUS[perfil.status] || 'bg-black/5 text-dark'}">
-            ${perfil.status.replace(/_/g, ' ')}
-          </span>
+      <div class="perfil-banner h-36 rounded-2xl relative overflow-hidden mb-16">
+        <div class="absolute -bottom-14 left-6 h-28 w-28 rounded-full ring-4 ring-base bg-border overflow-hidden">
+          ${avatarGrande
+            ? `<img src="${avatarGrande}" class="w-full h-[190%] object-cover object-top" alt="">`
+            : `<div class="w-full h-full flex items-center justify-center text-2xl font-bold">${perfil.nick.slice(0,2).toUpperCase()}</div>`}
         </div>
-
-        <div id="bio-area" class="mt-4"></div>
-
-        ${renderDistincoes('Emblemas', emblemas)}
-        ${renderDistincoes('Honrarias', honrarias)}
-        ${renderDistincoes('Conquistas', conquistas)}
       </div>
 
-      <h2 class="text-sm font-semibold text-muted mt-6 mb-2">Publicações</h2>
-      <div class="space-y-3">
-        ${tweets.length ? tweets.map((t) => `
-          <div class="bg-card border border-border rounded-2xl p-4">
-            <p class="text-sm whitespace-pre-wrap">${t.conteudo || ''}</p>
-            <p class="text-xs text-muted mt-2">${new Date(t.criado_em).toLocaleString('pt-BR')}</p>
+      <div class="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6">
+        <div>
+          <h1 class="text-xl font-display font-bold">${perfil.nick}${perfil.tag ? ` <span class="text-muted font-normal text-base">[${perfil.tag}]</span>` : ''}</h1>
+          <p class="text-xs text-muted mt-1">${perfil.nick}${perfil.tag ? ` [${perfil.tag}]` : ''} · ${formatarDataCurta(perfil.data_ultimo_ato_funcional)}</p>
+          <p class="text-xs text-muted mt-0.5">Último requerimento: ${formatarDataCurta(ultimoRequerimento)}</p>
+
+          <div class="mt-2">
+            <span class="text-xs font-semibold px-2.5 py-1 rounded-full capitalize ${BADGE_STATUS[perfil.status] || 'bg-white/10 text-white'}">
+              ${(perfil.status || '').replace(/_/g, ' ')}
+            </span>
           </div>
-        `).join('') : '<p class="text-sm text-muted">Nenhuma publicação ainda.</p>'}
+
+          <p class="text-sm mt-2">${perfil.patente_nome || 'Conta institucional'}${perfil.corpo ? ` · ${perfil.corpo === 'militar' ? 'Corpo Militar' : 'Corpo Executivo'}` : ''}</p>
+
+          ${grupos.length ? `
+            <div class="mt-4">
+              <p class="text-xs uppercase tracking-wide text-muted mb-2">Grupos</p>
+              <div class="flex flex-wrap gap-2">
+                ${grupos.map((g) => `
+                  <span title="${g.nome} · ${g.nivel_nome}" class="h-9 w-9 rounded-xl bg-card border border-border flex items-center justify-center text-xs font-bold">
+                    ${g.codigo}
+                  </span>
+                `).join('')}
+              </div>
+            </div>
+          ` : ''}
+
+          <div id="bio-area" class="mt-4"></div>
+
+          <div class="bg-card border border-border rounded-2xl p-4 mt-4">
+            <p class="text-xs uppercase tracking-wide text-muted mb-1">Distinções</p>
+            ${renderDistincoes('Emblemas', emblemas)}
+            ${renderDistincoes('Honrarias', honrarias)}
+            ${renderDistincoes('Conquistas', conquistas)}
+            ${!emblemas.length && !honrarias.length && !conquistas.length ? '<p class="text-sm text-muted mt-1">Nenhuma distinção ainda.</p>' : ''}
+          </div>
+        </div>
+
+        <div>
+          ${renderAbas(perfil.nick)}
+          ${aba === 'postagens' ? renderPostagens(tweets) : renderTimeline(requerimentos)}
+        </div>
       </div>
     `;
 
@@ -116,9 +227,9 @@
     if (ehMeuPerfil) {
       bioArea.innerHTML = `
         <textarea id="bio-textarea" rows="3" maxlength="500" placeholder="Escreva algo sobre você…"
-          class="w-full bg-base border border-border rounded-xl px-3 py-2 text-sm text-dark placeholder:text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent">${perfil.biografia || ''}</textarea>
+          class="w-full bg-card border border-border rounded-xl px-3 py-2 text-sm text-dark placeholder:text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent">${perfil.biografia || ''}</textarea>
         <div class="flex justify-end mt-1.5">
-          <button id="btn-salvar-bio" class="text-xs bg-accent hover:bg-accent-dark text-base font-semibold rounded-lg px-3 py-1.5 transition-colors">Salvar</button>
+          <button id="btn-salvar-bio" class="text-xs bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-3 py-1.5 transition-colors">Salvar</button>
         </div>
       `;
       document.getElementById('btn-salvar-bio').addEventListener('click', async () => {

@@ -76,7 +76,7 @@ usuarios.get('/nick/:nick', async (c) => {
   const nick = c.req.param('nick')
 
   const usuario = await c.env.DB.prepare(
-    `SELECT u.id, u.nick, u.tag, u.corpo, u.status, u.biografia, u.data_ingresso,
+    `SELECT u.id, u.nick, u.tag, u.corpo, u.status, u.biografia, u.data_ingresso, u.data_ultimo_ato_funcional,
             p.nome AS patente_nome, p.ordem AS patente_ordem
      FROM usuarios u LEFT JOIN patentes p ON p.id = u.patente_atual_id
      WHERE u.nick = ?`
