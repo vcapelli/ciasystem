@@ -12,16 +12,14 @@
 </head>
 <body class="bg-base text-dark font-sans min-h-screen">
 
-  <div class="flex">
-    <aside id="layout-sidebar" class="w-60 shrink-0 border-r border-border min-h-[calc(100vh-72px)] p-4 sticky top-[72px]"></aside>
+  <aside id="layout-sidebar" class="w-60 fixed left-0 top-[72px] bottom-0 border-r border-border bg-base p-4 overflow-y-auto"></aside>
 
-    <main class="flex-1 max-w-4xl mx-auto px-4 py-8">
+  <main class="ml-60 max-w-6xl px-4 py-8">
       <a href="/grupos.html" class="text-xs text-muted hover:text-dark transition-colors">← Grupos</a>
       <div id="conteudo" class="mt-2">
         <p class="text-sm text-muted">Carregando…</p>
       </div>
-    </main>
-  </div>
+  </main>
 
 <script src="/assets/api.js"></script>
 <script src="/assets/layout.js"></script>
@@ -62,8 +60,8 @@
     const noticias = noticiasResp.ok ? (await noticiasResp.json()).filter((n) => n.status === 'publicada') : [];
 
     container.innerHTML = `
-      <div class="flex items-center gap-3 mt-2 mb-6">
-        <span class="h-12 w-12 rounded-xl bg-card border border-border flex items-center justify-center text-sm font-bold">${grupo.codigo}</span>
+      <div class="bg-card border border-border rounded-2xl p-5 flex items-center gap-3 mt-2 mb-6">
+        <span class="h-12 w-12 rounded-xl bg-base border border-border flex items-center justify-center text-sm font-bold">${grupo.codigo}</span>
         <div>
           <h1 class="text-xl font-display font-bold">${grupo.nome}</h1>
           <p class="text-xs text-muted">${TIPO_LABEL[grupo.tipo] || grupo.tipo}</p>

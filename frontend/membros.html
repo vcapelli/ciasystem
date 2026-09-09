@@ -12,10 +12,9 @@
 </head>
 <body class="bg-base text-dark font-sans min-h-screen">
 
-  <div class="flex">
-    <aside id="layout-sidebar" class="w-60 shrink-0 border-r border-border min-h-[calc(100vh-72px)] p-4 sticky top-[72px]"></aside>
+  <aside id="layout-sidebar" class="w-60 fixed left-0 top-[72px] bottom-0 border-r border-border bg-base p-4 overflow-y-auto"></aside>
 
-    <main class="flex-1 max-w-2xl mx-auto px-4 py-8">
+  <main class="ml-60 max-w-2xl px-4 py-8">
       <h1 class="text-xl font-display font-bold mb-4">Membros</h1>
 
       <input id="busca" type="text" placeholder="Buscar por nick…"
@@ -24,8 +23,7 @@
       <div id="lista" class="bg-card border border-border rounded-2xl divide-y divide-border overflow-hidden">
         <p class="text-sm text-muted p-4">Carregando…</p>
       </div>
-    </main>
-  </div>
+  </main>
 
 <script src="/assets/api.js"></script>
 <script src="/assets/layout.js"></script>

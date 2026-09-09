@@ -12,10 +12,9 @@
 </head>
 <body class="bg-base text-dark font-sans min-h-screen">
 
-  <div class="flex">
-    <aside id="layout-sidebar" class="w-60 shrink-0 border-r border-border min-h-[calc(100vh-72px)] p-4 sticky top-[72px]"></aside>
+  <aside id="layout-sidebar" class="w-60 fixed left-0 top-[72px] bottom-0 border-r border-border bg-base p-4 overflow-y-auto"></aside>
 
-    <main class="flex-1 max-w-xl mx-auto px-4 py-8">
+  <main class="ml-60 max-w-xl px-4 py-8">
       <h1 class="text-xl font-display font-bold mb-4">Feed</h1>
 
       <form id="form-tweet" class="bg-card border border-border rounded-2xl p-4 mb-6">
@@ -31,8 +30,7 @@
       <div id="lista-tweets" class="space-y-3">
         <p class="text-sm text-muted">Carregando…</p>
       </div>
-    </main>
-  </div>
+  </main>
 
 <script src="/assets/api.js"></script>
 <script src="/assets/layout.js"></script>
