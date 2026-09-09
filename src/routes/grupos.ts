@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { ehAdminDoGrupo } from '../services/grupos'
 import { resolverAutor } from '../services/autor'
+import { buscarJogadorHabblet } from '../services/habblet'
 
 type Bindings = { DB: D1Database }
 type Variables = { usuarioId: number }
@@ -45,9 +46,18 @@ grupos.get('/:slug/membros', async (c) => {
      JOIN grupo_niveis gn ON gn.id = ug.nivel_id
      WHERE ug.grupo_id = ? AND ug.ativo = 1
      ORDER BY gn.ordem DESC`
-  ).bind(grupo.id).all()
+  ).bind(grupo.id).all<{ id: number; nick: string }>()
 
-  return c.json(results)
+  // Grupo tende a ser pequeno (dezenas, não centenas) — busca a figure
+  // de cada um em paralelo, sem travar a resposta se algum falhar.
+  const comFigure = await Promise.all(
+    results.map(async (membro) => {
+      const figure = await buscarJogadorHabblet(membro.nick).then((j) => j?.figure ?? null).catch(() => null)
+      return { ...membro, figure }
+    })
+  )
+
+  return c.json(comFigure)
 })
 
 // --- Gestão do grupo em si ---
@@ -247,8 +257,18 @@ grupos.get('/:slug/registros', async (c) => {
   const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
   if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
 
-  const { results } = await c.env.DB.prepare(`SELECT * FROM grupo_registros WHERE grupo_id = ? ORDER BY criado_em DESC`)
-    .bind(grupo.id).all()
+  const { results } = await c.env.DB.prepare(
+    `SELECT gr.id, gr.tipo, gr.motivo, gr.criado_em,
+            u.nick AS usuario_nick,
+            reg.nick AS registrado_por_nick,
+            na.nome AS nivel_anterior_nome, nn.nome AS nivel_novo_nome
+     FROM grupo_registros gr
+     JOIN usuarios u ON u.id = gr.usuario_id
+     LEFT JOIN usuarios reg ON reg.id = gr.registrado_por_id
+     LEFT JOIN grupo_niveis na ON na.id = gr.nivel_anterior_id
+     LEFT JOIN grupo_niveis nn ON nn.id = gr.nivel_novo_id
+     WHERE gr.grupo_id = ? ORDER BY gr.criado_em DESC`
+  ).bind(grupo.id).all()
   return c.json(results)
 })
 

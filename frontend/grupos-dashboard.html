@@ -15,28 +15,126 @@
   <aside id="layout-sidebar" class="w-60 fixed left-0 top-[72px] bottom-0 border-r border-border bg-base p-4 overflow-y-auto"></aside>
 
   <main class="ml-60 max-w-6xl px-4 py-8">
-      <a href="/grupos.html" class="text-xs text-muted hover:text-dark transition-colors">← Grupos</a>
-      <div id="conteudo" class="mt-2">
-        <p class="text-sm text-muted">Carregando…</p>
-      </div>
+    <a href="/grupos.html" class="text-xs text-muted hover:text-dark transition-colors">← Grupos</a>
+    <div id="conteudo" class="mt-2">
+      <p class="text-sm text-muted">Carregando…</p>
+    </div>
   </main>
 
 <script src="/assets/api.js"></script>
 <script src="/assets/layout.js"></script>
 <script>
-  const slug = decodeURIComponent(location.pathname.split('/').filter(Boolean)[1] || '');
+  const partes = location.pathname.split('/').filter(Boolean); // ['grupos', slug, aba?]
+  const slug = decodeURIComponent(partes[1] || '');
+  const aba = partes[2] || 'membros';
 
   const TIPO_LABEL = {
     companhia: 'Companhia', subcompanhia: 'Subcompanhia',
     orgao_topo: 'Órgão de Topo', setor_inteligencia: 'Setor de Inteligência',
   };
 
+  const TIPO_REGISTRO_LABEL = {
+    admissao: 'Admissão', promocao: 'Promoção', rebaixamento: 'Rebaixamento', saida: 'Saída',
+  };
+
+  function renderAbas(ehAdmin) {
+    const abas = [
+      { id: 'membros', label: 'Membros', href: `/grupos/${slug}` },
+      { id: 'noticias', label: 'Notícias', href: `/grupos/${slug}/noticias` },
+      { id: 'registros', label: 'Requerimentos internos', href: `/grupos/${slug}/registros` },
+    ];
+    if (ehAdmin) abas.push({ id: 'configuracoes', label: 'Configurações', href: `/grupos/${slug}/configuracoes` });
+
+    return `
+      <div class="flex gap-6 border-b border-border mb-4">
+        ${abas.map((a) => `
+          <a href="${a.href}" class="pb-3 text-sm font-semibold border-b-2 transition-colors ${aba === a.id ? 'border-accent text-dark' : 'border-transparent text-muted hover:text-dark'}">
+            ${a.label}
+          </a>
+        `).join('')}
+      </div>
+    `;
+  }
+
   function renderMembro(m) {
+    const avatar = m.figure ? avatarUrl(m.figure, 'mini') : null;
     return `
       <a href="/perfil/${m.nick}" class="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-base transition-colors">
-        <span class="text-sm font-medium">${m.nick}${m.tag ? ` <span class="text-muted font-normal">[${m.tag}]</span>` : ''}</span>
+        <div class="flex items-center gap-3">
+          <span class="h-9 w-9 rounded-full bg-border overflow-hidden inline-block shrink-0">
+            ${avatar ? `<img src="${avatar}" class="w-full h-[190%] object-cover object-top" alt="">` : `<span class="w-full h-full flex items-center justify-center text-xs font-semibold">${m.nick.slice(0,2).toUpperCase()}</span>`}
+          </span>
+          <span class="text-sm font-medium">${m.nick}${m.tag ? ` <span class="text-muted font-normal">[${m.tag}]</span>` : ''}</span>
+        </div>
         <span class="text-xs text-muted">${m.nivel}${m.administrador_grupo ? ' · Admin' : ''}</span>
       </a>
+    `;
+  }
+
+  function renderNoticias(noticias) {
+    if (!noticias.length) return '<p class="text-sm text-muted">Nenhuma notícia publicada ainda.</p>';
+    return `
+      <div class="space-y-3">
+        ${noticias.map((n) => `
+          <div class="bg-card border border-border rounded-xl p-4">
+            <p class="text-sm font-semibold">${n.titulo}</p>
+            <p class="text-sm text-muted mt-1 whitespace-pre-wrap">${n.conteudo}</p>
+            <p class="text-xs text-muted mt-2">${new Date(n.publicado_em || n.criado_em).toLocaleDateString('pt-BR')}</p>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  function renderRegistros(registros) {
+    if (!registros.length) return '<p class="text-sm text-muted">Nenhum registro interno ainda.</p>';
+    return `
+      <div class="space-y-2">
+        ${registros.map((r) => `
+          <div class="bg-card border border-border rounded-xl px-4 py-3">
+            <div class="flex items-center justify-between">
+              <p class="text-sm font-semibold">${TIPO_REGISTRO_LABEL[r.tipo] || r.tipo} — ${r.usuario_nick}</p>
+              <p class="text-xs text-muted">${new Date(r.criado_em).toLocaleDateString('pt-BR')}</p>
+            </div>
+            ${r.nivel_anterior_nome || r.nivel_novo_nome ? `<p class="text-xs text-muted mt-1">${r.nivel_anterior_nome || '—'} → ${r.nivel_novo_nome || '—'}</p>` : ''}
+            ${r.motivo ? `<p class="text-xs text-muted mt-1">${r.motivo}</p>` : ''}
+            ${r.registrado_por_nick ? `<p class="text-xs text-muted/70 mt-1">Registrado por ${r.registrado_por_nick}</p>` : ''}
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  function renderConfiguracoes(grupo) {
+    return `
+      <form id="form-config" class="bg-card border border-border rounded-2xl p-5 space-y-3 max-w-lg">
+        <div>
+          <label class="block text-xs text-muted mb-1">Nome</label>
+          <input id="gc-nome" value="${grupo.nome}" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+        </div>
+        <div>
+          <label class="block text-xs text-muted mb-1">Tipo</label>
+          <select id="gc-tipo" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            <option value="companhia" ${grupo.tipo === 'companhia' ? 'selected' : ''}>Companhia</option>
+            <option value="subcompanhia" ${grupo.tipo === 'subcompanhia' ? 'selected' : ''}>Subcompanhia</option>
+            <option value="orgao_topo" ${grupo.tipo === 'orgao_topo' ? 'selected' : ''}>Órgão de Topo</option>
+            <option value="setor_inteligencia" ${grupo.tipo === 'setor_inteligencia' ? 'selected' : ''}>Setor de Inteligência</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-muted mb-1">URL da imagem/logo</label>
+          <input id="gc-imagem" value="${grupo.imagem_url || ''}" placeholder="https://…" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+        </div>
+        <div class="flex items-center gap-3">
+          <label class="text-xs text-muted">Cor</label>
+          <input id="gc-cor" type="color" value="${grupo.cor || '#046b2f'}" class="h-9 w-14 bg-base border border-border rounded-lg cursor-pointer">
+        </div>
+        <label class="flex items-center gap-2 text-sm">
+          <input id="gc-aulas" type="checkbox" ${grupo.permite_aulas ? 'checked' : ''}> Permite aulas
+        </label>
+        <button type="submit" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Salvar</button>
+        <p id="form-config-erro" class="hidden text-xs text-red-400"></p>
+      </form>
     `;
   }
 
@@ -49,95 +147,65 @@
       return;
     }
     const grupo = await grupoResp.json();
+    const souAdmin = Boolean(me.administrador_sistema);
 
-    const [membrosResp, aulasResp, noticiasResp] = await Promise.all([
-      apiFetch(`/grupos/${slug}/membros`),
-      grupo.permite_aulas ? apiFetch(`/grupos/${slug}/aulas`) : Promise.resolve(null),
-      apiFetch(`/grupos/${slug}/noticias`),
-    ]);
-    const membros = membrosResp.ok ? await membrosResp.json() : [];
-    const aulas = aulasResp && aulasResp.ok ? await aulasResp.json() : [];
-    const noticias = noticiasResp.ok ? (await noticiasResp.json()).filter((n) => n.status === 'publicada') : [];
+    let conteudoAba = '<p class="text-sm text-muted">Carregando…</p>';
+    if (aba === 'membros') {
+      const r = await apiFetch(`/grupos/${slug}/membros`);
+      conteudoAba = r.ok ? (await r.json()).map(renderMembro).join('') || '<p class="text-sm text-muted">Nenhum membro ainda.</p>' : '<p class="text-sm text-red-400">Erro ao carregar membros.</p>';
+      conteudoAba = `<div class="bg-card border border-border rounded-2xl divide-y divide-border overflow-hidden">${conteudoAba}</div>`;
+    } else if (aba === 'noticias') {
+      const r = await apiFetch(`/grupos/${slug}/noticias`);
+      const noticias = r.ok ? (await r.json()).filter((n) => n.status === 'publicada') : [];
+      conteudoAba = renderNoticias(noticias);
+    } else if (aba === 'registros') {
+      const r = await apiFetch(`/grupos/${slug}/registros`);
+      conteudoAba = renderRegistros(r.ok ? await r.json() : []);
+    } else if (aba === 'configuracoes' && souAdmin) {
+      conteudoAba = renderConfiguracoes(grupo);
+    }
 
     container.innerHTML = `
-      <div class="bg-card border border-border rounded-2xl p-5 flex items-center gap-3 mt-2 mb-6" ${grupo.cor ? `style="border-left: 4px solid ${grupo.cor}"` : ''}>
-        <span class="h-12 w-12 rounded-xl bg-base border border-border flex items-center justify-center text-sm font-bold overflow-hidden">
-          ${grupo.imagem_url ? `<img src="${grupo.imagem_url}" class="w-full h-full object-cover" alt="">` : grupo.codigo}
-        </span>
-        <div>
-          <h1 class="text-xl font-display font-bold">${grupo.nome}</h1>
-          <p class="text-xs text-muted">${TIPO_LABEL[grupo.tipo] || grupo.tipo}</p>
+      <div class="relative mb-14">
+        <div class="h-36 rounded-2xl overflow-hidden" style="background: linear-gradient(135deg, ${grupo.cor || '#212529'}, #12161c)"></div>
+        <div class="absolute left-6 -bottom-10 h-24 w-24 rounded-2xl ring-4 ring-base bg-card overflow-hidden">
+          ${grupo.imagem_url
+            ? `<img src="${grupo.imagem_url}" class="w-full h-full object-cover" alt="">`
+            : `<div class="w-full h-full flex items-center justify-center text-lg font-bold">${grupo.codigo}</div>`}
         </div>
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-[1fr_260px] gap-6">
-        <div class="space-y-6">
-          ${noticias.length ? `
-            <div>
-              <h2 class="text-sm font-semibold text-muted uppercase tracking-wide mb-2">Notícias</h2>
-              <div class="space-y-3">
-                ${noticias.map((n) => `
-                  <div class="bg-card border border-border rounded-xl p-4">
-                    <p class="text-sm font-semibold">${n.titulo}</p>
-                    <p class="text-sm text-muted mt-1 whitespace-pre-wrap">${n.conteudo}</p>
-                    <p class="text-xs text-muted mt-2">${new Date(n.publicado_em || n.criado_em).toLocaleDateString('pt-BR')}</p>
-                  </div>
-                `).join('')}
-              </div>
-            </div>
-          ` : ''}
-
-          ${grupo.permite_aulas ? `
-            <div>
-              <h2 class="text-sm font-semibold text-muted uppercase tracking-wide mb-2">Aulas</h2>
-              ${aulas.length ? `
-                <div class="space-y-2">
-                  ${aulas.map((a) => `
-                    <div class="bg-card border border-border rounded-xl p-4">
-                      <p class="text-sm font-semibold">${a.titulo}</p>
-                      ${a.descricao ? `<p class="text-xs text-muted mt-1">${a.descricao}</p>` : ''}
-                    </div>
-                  `).join('')}
-                </div>
-              ` : '<p class="text-sm text-muted">Nenhuma aula cadastrada ainda.</p>'}
-            </div>
-          ` : ''}
-        </div>
-
-        <div>
-          <h2 class="text-sm font-semibold text-muted uppercase tracking-wide mb-2">Membros (${membros.length})</h2>
-          <div class="bg-card border border-border rounded-xl divide-y divide-border overflow-hidden">
-            ${membros.length ? membros.map(renderMembro).join('') : '<p class="text-sm text-muted p-3">Nenhum membro ainda.</p>'}
-          </div>
-        </div>
+      <div class="pl-1 mb-4">
+        <h1 class="text-xl font-display font-bold">${grupo.nome}</h1>
+        <p class="text-xs text-muted">${TIPO_LABEL[grupo.tipo] || grupo.tipo}</p>
       </div>
 
-      ${me.administrador_sistema ? `
-        <div class="bg-card border border-border rounded-2xl p-5 mt-6">
-          <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Editar aparência</h2>
-          <form id="form-aparencia" class="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-3 items-center">
-            <input id="ga-imagem" placeholder="URL da imagem/logo" value="${grupo.imagem_url || ''}"
-              class="bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
-            <input id="ga-cor" type="color" value="${grupo.cor || '#046b2f'}" class="h-9 w-14 bg-base border border-border rounded-lg cursor-pointer">
-            <button type="submit" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Salvar</button>
-          </form>
-        </div>
-      ` : ''}
+      ${renderAbas(souAdmin)}
+
+      <div>${conteudoAba}</div>
     `;
 
-    if (me.administrador_sistema) {
-      document.getElementById('form-aparencia').addEventListener('submit', async (e) => {
+    if (aba === 'configuracoes' && souAdmin) {
+      document.getElementById('form-config').addEventListener('submit', async (e) => {
         e.preventDefault();
+        const erroEl = document.getElementById('form-config-erro');
+        erroEl.classList.add('hidden');
+
         const resposta = await apiFetch(`/grupos/${slug}`, {
           method: 'PATCH',
           body: JSON.stringify({
-            imagem_url: document.getElementById('ga-imagem').value.trim() || undefined,
-            cor: document.getElementById('ga-cor').value,
+            nome: document.getElementById('gc-nome').value.trim(),
+            tipo: document.getElementById('gc-tipo').value,
+            imagem_url: document.getElementById('gc-imagem').value.trim() || undefined,
+            cor: document.getElementById('gc-cor').value,
+            permite_aulas: document.getElementById('gc-aulas').checked,
           }),
         });
+
         if (!resposta.ok) {
           const dados = await resposta.json().catch(() => ({}));
-          alert(dados.erro || 'Não foi possível salvar a aparência do grupo.');
+          erroEl.textContent = dados.erro || 'Não foi possível salvar.';
+          erroEl.classList.remove('hidden');
           return;
         }
         carregar(me);
