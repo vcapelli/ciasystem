@@ -110,7 +110,7 @@
                 <span class="h-9 w-9 rounded-full ${cor.bg} ring-2 ${cor.anel} flex items-center justify-center text-sm shrink-0">${icone}</span>
                 <span class="flex-1 w-px bg-border mt-1"></span>
               </div>
-              <div class="bg-card border border-border rounded-xl px-4 py-3 flex-1 mb-1">
+              <div class="bg-card border border-border rounded-xl px-4 py-3 flex-1 mb-1 shadow-sm">
                 <div class="flex items-center justify-between gap-2">
                   <p class="text-sm font-semibold">${tituloTipo(item.tipo)}</p>
                   <span class="text-xs font-semibold ${cor.texto} capitalize">${item.status}</span>
@@ -130,7 +130,7 @@
     return `
       <div class="space-y-3">
         ${tweets.map((t) => `
-          <div class="bg-card border border-border rounded-2xl p-4">
+          <div class="bg-card border border-border rounded-2xl p-4 shadow-sm">
             <p class="text-sm whitespace-pre-wrap">${t.conteudo || ''}</p>
             <p class="text-xs text-muted mt-2">${new Date(t.criado_em).toLocaleString('pt-BR')}</p>
           </div>
@@ -182,7 +182,7 @@
 
       <div class="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6">
         <div>
-          <div class="bg-card border border-border rounded-2xl p-5">
+          <div class="bg-card border border-border rounded-2xl p-5 shadow-sm">
             ${avatarGrande ? `
               <div class="flex justify-center mb-4">
                 <img src="${avatarGrande}" class="max-h-64 object-contain" alt="Avatar de ${perfil.nick}">
@@ -217,7 +217,7 @@
             <div id="bio-area" class="mt-4"></div>
           </div>
 
-          <div class="bg-card border border-border rounded-2xl p-4 mt-4">
+          <div class="bg-card border border-border rounded-2xl p-4 mt-4 shadow-sm">
             <p class="text-xs uppercase tracking-wide text-muted mb-1">Distinções</p>
             ${renderDistincoes('Emblemas', emblemas)}
             ${renderDistincoes('Honrarias', honrarias)}

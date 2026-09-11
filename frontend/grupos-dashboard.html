@@ -17,7 +17,9 @@
   <aside id="layout-sidebar" class="w-60 fixed left-0 top-[72px] bottom-0 border-r border-border bg-base p-4 overflow-y-auto"></aside>
 
   <main class="ml-60 max-w-6xl px-4 py-8">
-    <a href="/grupos.html" class="text-xs text-muted hover:text-dark transition-colors">← Grupos</a>
+    <a href="/grupos.html" class="inline-flex items-center gap-1.5 bg-card border border-border rounded-full pl-2.5 pr-4 py-1.5 text-sm font-medium text-muted hover:text-dark hover:border-accent transition-colors shadow-sm">
+      <span class="text-base leading-none">←</span> Grupos
+    </a>
     <div id="conteudo" class="mt-2">
       <p class="text-sm text-muted">Carregando…</p>
     </div>
@@ -48,12 +50,14 @@
     if (ehAdmin) abas.push({ id: 'configuracoes', label: 'Configurações', href: `/grupos/${slug}/configuracoes` });
 
     return `
-      <div class="flex gap-6 border-b border-border mb-4">
-        ${abas.map((a) => `
-          <a href="${a.href}" class="pb-3 text-sm font-semibold border-b-2 transition-colors ${aba === a.id ? 'border-accent text-dark' : 'border-transparent text-muted hover:text-dark'}">
-            ${a.label}
-          </a>
-        `).join('')}
+      <div class="bg-card border border-border rounded-2xl shadow-sm px-5 pt-3 mb-4">
+        <div class="flex gap-6 border-b border-border">
+          ${abas.map((a) => `
+            <a href="${a.href}" class="pb-3 text-sm font-semibold border-b-2 transition-colors ${aba === a.id ? 'border-accent text-dark' : 'border-transparent text-muted hover:text-dark'}">
+              ${a.label}
+            </a>
+          `).join('')}
+        </div>
       </div>
     `;
   }
@@ -78,7 +82,7 @@
     return `
       <div class="space-y-3">
         ${noticias.map((n) => `
-          <div class="bg-card border border-border rounded-xl p-4">
+          <div class="bg-card border border-border rounded-xl p-4 shadow-sm">
             <p class="text-sm font-semibold">${n.titulo}</p>
             <p class="text-sm text-muted mt-1 whitespace-pre-wrap">${n.conteudo}</p>
             <p class="text-xs text-muted mt-2">${new Date(n.publicado_em || n.criado_em).toLocaleDateString('pt-BR')}</p>
@@ -93,7 +97,7 @@
     return `
       <div class="space-y-2">
         ${registros.map((r) => `
-          <div class="bg-card border border-border rounded-xl px-4 py-3">
+          <div class="bg-card border border-border rounded-xl px-4 py-3 shadow-sm">
             <div class="flex items-center justify-between">
               <p class="text-sm font-semibold">${TIPO_REGISTRO_LABEL[r.tipo] || r.tipo} — ${r.usuario_nick}</p>
               <p class="text-xs text-muted">${new Date(r.criado_em).toLocaleDateString('pt-BR')}</p>
@@ -109,7 +113,7 @@
 
   function renderConfiguracoes(grupo) {
     return `
-      <form id="form-config" class="bg-card border border-border rounded-2xl p-5 space-y-3 max-w-lg">
+      <form id="form-config" class="bg-card border border-border rounded-2xl p-5 space-y-3 max-w-lg shadow-sm">
         <div>
           <label class="block text-xs text-muted mb-1">Nome</label>
           <input id="gc-nome" value="${grupo.nome}" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
@@ -155,7 +159,7 @@
     if (aba === 'membros') {
       const r = await apiFetch(`/grupos/${slug}/membros`);
       conteudoAba = r.ok ? (await r.json()).map(renderMembro).join('') || '<p class="text-sm text-muted">Nenhum membro ainda.</p>' : '<p class="text-sm text-red-400">Erro ao carregar membros.</p>';
-      conteudoAba = `<div class="bg-card border border-border rounded-2xl divide-y divide-border overflow-hidden">${conteudoAba}</div>`;
+      conteudoAba = `<div class="bg-card border border-border rounded-2xl divide-y divide-border overflow-hidden shadow-sm">${conteudoAba}</div>`;
     } else if (aba === 'noticias') {
       const r = await apiFetch(`/grupos/${slug}/noticias`);
       const noticias = r.ok ? (await r.json()).filter((n) => n.status === 'publicada') : [];
@@ -168,16 +172,16 @@
     }
 
     container.innerHTML = `
-      <div class="relative mb-14">
-        <div class="h-36 rounded-2xl overflow-hidden" style="background: linear-gradient(135deg, ${grupo.cor || '#212529'}, #12161c)"></div>
-        <div class="absolute left-6 -bottom-10 h-24 w-24 rounded-2xl ring-4 ring-base bg-card overflow-hidden">
+      <div class="relative mb-10">
+        <div class="h-36 rounded-2xl overflow-hidden shadow-sm" style="background: linear-gradient(135deg, ${grupo.cor || '#212529'}, #12161c)"></div>
+        <div class="absolute left-6 -bottom-8 h-28 w-28 flex items-end justify-center">
           ${grupo.imagem_url
-            ? `<img src="${grupo.imagem_url}" class="w-full h-full object-cover" alt="">`
-            : `<div class="w-full h-full flex items-center justify-center text-lg font-bold">${grupo.codigo}</div>`}
+            ? `<img src="${grupo.imagem_url}" class="max-h-28 max-w-28 object-contain drop-shadow-lg" alt="">`
+            : `<div class="h-20 w-20 rounded-2xl bg-card border border-border shadow-sm flex items-center justify-center text-lg font-bold">${grupo.codigo}</div>`}
         </div>
       </div>
 
-      <div class="pl-1 mb-4">
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-4 mt-4">
         <h1 class="text-xl font-display font-bold">${grupo.nome}</h1>
         <p class="text-xs text-muted">${TIPO_LABEL[grupo.tipo] || grupo.tipo}</p>
       </div>
