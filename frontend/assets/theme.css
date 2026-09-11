@@ -68,9 +68,10 @@
 /* Fundo estilo piso do Habbo — ladrilho repetindo, tamanho exato da
    imagem (65x64) pra não distorcer o efeito de losango. */
 .habbo-floor-bg {
-  background-image: url(https://congressohb.com.br/img/floor.png);
+  background-image: url(https://imgur.com/4fBBJMW.png);
   background-repeat: repeat;
   background-size: 65px 64px;
+  opacity: 0.5;
 }
 
 /* Banner de perfil — mesma imagem do login, sem animação, contido
