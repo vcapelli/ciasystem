@@ -23,6 +23,8 @@ import sugestoes from './routes/sugestoes'
 import tickets from './routes/tickets'
 import logs from './routes/logs'
 import usuarios from './routes/usuarios'
+import patentes from './routes/patentes'
+import crimes from './routes/crimes'
 
 // `Bindings` descreve os recursos do Cloudflare disponíveis no Worker
 // (bindings configurados em wrangler.toml + secrets). `Variables` é o
@@ -87,6 +89,8 @@ protegido.route('/sugestoes', sugestoes)
 protegido.route('/tickets', tickets)
 protegido.route('/logs', logs)
 protegido.route('/usuarios', usuarios)
+protegido.route('/patentes', patentes)
+protegido.route('/crimes', crimes)
 protegido.route('/configuracoes', configuracoesAdmin)
 
 app.route('/', protegido)
