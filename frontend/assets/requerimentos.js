@@ -281,8 +281,8 @@ async function montarFormularioRequerimento(config) {
 
         <div class="flex gap-4 px-4 py-4">
           <div class="w-28 shrink-0 text-center">
-            <span class="h-16 w-16 mx-auto rounded-full bg-base border border-border overflow-hidden inline-block transition-transform duration-300 hover:-translate-y-[10px]">
-              ${avatarAutor ? `<img src="${avatarAutor}" class="w-full h-[190%] object-cover object-top -mt-4" alt="">` : `<span class="w-full h-full flex items-center justify-center text-sm font-bold">${(r.autor_nick || '?').slice(0,2).toUpperCase()}</span>`}
+            <span class="h-16 w-16 mx-auto rounded-full bg-base border border-border overflow-hidden inline-block">
+              ${avatarAutor ? `<img src="${avatarAutor}" class="w-full h-[190%] object-cover object-top -mt-4 transition-transform duration-300 hover:-translate-y-[10px]" alt="">` : `<span class="w-full h-full flex items-center justify-center text-sm font-bold">${(r.autor_nick || '?').slice(0,2).toUpperCase()}</span>`}
             </span>
             <p class="text-sm font-semibold mt-1.5">${r.autor_nick || '—'}</p>
             <p class="text-[0.65rem] text-muted mt-2">Patente/Cargo:</p>

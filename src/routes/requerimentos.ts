@@ -10,6 +10,13 @@ import type { CriarRequerimentoInput } from '../types/requerimentos'
 type Bindings = { DB: D1Database }
 type Variables = { usuarioId: number }
 
+// Esses tipos não passam por fila de aprovação — já entram aprovados
+// (o "aprovador" na prática é o próprio autor, que atesta os requisitos
+// no ato). Aprovar/reprovar/cancelar manualmente e excluir do histórico
+// continuam exigindo permissão normal (ver podeGerirRequerimento) ou
+// administrador_sistema.
+const TIPOS_AUTO_APROVADOS = ['instrucao_inicial', 'contratacao', 'tag', 'venda_cargo']
+
 const requerimentos = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
 // POST /requerimentos — cria um requerimento com N alvos (+ anexos, se houver).
@@ -77,14 +84,49 @@ requerimentos.post('/', async (c) => {
 
   const requerimentoId = meta.last_row_id
 
+  const idsAlvosInseridos: number[] = []
   for (const item of body.alvos) {
-    if (typeof item === 'number') {
-      await c.env.DB.prepare(`INSERT INTO requerimento_alvos (requerimento_id, usuario_id) VALUES (?, ?)`)
-        .bind(requerimentoId, item).run()
-    } else {
-      await c.env.DB.prepare(`INSERT INTO requerimento_alvos (requerimento_id, nick_alvo) VALUES (?, ?)`)
-        .bind(requerimentoId, item).run()
+    const insercao =
+      typeof item === 'number'
+        ? await c.env.DB.prepare(`INSERT INTO requerimento_alvos (requerimento_id, usuario_id) VALUES (?, ?)`)
+            .bind(requerimentoId, item).run()
+        : await c.env.DB.prepare(`INSERT INTO requerimento_alvos (requerimento_id, nick_alvo) VALUES (?, ?)`)
+            .bind(requerimentoId, item).run()
+    idsAlvosInseridos.push(Number(insercao.meta.last_row_id))
+  }
+
+  // Alguns tipos são auto-aprovados na criação — não passam por fila de
+  // revisão (ex: Instrução Inicial já vem confirmada pelo instrutor).
+  if (TIPOS_AUTO_APROVADOS.includes(body.tipo)) {
+    for (const alvoId of idsAlvosInseridos) {
+      try {
+        const alvo = await c.env.DB.prepare(`SELECT usuario_id, nick_alvo FROM requerimento_alvos WHERE id = ?`)
+          .bind(alvoId).first<{ usuario_id: number | null; nick_alvo: string | null }>()
+        if (!alvo) continue
+
+        const identificador = alvo.usuario_id !== null ? { usuarioId: alvo.usuario_id } : { nickAlvo: alvo.nick_alvo! }
+        const efeito = await aplicarEfeitoAprovacao(c.env.DB, body.tipo, identificador, body.dados_especificos ?? null)
+
+        if (alvo.usuario_id === null) {
+          await c.env.DB.prepare(`UPDATE requerimento_alvos SET usuario_id = ? WHERE id = ?`)
+            .bind(efeito.usuarioId, alvoId).run()
+        }
+
+        await c.env.DB.prepare(
+          `UPDATE requerimento_alvos SET status = 'aprovado', decidido_em = strftime('%Y-%m-%dT%H:%M:%SZ','now'), decidido_por_id = ? WHERE id = ?`
+        ).bind(autorId, alvoId).run()
+
+        await c.env.DB.prepare(
+          `INSERT INTO historico (usuario_id, tipo_acao, requerimento_id, requerimento_alvo_id, executado_por_id, detalhes)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        ).bind(efeito.usuarioId, body.tipo, requerimentoId, alvoId, autorId, JSON.stringify({ antes: efeito.antes, depois: efeito.depois })).run()
+      } catch {
+        // Se o efeito falhar (ex: nick já existe), deixa esse alvo
+        // pendente pra revisão manual em vez de derrubar a criação
+        // inteira — o requerimento já foi registrado.
+      }
     }
+    await recalcularStatusRequerimento(c.env.DB, Number(requerimentoId))
   }
 
   if (body.anexos?.length) {
@@ -235,6 +277,72 @@ requerimentos.post('/:id/alvos/:alvoId/decidir', async (c) => {
   })
 
   return c.json({ ok: true, status_alvo: status, status_geral: statusGeral, usuario_id: usuarioIdFinal })
+})
+
+// POST /requerimentos/:id/cancelar — cancela um requerimento inteiro
+// (todos os alvos ainda não decididos passam pra 'cancelado'). Exige
+// administrador_sistema OU permissão dedicada de cancelamento
+// (requerimentos_permissoes, por usuário ou por grupo — configurável
+// no futuro painel de admin).
+requerimentos.post('/:id/cancelar', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  const id = c.req.param('id')
+  const { motivo } = await c.req.json<{ motivo?: string }>().catch(() => ({ motivo: undefined }))
+
+  const usuario = await c.env.DB.prepare(`SELECT administrador_sistema FROM usuarios WHERE id = ?`)
+    .bind(usuarioId).first<{ administrador_sistema: number }>()
+  if (!usuario) return c.json({ erro: 'usuário não encontrado' }, 404)
+
+  const requerimento = await c.env.DB.prepare(`SELECT tipo FROM requerimentos WHERE id = ?`)
+    .bind(id).first<{ tipo: string }>()
+  if (!requerimento) return c.json({ erro: 'requerimento não encontrado' }, 404)
+
+  if (!usuario.administrador_sistema) {
+    const pode = await podeGerirRequerimento(c.env.DB, usuarioId, requerimento.tipo, 'cancelar')
+    if (!pode) return c.json({ erro: 'sem permissão para cancelar requerimentos deste tipo' }, 403)
+  }
+
+  await c.env.DB.prepare(
+    `UPDATE requerimento_alvos SET status = 'cancelado', decidido_em = strftime('%Y-%m-%dT%H:%M:%SZ','now'),
+       decidido_por_id = ?, motivo_recusa = ?
+     WHERE requerimento_id = ? AND status = 'pendente'`
+  ).bind(usuarioId, motivo ?? null, id).run()
+
+  await recalcularStatusRequerimento(c.env.DB, Number(id))
+
+  await registrarEvento(c.env.DB, usuarioId, 'requerimento_cancelado', {
+    referenciaTipo: 'requerimento', referenciaId: Number(id), detalhes: { motivo },
+  })
+
+  return c.json({ ok: true })
+})
+
+// DELETE /requerimentos/:id — exclusão definitiva (some do histórico
+// também). Só administrador_sistema — diferente de cancelar, que só
+// muda o status e mantém o registro.
+requerimentos.delete('/:id', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  const id = c.req.param('id')
+
+  const usuario = await c.env.DB.prepare(`SELECT administrador_sistema FROM usuarios WHERE id = ?`)
+    .bind(usuarioId).first<{ administrador_sistema: number }>()
+  if (!usuario?.administrador_sistema) {
+    return c.json({ erro: 'só administradores do sistema podem excluir requerimentos do histórico' }, 403)
+  }
+
+  const requerimento = await c.env.DB.prepare(`SELECT id FROM requerimentos WHERE id = ?`).bind(id).first()
+  if (!requerimento) return c.json({ erro: 'requerimento não encontrado' }, 404)
+
+  // `historico` não tem ON DELETE CASCADE de propósito (é o registro
+  // permanente) — apagar aqui é uma decisão explícita de admin.
+  await c.env.DB.prepare(`DELETE FROM historico WHERE requerimento_id = ?`).bind(id).run()
+  await c.env.DB.prepare(`DELETE FROM requerimentos WHERE id = ?`).bind(id).run()
+
+  await registrarEvento(c.env.DB, usuarioId, 'requerimento_excluido', {
+    referenciaTipo: 'requerimento', referenciaId: Number(id),
+  })
+
+  return c.json({ ok: true })
 })
 
 // GET /requerimentos/alvo/:usuarioId — linha do tempo de todos os
