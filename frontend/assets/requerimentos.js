@@ -231,10 +231,16 @@ async function montarFormularioRequerimento(config) {
     const cor = COR_STATUS_REQ[r.status] || COR_STATUS_REQ.pendente;
     const alvos = r.alvos_json ? JSON.parse(r.alvos_json) : [];
     const alvoPrincipal = alvos[0];
+    const alvosTexto = alvos.map((a) => a.nick).join(' / ') || '—';
     let dadosEspecificos = {};
     try { dadosEspecificos = r.dados_especificos ? JSON.parse(r.dados_especificos) : {}; } catch {}
 
+    const ehInstrucaoInicial = r.tipo === 'instrucao_inicial';
+    const avatarAutor = r.autor_figure ? avatarUrl(r.autor_figure, 'mini') : null;
+
     const linhasExtras = [];
+    linhasExtras.push(`<b>${ehInstrucaoInicial ? 'Nick e TAG do Instrutor' : 'Requerido por'}:</b> ${r.autor_nick || '—'}${r.autor_tag ? ` [${r.autor_tag}]` : ''}`);
+    linhasExtras.push(`<b>${ehInstrucaoInicial ? 'Recruta(s) aprovado(s)' : 'Alvo(s)'}:</b> ${alvosTexto}`);
     if (dadosEspecificos.patente_destino_id && patentesMapa[dadosEspecificos.patente_destino_id]) {
       linhasExtras.push(`<b>Destino:</b> ${patentesMapa[dadosEspecificos.patente_destino_id]}`);
     }
@@ -242,41 +248,61 @@ async function montarFormularioRequerimento(config) {
     if (r.crime_nome) linhasExtras.push(`<b>Infração:</b> ${r.crime_nome}`);
 
     return `
-      <div class="bg-card border border-border rounded-2xl shadow-sm overflow-hidden" style="border-left: 4px solid ${cor.barra}">
-        <div class="flex items-center justify-between px-4 py-2.5 border-b border-border">
+      <div class="bg-[#1b1e24] text-white rounded-2xl shadow-md overflow-hidden" style="border-left: 4px solid ${cor.barra}">
+        <div class="flex items-center justify-between px-4 py-2.5 border-b border-white/10">
           <div class="flex items-center gap-2">
-            <p class="text-sm font-semibold">${tituloTipoReq(r.tipo)}</p>
+            <p class="text-sm font-bold">${tituloTipoReq(r.tipo)}</p>
             <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full capitalize ${cor.badge}">${r.status}</span>
           </div>
-          <p class="text-xs text-muted">${formatarDataHoraReq(r.criado_em)}</p>
+          <p class="text-xs text-white/40">${formatarDataHoraReq(r.criado_em)}</p>
         </div>
 
-        <div class="flex gap-4 px-4 py-3">
-          <div class="w-24 shrink-0 text-center">
-            <span class="h-12 w-12 mx-auto rounded-full bg-base border border-border flex items-center justify-center text-sm font-bold">
-              ${(r.autor_nick || '?').slice(0,2).toUpperCase()}
+        <div class="flex gap-4 px-4 py-4">
+          <div class="w-28 shrink-0 text-center">
+            <span class="h-16 w-16 mx-auto rounded-full bg-white/10 overflow-hidden inline-block">
+              ${avatarAutor ? `<img src="${avatarAutor}" class="w-full h-[190%] object-cover object-top" alt="">` : `<span class="w-full h-full flex items-center justify-center text-sm font-bold">${(r.autor_nick || '?').slice(0,2).toUpperCase()}</span>`}
             </span>
-            <p class="text-xs font-medium mt-1 truncate">${r.autor_nick || '—'}</p>
-            <p class="text-[0.65rem] text-muted truncate">${r.autor_patente_nome || ''}</p>
+            <p class="text-sm font-semibold mt-1.5">${r.autor_nick || '—'}</p>
+            <p class="text-[0.65rem] text-white/40 mt-2">Patente/Cargo:</p>
+            <p class="text-xs font-semibold">${r.autor_patente_nome || '—'}</p>
           </div>
 
-          <div class="flex-1 text-sm space-y-1">
-            ${alvoPrincipal ? `<p><b>Alvo:</b> ${alvoPrincipal.nick}</p>` : ''}
+          <div class="flex-1 text-sm space-y-1.5 min-w-0">
+            <p class="text-white/70">${r.autor_patente_nome || ''} <b class="text-white">${r.autor_nick || ''}</b> escreveu:</p>
             ${linhasExtras.map((l) => `<p>${l}</p>`).join('')}
-            ${r.fundamentacao ? `<p class="text-muted">${r.fundamentacao}</p>` : ''}
-            ${alvos.length > 1 ? `
-              <div class="flex flex-wrap gap-1.5 mt-2">
-                ${alvos.map((a) => `<span class="text-xs px-2 py-0.5 rounded-full ${(COR_STATUS_REQ[a.status] || COR_STATUS_REQ.pendente).badge}">${a.nick} · ${a.status}</span>`).join('')}
-              </div>
-            ` : ''}
+            ${r.fundamentacao ? `<p class="text-white/70">${r.fundamentacao}</p>` : ''}
+            <p class="flex items-center gap-1.5 text-green-400 pt-1">✅ Li e concordo com as normas de ${tituloTipoReq(r.tipo).toLowerCase()}.</p>
+
+            <div class="pt-1">
+              <p class="text-[0.65rem] text-white/40">Assinatura:</p>
+              <p class="assinatura text-xl leading-tight">${r.autor_nick || ''}</p>
+            </div>
           </div>
         </div>
 
-        ${alvoPrincipal?.decidido_por_nick ? `
-          <div class="px-4 py-2 border-t border-border text-xs text-muted flex flex-wrap gap-x-4">
-            <span>Decidido por <b class="text-dark">${alvoPrincipal.decidido_por_nick}</b></span>
-            <span>${formatarDataHoraReq(alvoPrincipal.decidido_em)}</span>
-            ${alvoPrincipal.motivo_recusa ? `<span class="text-red-500">${alvoPrincipal.motivo_recusa}</span>` : ''}
+        <div class="border-t border-white/10 px-4 py-3 grid grid-cols-3 gap-3">
+          <div>
+            <p class="text-[0.65rem] text-white/40">Status:</p>
+            <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full capitalize ${cor.badge} inline-block mt-1">${r.status}</span>
+          </div>
+          <div>
+            <p class="text-[0.65rem] text-white/40">Usuário responsável:</p>
+            <p class="assinatura text-base ${alvoPrincipal?.decidido_por_nick ? '' : 'text-white/40 italic text-xs font-sans'}">${alvoPrincipal?.decidido_por_nick || 'Não preenchido'}</p>
+          </div>
+          <div>
+            <p class="text-[0.65rem] text-white/40">Data da decisão:</p>
+            <p class="text-xs mt-1">${alvoPrincipal?.decidido_em ? formatarDataHoraReq(alvoPrincipal.decidido_em) : 'Não preenchida'}</p>
+          </div>
+        </div>
+
+        <div class="px-4 pb-3">
+          <p class="text-[0.65rem] text-white/40">Motivo:</p>
+          <p class="text-xs mt-0.5">${alvoPrincipal?.motivo_recusa || r.fundamentacao || 'Não preenchido'}</p>
+        </div>
+
+        ${alvos.length > 1 ? `
+          <div class="flex flex-wrap gap-1.5 px-4 pb-4">
+            ${alvos.map((a) => `<span class="text-xs px-2 py-0.5 rounded-full ${(COR_STATUS_REQ[a.status] || COR_STATUS_REQ.pendente).badge}">${a.nick} · ${a.status}</span>`).join('')}
           </div>
         ` : ''}
       </div>

@@ -4,6 +4,7 @@ import { podeAgirSobre, possuiCompetenciaDePromotor } from '../services/hierarqu
 import { aplicarEfeitoAprovacao, recalcularStatusRequerimento } from '../services/efeitos'
 import { notificar } from '../services/notificacoes'
 import { registrarEvento } from '../services/logs'
+import { buscarJogadorHabblet } from '../services/habblet'
 import type { CriarRequerimentoInput } from '../types/requerimentos'
 
 type Bindings = { DB: D1Database }
@@ -106,7 +107,7 @@ requerimentos.get('/', async (c) => {
   const status = c.req.query('status')
 
   const base = `
-    SELECT r.*, u.nick AS autor_nick, p.nome AS autor_patente_nome, cr.nome AS crime_nome,
+    SELECT r.*, u.nick AS autor_nick, u.tag AS autor_tag, p.nome AS autor_patente_nome, cr.nome AS crime_nome,
       (
         SELECT json_group_array(json_object(
           'nick', COALESCE(ua.nick, ra.nick_alvo),
@@ -130,8 +131,21 @@ requerimentos.get('/', async (c) => {
     ? c.env.DB.prepare(`${base} WHERE r.status = ? ORDER BY r.criado_em DESC LIMIT 50`).bind(status)
     : c.env.DB.prepare(`${base} ORDER BY r.criado_em DESC LIMIT 50`)
 
-  const { results } = await query.all()
-  return c.json(results)
+  const { results } = await query.all<{ autor_nick: string | null }>()
+
+  // Busca a figure de cada autor distinto, em paralelo — o conjunto de
+  // autores costuma ser bem menor que o de requerimentos.
+  const nicksUnicos = [...new Set(results.map((r) => r.autor_nick).filter(Boolean))] as string[]
+  const figurasPorNick: Record<string, string | null> = {}
+  await Promise.all(
+    nicksUnicos.map(async (nick) => {
+      figurasPorNick[nick] = await buscarJogadorHabblet(nick).then((j) => j?.figure ?? null).catch(() => null)
+    })
+  )
+
+  const comFigure = results.map((r) => ({ ...r, autor_figure: r.autor_nick ? figurasPorNick[r.autor_nick] ?? null : null }))
+
+  return c.json(comFigure)
 })
 
 requerimentos.get('/:id', async (c) => {

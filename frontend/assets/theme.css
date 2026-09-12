@@ -1,6 +1,6 @@
 /* Identidade visual do CIASystem, baseada no login histórico do fórum. */
 
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Caveat:wght@600&display=swap');
 
 @font-face {
   font-family: industry;
@@ -40,6 +40,12 @@
    títulos grandes e a marca "CIASystem" — nunca pro texto corrido. */
 .font-industry {
   font-family: 'industry', 'Oswald', sans-serif;
+}
+
+/* Estilo "assinatura" nos cards de requerimento — imita a
+   caligrafia usada no sistema de referência. */
+.assinatura {
+  font-family: 'Caveat', cursive;
 }
 
 /* Fundo animado full-bleed, só usado na tela de login. */
