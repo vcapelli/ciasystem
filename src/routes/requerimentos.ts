@@ -36,9 +36,10 @@ requerimentos.post('/', async (c) => {
   if (!autor) return c.json({ erro: 'autor não encontrado' }, 404)
 
   // Ninguém pode ser alvo do próprio requerimento (promover a si mesmo,
-  // contratar a si mesmo, etc.) — exceto o tipo 'tag', que é o único
-  // caso em que isso faz sentido (criar/alterar a própria TAG).
-  if (body.tipo !== 'tag' && body.alvos.some((item) => item === autorId)) {
+  // contratar a si mesmo, etc.) — exceto 'tag' (criar/alterar a própria
+  // TAG) e 'transferencia_conta' (trocar o próprio nick).
+  const TIPOS_PERMITEM_AUTO_ALVO = ['tag', 'transferencia_conta']
+  if (!TIPOS_PERMITEM_AUTO_ALVO.includes(body.tipo) && body.alvos.some((item) => item === autorId)) {
     return c.json({ erro: 'você não pode ser o alvo do próprio requerimento' }, 400)
   }
 
@@ -183,7 +184,7 @@ requerimentos.get('/', async (c) => {
       (
         SELECT json_group_array(json_object(
           'id', ra.id,
-          'nick', COALESCE(ua.nick, ra.nick_alvo),
+          'nick', COALESCE(ra.nick_alvo, ua.nick),
           'status', ra.status,
           'decidido_em', ra.decidido_em,
           'decidido_por_nick', ud.nick,
@@ -252,6 +253,12 @@ requerimentos.post('/:id/alvos/:alvoId/decidir', async (c) => {
   const requerimento = await c.env.DB.prepare(`SELECT tipo, dados_especificos, tag_aplicada FROM requerimentos WHERE id = ?`)
     .bind(id).first<{ tipo: string; dados_especificos: string | null; tag_aplicada: string | null }>()
   if (!requerimento) return c.json({ erro: 'requerimento não encontrado' }, 404)
+
+  // Transferência de Conta é sempre exclusiva de administrador do
+  // sistema — não pode ser delegada por grupo/permissão como os demais.
+  if (requerimento.tipo === 'transferencia_conta' && !decisor.administrador_sistema) {
+    return c.json({ erro: 'só administradores do sistema podem decidir transferência de conta' }, 403)
+  }
 
   if (!decisor.administrador_sistema) {
     const pode = await podeGerirRequerimento(c.env.DB, decididoPorId, requerimento.tipo, 'aprovar')
@@ -333,7 +340,7 @@ async function reverterEfeitoAlvo(db: D1Database, requerimentoId: string | numbe
 
   try {
     const { antes } = JSON.parse(registroHistorico.detalhes) as {
-      antes: { patente_atual_id: number; corpo: string; status: string; tag: string | null } | null
+      antes: { patente_atual_id: number; corpo: string; status: string; tag: string | null; nick: string } | null
     }
 
     if (antes === null) {
@@ -348,8 +355,8 @@ async function reverterEfeitoAlvo(db: D1Database, requerimentoId: string | numbe
       await db.prepare(`DELETE FROM usuarios WHERE id = ?`).bind(usuarioId).run()
     } else {
       await db.prepare(
-        `UPDATE usuarios SET patente_atual_id = ?, corpo = ?, status = ?, tag = ?, atualizado_em = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
-      ).bind(antes.patente_atual_id, antes.corpo, antes.status, antes.tag, usuarioId).run()
+        `UPDATE usuarios SET patente_atual_id = ?, corpo = ?, status = ?, tag = ?, nick = ?, atualizado_em = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
+      ).bind(antes.patente_atual_id, antes.corpo, antes.status, antes.tag, antes.nick, usuarioId).run()
     }
   } catch {
     // Se reverter falhar (ex: usuário alterado por outra coisa depois),

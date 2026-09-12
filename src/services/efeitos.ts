@@ -71,7 +71,7 @@ export async function aplicarEfeitoAprovacao(
         .first<{ id: number }>()
       if (!soldado) throw new Error('patente Soldado não encontrada — a Fase 1 foi aplicada?')
       const usuarioId = await criarUsuarioDeEntrada(db, alvo.nickAlvo, soldado.id, 'militar')
-      const depois = await db.prepare(`SELECT patente_atual_id, corpo, status, tag FROM usuarios WHERE id = ?`).bind(usuarioId).first()
+      const depois = await db.prepare(`SELECT patente_atual_id, corpo, status, tag, nick FROM usuarios WHERE id = ?`).bind(usuarioId).first()
       return { usuarioId, antes: null, depois }
     }
 
@@ -79,7 +79,7 @@ export async function aplicarEfeitoAprovacao(
       const patente = await buscarPatente(db, dadosEspecificos?.patente_destino_id)
       const tag = dadosEspecificos?.tag as string | undefined
       const usuarioId = await criarUsuarioDeEntrada(db, alvo.nickAlvo, patente.id, patente.corpo, tag)
-      const depois = await db.prepare(`SELECT patente_atual_id, corpo, status, tag FROM usuarios WHERE id = ?`).bind(usuarioId).first()
+      const depois = await db.prepare(`SELECT patente_atual_id, corpo, status, tag, nick FROM usuarios WHERE id = ?`).bind(usuarioId).first()
       return { usuarioId, antes: null, depois }
     }
 
@@ -89,7 +89,7 @@ export async function aplicarEfeitoAprovacao(
   // --- Alvo já existe: os demais tipos, todos "de progressão" ---
   const usuarioId = alvo.usuarioId
   const antes = await db
-    .prepare(`SELECT patente_atual_id, corpo, status, tag FROM usuarios WHERE id = ?`)
+    .prepare(`SELECT patente_atual_id, corpo, status, tag, nick FROM usuarios WHERE id = ?`)
     .bind(usuarioId)
     .first()
 
@@ -163,17 +163,33 @@ export async function aplicarEfeitoAprovacao(
       break
     }
 
+    case 'transferencia_conta': {
+      const novoNick = dadosEspecificos?.novo_nick as string | undefined
+      if (!novoNick) throw new Error(`dados_especificos.novo_nick é obrigatório para transferência de conta`)
+
+      // Congela o nick atual em todo requerimento já existente desse
+      // usuário (que hoje é exibido via join ao vivo com `usuarios`) —
+      // sem isso, trocar o nick mudaria retroativamente o nome exibido
+      // em requerimentos antigos.
+      await db
+        .prepare(`UPDATE requerimento_alvos SET nick_alvo = (SELECT nick FROM usuarios WHERE id = ?) WHERE usuario_id = ? AND nick_alvo IS NULL`)
+        .bind(usuarioId, usuarioId)
+        .run()
+
+      await db.prepare(`UPDATE usuarios SET nick = ?, atualizado_em = ${AGORA} WHERE id = ?`).bind(novoNick, usuarioId).run()
+      break
+    }
+
     default:
-      // turno_tarefa / bonificacao / transferencia_conta / advertencia
-      // / cancelamento: dependem de módulos ainda não implementados
-      // ou de lógica própria mais complexa. Sem efeito sobre
-      // `usuarios` por enquanto — o requerimento ainda é aprovado e
-      // vira `historico`.
+      // turno_tarefa / bonificacao / advertencia / cancelamento:
+      // dependem de módulos ainda não implementados ou de lógica
+      // própria mais complexa. Sem efeito sobre `usuarios` por
+      // enquanto — o requerimento ainda é aprovado e vira `historico`.
       break
   }
 
   const depois = await db
-    .prepare(`SELECT patente_atual_id, corpo, status, tag FROM usuarios WHERE id = ?`)
+    .prepare(`SELECT patente_atual_id, corpo, status, tag, nick FROM usuarios WHERE id = ?`)
     .bind(usuarioId)
     .first()
 
