@@ -43,6 +43,19 @@ requerimentos.post('/', async (c) => {
     return c.json({ erro: 'você não pode ser o alvo do próprio requerimento' }, 400)
   }
 
+  // "Alto Comando Militar" é a patente suprema — só administrador do
+  // sistema pode promover alguém a ela, em qualquer tipo de requerimento.
+  if (!autor.administrador_sistema) {
+    const patenteDestinoId = (body.dados_especificos as { patente_destino_id?: number } | undefined)?.patente_destino_id
+    if (patenteDestinoId) {
+      const patenteDestino = await c.env.DB.prepare(`SELECT nome FROM patentes WHERE id = ?`)
+        .bind(patenteDestinoId).first<{ nome: string }>()
+      if (patenteDestino?.nome === 'Alto Comando Militar') {
+        return c.json({ erro: 'só administradores do sistema podem promover alguém a Alto Comando Militar' }, 403)
+      }
+    }
+  }
+
   // Contratação: sem ser administrador do sistema, só pode contratar
   // pra uma patente do Corpo Militar estritamente ABAIXO da sua própria
   // — nunca igual/superior à sua, e nunca no Corpo Executivo.

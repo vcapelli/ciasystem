@@ -590,8 +590,13 @@ async function montarFormularioRequerimento(config) {
         : '<option value="">— nenhuma patente disponível pra sua patente atual —</option>';
     }
   } else if (config.patenteCorpo) {
+    await promessaMe;
     const resp = await apiFetch(`/patentes?corpo=${config.patenteCorpo}`);
-    patentesCacheCompleta = resp.ok ? await resp.json() : [];
+    let todasPatentes = resp.ok ? await resp.json() : [];
+    if (!meAtual?.administrador_sistema) {
+      todasPatentes = todasPatentes.filter((p) => p.nome !== 'Alto Comando Militar');
+    }
+    patentesCacheCompleta = todasPatentes;
     document.getElementById('req-patente').innerHTML = patentesCacheCompleta.map((p) => `<option value="${p.id}">${p.nome}</option>`).join('');
   }
 

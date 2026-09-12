@@ -31,10 +31,15 @@ const COR_GRUPO = {
   verde: '#22c55e',
 };
 
-function renderLinhaMembro(u) {
-  const identificacao = u.ultimo_requerimento_em
-    ? `${u.nick} [${(PREFIXO_IDENTIFICACAO_REQ[u.ultimo_tipo] ?? '')}${u.ultimo_autor_tag || u.tag || '---'}] ${formatarDataCurtaReq(u.ultimo_requerimento_em)}`
-    : `${u.nick}${u.tag ? ` [${u.tag}]` : ' [---]'}`;
+function renderLinhaMembro(u, formatoExoneracao) {
+  let identificacao;
+  if (formatoExoneracao) {
+    identificacao = `${u.nick} [${u.tag || '---'}] [${u.ultimo_autor_tag || '---'}] {${u.crime_nome || ''}} - ${formatarDataCurtaReq(u.ultimo_requerimento_em)} até ${u.exoneracao_ate ? formatarDataCurtaReq(u.exoneracao_ate) : 'Indeterminado'}`;
+  } else {
+    identificacao = u.ultimo_requerimento_em
+      ? `${u.nick} [${(PREFIXO_IDENTIFICACAO_REQ[u.ultimo_tipo] ?? '')}${u.ultimo_autor_tag || u.tag || '---'}] ${formatarDataCurtaReq(u.ultimo_requerimento_em)}`
+      : `${u.nick}${u.tag ? ` [${u.tag}]` : ' [---]'}`;
+  }
 
   return `
     <a href="/perfil/${u.nick}" class="flex items-center gap-3 px-4 py-2.5 hover:bg-basebg transition-colors">
@@ -47,7 +52,7 @@ function renderLinhaMembro(u) {
   `;
 }
 
-function renderGrupo(g) {
+function renderGrupo(g, formatoExoneracao) {
   const icone = ICONE_PATENTE[g.titulo] || 'fa-solid fa-users';
   const cor = COR_GRUPO[g.cor] || COR_GRUPO.escuro;
   return `
@@ -61,7 +66,7 @@ function renderGrupo(g) {
       </div>
       <div class="divide-y divide-border">
         ${g.itens.length
-          ? g.itens.map(renderLinhaMembro).join('')
+          ? g.itens.map((u) => renderLinhaMembro(u, formatoExoneracao)).join('')
           : '<p class="text-sm text-muted px-4 py-3">Ninguém nessa patente/cargo no momento.</p>'}
       </div>
     </div>
@@ -80,13 +85,22 @@ async function montarListagem(tipo) {
   const dados = await resp.json();
 
   if (dados.tipoVisual === 'flat') {
-    // TAGs: lista única, só nick [TAG] — sem identificação, sem grupo.
+    // TAGs: lista única, nick + TAG + avatar.
+    await Promise.all(
+      dados.itens.map(async (u) => {
+        const r = await apiFetch(`/usuarios/nick/${encodeURIComponent(u.nick)}`);
+        u.figure = r.ok ? (await r.json()).figure : null;
+      })
+    );
     raiz.innerHTML = `
       <div class="bg-card border border-border rounded-2xl shadow-sm divide-y divide-border overflow-hidden">
         ${dados.itens.length
           ? dados.itens.map((u) => `
-              <a href="/perfil/${u.nick}" class="block px-4 py-2.5 text-sm hover:bg-basebg transition-colors">
-                ${u.nick} <span class="text-muted">[${u.tag}]</span>
+              <a href="/perfil/${u.nick}" class="flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-basebg transition-colors">
+                <span class="h-8 w-8 rounded-full bg-basebg border border-border overflow-hidden inline-block shrink-0">
+                  ${u.figure ? `<img src="${avatarUrl(u.figure, 'mini', '2')}" class="w-full h-[190%] object-cover object-top -mt-2" alt="">` : `<span class="w-full h-full flex items-center justify-center text-[0.65rem] font-bold">${u.nick.slice(0,2).toUpperCase()}</span>`}
+                </span>
+                <span>${u.nick} <span class="text-muted">[${u.tag}]</span></span>
               </a>
             `).join('')
           : '<p class="text-sm text-muted p-4">Nenhum registro encontrado.</p>'}
@@ -106,5 +120,5 @@ async function montarListagem(tipo) {
     })
   );
 
-  raiz.innerHTML = `<div class="space-y-5">${dados.grupos.map(renderGrupo).join('')}</div>`;
+  raiz.innerHTML = `<div class="space-y-5">${dados.grupos.map((g) => renderGrupo(g, dados.formatoExoneracao)).join('')}</div>`;
 }
