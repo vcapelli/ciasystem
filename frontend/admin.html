@@ -37,10 +37,11 @@
     return tipo.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
   }
 
-  let abaAtual = 'permissoes';
+  let abaAtual = 'hierarquia';
 
   function renderAbasAdmin() {
     const abas = [
+      { id: 'hierarquia', label: 'Hierarquia' },
       { id: 'permissoes', label: 'Permissões' },
       { id: 'sugestoes', label: 'Sugestões' },
       { id: 'banners', label: 'Banners' },
@@ -60,6 +61,272 @@
       </div>
       <div id="conteudo-aba"></div>
     `;
+  }
+
+  // ---------- Hierarquia (patentes/cargos + requisitos) ----------
+  const REQUISITO_TIPO_INFO = {
+    tempo_na_patente: { label: 'Tempo na patente', icone: 'fa-solid fa-clock', cor: '#3b82f6' },
+    tempo_na_policia: { label: 'Tempo na polícia', icone: 'fa-solid fa-hourglass-half', cor: '#8b5cf6' },
+    curso: { label: 'Curso concluído', icone: 'fa-solid fa-graduation-cap', cor: '#22c55e' },
+    certificado: { label: 'Certificado concluído', icone: 'fa-solid fa-certificate', cor: '#eab308' },
+    grupo: { label: 'Membro do grupo', icone: 'fa-solid fa-people-group', cor: '#f97316' },
+    outro: { label: 'Outro', icone: 'fa-solid fa-circle-info', cor: '#6b7280' },
+  };
+
+  function descreverRequisito(r) {
+    if (r.tipo === 'tempo_na_patente') return `${r.dias} dia(s) na patente`;
+    if (r.tipo === 'tempo_na_policia') return `${r.dias} dia(s) na polícia`;
+    if (r.tipo === 'curso') return r.curso_nome || 'Curso';
+    if (r.tipo === 'certificado') return r.certificado_tipo;
+    if (r.tipo === 'grupo') return `Membro de ${r.grupo_nome || 'grupo'}`;
+    return r.descricao || 'Outro requisito';
+  }
+
+  async function carregarHierarquia() {
+    const raiz = document.getElementById('conteudo-aba');
+    raiz.innerHTML = '<p class="text-sm text-muted">Carregando…</p>';
+
+    const [patentesResp, requisitosResp, gruposResp, cursosResp] = await Promise.all([
+      apiFetch('/patentes'), apiFetch('/requisitos-patente'), apiFetch('/grupos'), apiFetch('/cursos'),
+    ]);
+    const todasPatentes = patentesResp.ok ? await patentesResp.json() : [];
+    const todosRequisitos = requisitosResp.ok ? await requisitosResp.json() : [];
+    const grupos = gruposResp.ok ? await gruposResp.json() : [];
+    const cursos = cursosResp.ok ? await cursosResp.json() : [];
+
+    const oficiais = todasPatentes.filter((p) => p.sub_corpo === 'oficiais' || p.nome === 'Alto Comando Militar').sort((a, b) => b.ordem - a.ordem);
+    const executivo = todasPatentes.filter((p) => p.corpo === 'executivo').sort((a, b) => b.ordem - a.ordem);
+
+    function requisitosDe(patenteId) {
+      return todosRequisitos.filter((r) => r.patente_id === patenteId);
+    }
+
+    function renderCardPatente(p) {
+      const reqs = requisitosDe(p.id);
+      return `
+        <details class="bg-card border border-border rounded-2xl shadow-sm overflow-hidden group">
+          <summary class="flex items-center justify-between px-4 py-3 cursor-pointer list-none">
+            <div class="flex items-center gap-2">
+              <i class="fa-solid fa-chevron-right text-xs text-muted transition-transform group-open:rotate-90"></i>
+              <p class="text-sm font-semibold">${p.nome}</p>
+              <span class="text-xs text-muted">${p.vagas ? `· ${p.vagas} vaga(s)` : ''}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <button type="button" data-editar-patente="${p.id}" class="text-muted hover:text-accent transition-colors text-xs"><i class="fa-solid fa-pen"></i></button>
+              <button type="button" data-excluir-patente="${p.id}" class="text-muted hover:text-red-600 transition-colors text-xs"><i class="fa-solid fa-trash"></i></button>
+            </div>
+          </summary>
+          <div class="px-4 pb-4 border-t border-border pt-3">
+            <div id="editar-patente-${p.id}" class="hidden mb-3"></div>
+            <div class="space-y-1.5 mb-3">
+              ${reqs.length ? reqs.map((r) => {
+                const info = REQUISITO_TIPO_INFO[r.tipo];
+                return `
+                  <div class="flex items-center justify-between px-2.5 py-1.5 rounded-lg" style="background: ${info.cor}15">
+                    <span class="text-xs font-medium flex items-center gap-1.5" style="color: ${info.cor}">
+                      <i class="${info.icone}"></i> ${descreverRequisito(r)}
+                    </span>
+                    <button type="button" data-remover-requisito="${r.id}" class="text-muted hover:text-red-600 transition-colors">
+                      <i class="fa-solid fa-xmark text-xs"></i>
+                    </button>
+                  </div>
+                `;
+              }).join('') : '<p class="text-xs text-muted">Nenhum requisito cadastrado.</p>'}
+            </div>
+            <button type="button" data-add-requisito="${p.id}" class="text-xs font-semibold text-accent hover:underline">
+              <i class="fa-solid fa-plus"></i> Adicionar requisito
+            </button>
+            <div id="form-requisito-${p.id}" class="hidden mt-3"></div>
+          </div>
+        </details>
+      `;
+    }
+
+    raiz.innerHTML = `
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="text-sm font-bold uppercase tracking-wide text-muted">Corpo de Oficiais</h2>
+            <button id="btn-nova-patente-oficiais" class="text-xs font-semibold text-accent hover:underline"><i class="fa-solid fa-plus"></i> Nova patente</button>
+          </div>
+          <div id="form-nova-patente-oficiais" class="hidden mb-3"></div>
+          <div class="space-y-3">${oficiais.map(renderCardPatente).join('')}</div>
+        </div>
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="text-sm font-bold uppercase tracking-wide text-muted">Corpo Executivo</h2>
+            <button id="btn-nova-patente-executivo" class="text-xs font-semibold text-accent hover:underline"><i class="fa-solid fa-plus"></i> Novo cargo</button>
+          </div>
+          <div id="form-nova-patente-executivo" class="hidden mb-3"></div>
+          <div class="space-y-3">${executivo.map(renderCardPatente).join('')}</div>
+        </div>
+      </div>
+    `;
+
+    // --- Adicionar requisito (formulário inline por card) ---
+    raiz.querySelectorAll('[data-add-requisito]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const patenteId = btn.dataset.addRequisito;
+        const container = document.getElementById(`form-requisito-${patenteId}`);
+        const abrindo = container.classList.contains('hidden');
+        raiz.querySelectorAll('[id^="form-requisito-"]').forEach((el) => el.classList.add('hidden'));
+        if (!abrindo) return;
+
+        container.innerHTML = `
+          <form data-form-requisito="${patenteId}" class="space-y-2 bg-basebg border border-border rounded-lg p-3">
+            <select data-campo="tipo" class="w-full bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">
+              ${Object.entries(REQUISITO_TIPO_INFO).map(([t, i]) => `<option value="${t}">${i.label}</option>`).join('')}
+            </select>
+            <div data-campo-dinamico></div>
+            <button type="submit" class="text-xs font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-3 py-1.5 transition-colors">Adicionar</button>
+          </form>
+        `;
+
+        const form = container.querySelector('form');
+        const campoDinamico = form.querySelector('[data-campo-dinamico]');
+        const selectTipo = form.querySelector('[data-campo="tipo"]');
+
+        function atualizarCampoDinamico() {
+          const tipo = selectTipo.value;
+          if (tipo === 'tempo_na_patente' || tipo === 'tempo_na_policia') {
+            campoDinamico.innerHTML = `<input type="number" min="0" placeholder="Dias" data-campo="dias" class="w-full bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">`;
+          } else if (tipo === 'curso') {
+            campoDinamico.innerHTML = `<select data-campo="curso_id" class="w-full bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">${cursos.map((cu) => `<option value="${cu.id}">${cu.nome}</option>`).join('')}</select>`;
+          } else if (tipo === 'certificado') {
+            campoDinamico.innerHTML = `<select data-campo="certificado_tipo" class="w-full bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent"><option value="CFO">CFO</option><option value="CQ">CQ</option><option value="CCJ">CCJ</option></select>`;
+          } else if (tipo === 'grupo') {
+            campoDinamico.innerHTML = `<select data-campo="grupo_id" class="w-full bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">${grupos.map((g) => `<option value="${g.id}">${g.nome}</option>`).join('')}</select>`;
+          } else {
+            campoDinamico.innerHTML = `<input type="text" placeholder="Descrição" data-campo="descricao" class="w-full bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">`;
+          }
+        }
+        atualizarCampoDinamico();
+        selectTipo.addEventListener('change', atualizarCampoDinamico);
+
+        form.addEventListener('submit', async (ev) => {
+          ev.preventDefault();
+          const tipo = selectTipo.value;
+          const campoValor = campoDinamico.querySelector('[data-campo]')?.value;
+          const corpo = { patente_id: Number(patenteId), tipo };
+          if (tipo === 'tempo_na_patente' || tipo === 'tempo_na_policia') corpo.dias = Number(campoValor);
+          else if (tipo === 'curso') corpo.curso_id = Number(campoValor);
+          else if (tipo === 'certificado') corpo.certificado_tipo = campoValor;
+          else if (tipo === 'grupo') corpo.grupo_id = Number(campoValor);
+          else corpo.descricao = campoValor;
+
+          await apiFetch('/requisitos-patente', { method: 'POST', body: JSON.stringify(corpo) });
+          carregarHierarquia();
+        });
+      });
+    });
+
+    raiz.querySelectorAll('[data-remover-requisito]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        await apiFetch(`/requisitos-patente/${btn.dataset.removerRequisito}`, { method: 'DELETE' });
+        carregarHierarquia();
+      });
+    });
+
+    // --- Editar patente (nome/ordem/vagas) ---
+    raiz.querySelectorAll('[data-editar-patente]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const id = btn.dataset.editarPatente;
+        const p = todasPatentes.find((x) => String(x.id) === id);
+        const container = document.getElementById(`editar-patente-${id}`);
+        const abrindo = container.classList.contains('hidden');
+        raiz.querySelectorAll('[id^="editar-patente-"]').forEach((el) => el.classList.add('hidden'));
+        if (!abrindo) return;
+
+        container.classList.remove('hidden');
+        container.innerHTML = `
+          <div class="bg-basebg border border-border rounded-lg p-3 space-y-2">
+            <input data-campo="nome" value="${p.nome}" placeholder="Nome" class="w-full bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">
+            <div class="grid grid-cols-2 gap-2">
+              <input data-campo="ordem" type="number" value="${p.ordem}" placeholder="Ordem" class="w-full bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">
+              <input data-campo="vagas" type="number" value="${p.vagas ?? ''}" placeholder="Vagas (vazio = sem limite)" class="w-full bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">
+            </div>
+            <button type="button" data-salvar-patente="${id}" class="text-xs font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-3 py-1.5 transition-colors">Salvar</button>
+            <p data-erro-patente class="hidden text-xs text-red-500"></p>
+          </div>
+        `;
+
+        container.querySelector('[data-salvar-patente]').addEventListener('click', async () => {
+          const nome = container.querySelector('[data-campo="nome"]').value.trim();
+          const ordem = Number(container.querySelector('[data-campo="ordem"]').value);
+          const vagasValor = container.querySelector('[data-campo="vagas"]').value;
+          const resp = await apiFetch(`/patentes/${id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ nome, ordem, vagas: vagasValor ? Number(vagasValor) : null }),
+          });
+          if (!resp.ok) {
+            const d = await resp.json().catch(() => ({}));
+            const erroEl = container.querySelector('[data-erro-patente]');
+            erroEl.textContent = d.erro || 'Não foi possível salvar.';
+            erroEl.classList.remove('hidden');
+            return;
+          }
+          carregarHierarquia();
+        });
+      });
+    });
+
+    raiz.querySelectorAll('[data-excluir-patente]').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        if (!confirm('Desativar essa patente/cargo? Só funciona se ninguém estiver ocupando ela no momento.')) return;
+        const resp = await apiFetch(`/patentes/${btn.dataset.excluirPatente}`, { method: 'DELETE' });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível desativar.');
+          return;
+        }
+        carregarHierarquia();
+      });
+    });
+
+    // --- Nova patente/cargo (um formulário por coluna) ---
+    function ligarFormNovaPatente(botaoId, containerId, corpo, subCorpo) {
+      document.getElementById(botaoId).addEventListener('click', () => {
+        const container = document.getElementById(containerId);
+        const abrindo = container.classList.contains('hidden');
+        container.classList.add('hidden');
+        if (!abrindo) return;
+        container.classList.remove('hidden');
+        container.innerHTML = `
+          <form class="bg-card border border-border rounded-2xl shadow-sm p-4 space-y-2">
+            <input data-campo="nome" placeholder="Nome" required class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            <div class="grid grid-cols-2 gap-2">
+              <input data-campo="ordem" type="number" placeholder="Ordem" required class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+              <input data-campo="vagas" type="number" placeholder="Vagas (opcional)" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            </div>
+            <button type="submit" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Criar</button>
+            <p data-erro-nova class="hidden text-xs text-red-500"></p>
+          </form>
+        `;
+        container.querySelector('form').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const nome = container.querySelector('[data-campo="nome"]').value.trim();
+          const ordem = Number(container.querySelector('[data-campo="ordem"]').value);
+          const vagasValor = container.querySelector('[data-campo="vagas"]').value;
+          const resp = await apiFetch('/patentes', {
+            method: 'POST',
+            body: JSON.stringify({ corpo, sub_corpo: subCorpo, nome, ordem, vagas: vagasValor ? Number(vagasValor) : null }),
+          });
+          if (!resp.ok) {
+            const d = await resp.json().catch(() => ({}));
+            const erroEl = container.querySelector('[data-erro-nova]');
+            erroEl.textContent = d.erro || 'Não foi possível criar.';
+            erroEl.classList.remove('hidden');
+            return;
+          }
+          carregarHierarquia();
+        });
+      });
+    }
+    ligarFormNovaPatente('btn-nova-patente-oficiais', 'form-nova-patente-oficiais', 'militar', 'oficiais');
+    ligarFormNovaPatente('btn-nova-patente-executivo', 'form-nova-patente-executivo', 'executivo', null);
   }
 
   // ---------- Permissões ----------
@@ -499,6 +766,7 @@
   }
 
   const CARREGADORES_ABA = {
+    hierarquia: carregarHierarquia,
     permissoes: carregarPermissoes,
     sugestoes: carregarSugestoes,
     banners: carregarBanners,
