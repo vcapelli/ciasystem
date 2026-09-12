@@ -17,6 +17,7 @@ const NAV_PRINCIPAL = [
   {
     titulo: 'Requerimentos', icone: '📝', filhos: [
       { titulo: 'Instrução Inicial', url: '/requerimentos/instrucao-inicial.html' },
+      { titulo: 'Contratação', url: '/requerimentos/contratacao.html' },
       { titulo: 'Corpo de Praças', url: '/requerimentos/corpo-de-pracas.html' },
       { titulo: 'Corpo de Oficiais', url: '/requerimentos/corpo-de-oficiais.html' },
       { titulo: 'Corpo Executivo', url: '/requerimentos/corpo-executivo.html' },

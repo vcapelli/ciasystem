@@ -104,9 +104,32 @@ requerimentos.post('/', async (c) => {
 
 requerimentos.get('/', async (c) => {
   const status = c.req.query('status')
+
+  const base = `
+    SELECT r.*, u.nick AS autor_nick, p.nome AS autor_patente_nome, cr.nome AS crime_nome,
+      (
+        SELECT json_group_array(json_object(
+          'nick', COALESCE(ua.nick, ra.nick_alvo),
+          'status', ra.status,
+          'decidido_em', ra.decidido_em,
+          'decidido_por_nick', ud.nick,
+          'motivo_recusa', ra.motivo_recusa
+        ))
+        FROM requerimento_alvos ra
+        LEFT JOIN usuarios ua ON ua.id = ra.usuario_id
+        LEFT JOIN usuarios ud ON ud.id = ra.decidido_por_id
+        WHERE ra.requerimento_id = r.id
+      ) AS alvos_json
+    FROM requerimentos r
+    LEFT JOIN usuarios u ON u.id = r.autor_id
+    LEFT JOIN patentes p ON p.id = u.patente_atual_id
+    LEFT JOIN crimes cr ON cr.id = r.crime_id
+  `
+
   const query = status
-    ? c.env.DB.prepare(`SELECT * FROM requerimentos WHERE status = ? ORDER BY criado_em DESC`).bind(status)
-    : c.env.DB.prepare(`SELECT * FROM requerimentos ORDER BY criado_em DESC`)
+    ? c.env.DB.prepare(`${base} WHERE r.status = ? ORDER BY r.criado_em DESC LIMIT 50`).bind(status)
+    : c.env.DB.prepare(`${base} ORDER BY r.criado_em DESC LIMIT 50`)
+
   const { results } = await query.all()
   return c.json(results)
 })

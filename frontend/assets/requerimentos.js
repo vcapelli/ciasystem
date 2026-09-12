@@ -1,4 +1,4 @@
-// Formulário genérico de requerimento, reutilizado pelas 8 páginas de
+// Formulário genérico de requerimento, reutilizado pelas páginas de
 // /requerimentos/*.html — cada página só passa uma config descrevendo
 // quais tipos aceita e quais campos extras precisa.
 
@@ -6,20 +6,26 @@ function tituloTipoReq(tipo) {
   return tipo.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
 }
 
-const BADGE_STATUS_REQ = {
-  pendente: 'bg-gray-500/15 text-gray-500',
-  aprovado: 'bg-green-500/15 text-green-600',
-  reprovado: 'bg-red-500/15 text-red-600',
+const COR_STATUS_REQ = {
+  pendente: { badge: 'bg-gray-500/15 text-gray-600', barra: '#9ca3af' },
+  aprovado: { badge: 'bg-green-500/15 text-green-600', barra: '#22c55e' },
+  reprovado: { badge: 'bg-red-500/15 text-red-600', barra: '#ef4444' },
+  cancelado: { badge: 'bg-red-500/15 text-red-600', barra: '#ef4444' },
 };
+
+function formatarDataHoraReq(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
 
 /**
  * config = {
  *   tipos: [{ value, label }],
  *   alvoLivre: bool,              // true = nick digitado livre (porta de entrada), sem precisar já existir
  *   patenteCorpo: 'militar' | 'executivo' | null,  // se setado, mostra seletor de patente/cargo destino
- *   tiposComPatente: [tipo, ...], // quais tipos selecionados exibem o seletor de patente
- *   tiposComCrime: [tipo, ...],   // quais tipos exigem crime + fundamentação
- *   tiposComTag: [tipo, ...],     // quais tipos exibem o campo de TAG
+ *   tiposComPatente: [tipo, ...],
+ *   tiposComCrime: [tipo, ...],
+ *   tiposComTag: [tipo, ...],
  * }
  */
 async function montarFormularioRequerimento(config) {
@@ -28,55 +34,65 @@ async function montarFormularioRequerimento(config) {
   let alvoSelecionadoId = null;
 
   raiz.innerHTML = `
-    <form id="form-req" class="bg-card border border-border rounded-2xl shadow-sm p-5 space-y-4">
-      <div class="relative">
-        <label class="block text-xs text-muted mb-1">${config.alvoLivre ? 'Nick do usuário (novo)' : 'Alvo'}</label>
-        <input id="req-alvo" autocomplete="off" placeholder="${config.alvoLivre ? 'Digite o nick do Habblet' : 'Buscar por nick…'}"
-          class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
-        <div id="req-alvo-sugestoes" class="hidden absolute z-10 mt-1 w-full bg-card border border-border rounded-lg shadow-md max-h-48 overflow-y-auto"></div>
-      </div>
-
-      ${config.tipos.length > 1 ? `
-        <div>
-          <label class="block text-xs text-muted mb-1">Tipo</label>
-          <select id="req-tipo" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
-            ${config.tipos.map((t) => `<option value="${t.value}">${t.label}</option>`).join('')}
-          </select>
+    <div class="bg-card border border-border rounded-2xl shadow-sm overflow-hidden">
+      <div class="grid grid-cols-1 md:grid-cols-[300px_1fr]">
+        <div id="req-alvo-preview" class="border-b md:border-b-0 md:border-r border-border p-5 flex flex-col items-center text-center justify-center min-h-[220px]">
+          <p class="text-sm text-muted">Digite o nick do alvo pra ver o perfil aqui.</p>
         </div>
-      ` : `<input type="hidden" id="req-tipo" value="${config.tipos[0].value}">`}
 
-      <div id="req-campo-patente" class="hidden">
-        <label class="block text-xs text-muted mb-1">Patente/cargo destino</label>
-        <select id="req-patente" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></select>
+        <div class="p-5">
+          <form id="form-req" class="space-y-4">
+            <div class="relative">
+              <label class="block text-xs text-muted mb-1">${config.alvoLivre ? 'Nick do usuário (novo)' : 'Alvo'}</label>
+              <input id="req-alvo" autocomplete="off" placeholder="${config.alvoLivre ? 'Digite o nick do Habblet' : 'Buscar por nick…'}"
+                class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+              <div id="req-alvo-sugestoes" class="hidden absolute z-10 mt-1 w-full bg-card border border-border rounded-lg shadow-md max-h-48 overflow-y-auto"></div>
+            </div>
+
+            ${config.tipos.length > 1 ? `
+              <div>
+                <label class="block text-xs text-muted mb-1">Tipo</label>
+                <select id="req-tipo" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                  ${config.tipos.map((t) => `<option value="${t.value}">${t.label}</option>`).join('')}
+                </select>
+              </div>
+            ` : `<input type="hidden" id="req-tipo" value="${config.tipos[0].value}">`}
+
+            <div id="req-campo-patente" class="hidden">
+              <label class="block text-xs text-muted mb-1">Patente/cargo destino</label>
+              <select id="req-patente" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></select>
+            </div>
+
+            <div id="req-campo-tag" class="hidden">
+              <label class="block text-xs text-muted mb-1">Nova TAG (2-3 caracteres)</label>
+              <input id="req-tag" maxlength="3" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-accent">
+            </div>
+
+            <div id="req-campo-crime" class="hidden">
+              <label class="block text-xs text-muted mb-1">Infração</label>
+              <select id="req-crime" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                <option value="">— selecione —</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-xs text-muted mb-1">Motivo / fundamentação</label>
+              <textarea id="req-motivo" rows="3" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></textarea>
+            </div>
+
+            <button type="submit" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-5 py-2.5 text-sm transition-colors">
+              Enviar requerimento
+            </button>
+            <p id="req-erro" class="hidden text-xs text-red-400"></p>
+            <p id="req-sucesso" class="hidden text-xs text-green-600"></p>
+          </form>
+        </div>
       </div>
-
-      <div id="req-campo-tag" class="hidden">
-        <label class="block text-xs text-muted mb-1">Nova TAG (2-3 caracteres)</label>
-        <input id="req-tag" maxlength="3" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-accent">
-      </div>
-
-      <div id="req-campo-crime" class="hidden">
-        <label class="block text-xs text-muted mb-1">Infração</label>
-        <select id="req-crime" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
-          <option value="">— selecione —</option>
-        </select>
-      </div>
-
-      <div>
-        <label class="block text-xs text-muted mb-1">Motivo / fundamentação</label>
-        <textarea id="req-motivo" rows="3" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></textarea>
-      </div>
-
-      <button type="submit" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-5 py-2.5 text-sm transition-colors">
-        Enviar requerimento
-      </button>
-      <p id="req-erro" class="hidden text-xs text-red-400"></p>
-      <p id="req-sucesso" class="hidden text-xs text-green-600"></p>
-    </form>
+    </div>
 
     <div class="mt-6">
       <h2 class="text-sm font-semibold text-muted uppercase tracking-wide mb-2">Recentes</h2>
-      <div id="req-recentes" class="space-y-2">
+      <div id="req-recentes" class="space-y-3">
         <p class="text-sm text-muted">Carregando…</p>
       </div>
     </div>
@@ -88,12 +104,45 @@ async function montarFormularioRequerimento(config) {
   const campoPatente = document.getElementById('req-campo-patente');
   const campoTag = document.getElementById('req-campo-tag');
   const campoCrime = document.getElementById('req-campo-crime');
+  const previewEl = document.getElementById('req-alvo-preview');
 
-  // Autocomplete de alvo (só quando o usuário já precisa existir)
+  function renderPreviewCarregando() {
+    previewEl.innerHTML = '<p class="text-sm text-muted">Carregando…</p>';
+  }
+
+  function renderPreviewVazio(msg) {
+    previewEl.innerHTML = `<p class="text-sm text-muted">${msg}</p>`;
+  }
+
+  function renderPreviewUsuario(perfil, ultimoRequerimento) {
+    const avatar = perfil.figure ? avatarUrl(perfil.figure, 'grande', '2') : null;
+    previewEl.innerHTML = `
+      ${avatar ? `<img src="${avatar}" class="max-h-40 object-contain mb-2" alt="">` : ''}
+      <p class="font-display font-bold text-lg">${perfil.nick}</p>
+      ${perfil.tag ? `<p class="text-xs text-muted">[${perfil.tag}]</p>` : ''}
+      <p class="text-sm mt-1">${perfil.patente_nome || 'Conta institucional'}</p>
+      <p class="text-xs text-muted">${perfil.corpo === 'militar' ? 'Corpo Militar' : perfil.corpo === 'executivo' ? 'Corpo Executivo' : ''}</p>
+      <span class="text-xs font-semibold px-2.5 py-1 rounded-full capitalize bg-white/10 mt-2">${(perfil.status || '').replace(/_/g, ' ')}</span>
+      <p class="text-xs text-muted mt-3">Último requerimento:<br>${ultimoRequerimento ? formatarDataHoraReq(ultimoRequerimento) : '—'}</p>
+    `;
+  }
+
+  function renderPreviewHabblet(dados) {
+    const avatar = dados.figure ? avatarUrl(dados.figure, 'grande', '2') : null;
+    previewEl.innerHTML = `
+      ${avatar ? `<img src="${avatar}" class="max-h-40 object-contain mb-2" alt="">` : ''}
+      <p class="font-display font-bold text-lg">${dados.nick}</p>
+      ${dados.motto ? `<p class="text-xs text-muted mt-1 italic">"${dados.motto}"</p>` : ''}
+      <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-accent/15 text-accent mt-2">Ainda não cadastrado no CIASystem</span>
+    `;
+  }
+
+  // Autocomplete de alvo (só quando o usuário já precisa existir no sistema)
   if (!config.alvoLivre) {
     let debounce;
     inputAlvo.addEventListener('input', () => {
       alvoSelecionadoId = null;
+      renderPreviewVazio('Selecione um usuário na busca.');
       clearTimeout(debounce);
       const termo = inputAlvo.value.trim();
       if (termo.length < 2) { sugestoesEl.classList.add('hidden'); return; }
@@ -102,7 +151,7 @@ async function montarFormularioRequerimento(config) {
         const lista = resp.ok ? await resp.json() : [];
         sugestoesEl.innerHTML = lista.length
           ? lista.map((u) => `
-              <button type="button" data-id="${u.id}" data-nick="${u.nick}" class="w-full text-left px-3 py-2 text-sm hover:bg-base transition-colors">
+              <button type="button" data-nick="${u.nick}" class="w-full text-left px-3 py-2 text-sm hover:bg-base transition-colors">
                 ${u.nick}${u.tag ? ` [${u.tag}]` : ''} <span class="text-muted">· ${u.patente_nome || 'Executivo'}</span>
               </button>
             `).join('')
@@ -111,34 +160,62 @@ async function montarFormularioRequerimento(config) {
       }, 250);
     });
 
-    sugestoesEl.addEventListener('click', (e) => {
-      const btn = e.target.closest('button[data-id]');
+    sugestoesEl.addEventListener('click', async (e) => {
+      const btn = e.target.closest('button[data-nick]');
       if (!btn) return;
-      alvoSelecionadoId = Number(btn.dataset.id);
       inputAlvo.value = btn.dataset.nick;
       sugestoesEl.classList.add('hidden');
+      renderPreviewCarregando();
+
+      const perfilResp = await apiFetch(`/usuarios/nick/${encodeURIComponent(btn.dataset.nick)}`);
+      if (!perfilResp.ok) { renderPreviewVazio('Não foi possível carregar o perfil.'); return; }
+      const perfil = await perfilResp.json();
+      alvoSelecionadoId = perfil.id;
+
+      const historicoResp = await apiFetch(`/requerimentos/alvo/${perfil.id}`);
+      const historico = historicoResp.ok ? await historicoResp.json() : [];
+      renderPreviewUsuario(perfil, historico[0]?.criado_em);
     });
 
     document.addEventListener('click', (e) => {
       if (!e.target.closest('#req-alvo-sugestoes') && e.target !== inputAlvo) sugestoesEl.classList.add('hidden');
     });
+  } else {
+    // Nick livre (porta de entrada) — busca direto na API do Habblet.
+    let debounce;
+    inputAlvo.addEventListener('input', () => {
+      clearTimeout(debounce);
+      const nick = inputAlvo.value.trim();
+      if (nick.length < 2) { renderPreviewVazio('Digite o nick do alvo pra ver o perfil aqui.'); return; }
+      renderPreviewCarregando();
+      debounce = setTimeout(async () => {
+        const resp = await apiFetch(`/habblet/perfil/${encodeURIComponent(nick)}`);
+        if (!resp.ok) { renderPreviewVazio('Jogador não encontrado no Habblet.'); return; }
+        renderPreviewHabblet(await resp.json());
+      }, 400);
+    });
   }
 
   // Carrega patentes (se essa página usa esse campo)
-  let patentesCache = [];
   if (config.patenteCorpo) {
     const resp = await apiFetch(`/patentes?corpo=${config.patenteCorpo}`);
-    patentesCache = resp.ok ? await resp.json() : [];
-    document.getElementById('req-patente').innerHTML = patentesCache
-      .map((p) => `<option value="${p.id}">${p.nome}</option>`).join('');
+    const lista = resp.ok ? await resp.json() : [];
+    document.getElementById('req-patente').innerHTML = lista.map((p) => `<option value="${p.id}">${p.nome}</option>`).join('');
   }
 
   // Carrega crimes (se essa página usa esse campo)
   if (config.tiposComCrime?.length) {
     const resp = await apiFetch('/crimes');
     const crimesLista = resp.ok ? await resp.json() : [];
-    const select = document.getElementById('req-crime');
-    select.innerHTML += crimesLista.map((c) => `<option value="${c.id}">${c.nome}</option>`).join('');
+    document.getElementById('req-crime').innerHTML += crimesLista.map((c) => `<option value="${c.id}">${c.nome}</option>`).join('');
+  }
+
+  // Mapa de todas as patentes, pra exibir o nome no card de "recentes"
+  // (independente do corpo dessa página específica).
+  const respTodasPatentes = await apiFetch('/patentes');
+  const patentesMapa = {};
+  if (respTodasPatentes.ok) {
+    for (const p of await respTodasPatentes.json()) patentesMapa[p.id] = p.nome;
   }
 
   function atualizarCamposCondicionais() {
@@ -150,6 +227,62 @@ async function montarFormularioRequerimento(config) {
   selectTipo.addEventListener('change', atualizarCamposCondicionais);
   atualizarCamposCondicionais();
 
+  function renderCardRecente(r) {
+    const cor = COR_STATUS_REQ[r.status] || COR_STATUS_REQ.pendente;
+    const alvos = r.alvos_json ? JSON.parse(r.alvos_json) : [];
+    const alvoPrincipal = alvos[0];
+    let dadosEspecificos = {};
+    try { dadosEspecificos = r.dados_especificos ? JSON.parse(r.dados_especificos) : {}; } catch {}
+
+    const linhasExtras = [];
+    if (dadosEspecificos.patente_destino_id && patentesMapa[dadosEspecificos.patente_destino_id]) {
+      linhasExtras.push(`<b>Destino:</b> ${patentesMapa[dadosEspecificos.patente_destino_id]}`);
+    }
+    if (r.tag_aplicada) linhasExtras.push(`<b>Nova TAG:</b> ${r.tag_aplicada}`);
+    if (r.crime_nome) linhasExtras.push(`<b>Infração:</b> ${r.crime_nome}`);
+
+    return `
+      <div class="bg-card border border-border rounded-2xl shadow-sm overflow-hidden" style="border-left: 4px solid ${cor.barra}">
+        <div class="flex items-center justify-between px-4 py-2.5 border-b border-border">
+          <div class="flex items-center gap-2">
+            <p class="text-sm font-semibold">${tituloTipoReq(r.tipo)}</p>
+            <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full capitalize ${cor.badge}">${r.status}</span>
+          </div>
+          <p class="text-xs text-muted">${formatarDataHoraReq(r.criado_em)}</p>
+        </div>
+
+        <div class="flex gap-4 px-4 py-3">
+          <div class="w-24 shrink-0 text-center">
+            <span class="h-12 w-12 mx-auto rounded-full bg-base border border-border flex items-center justify-center text-sm font-bold">
+              ${(r.autor_nick || '?').slice(0,2).toUpperCase()}
+            </span>
+            <p class="text-xs font-medium mt-1 truncate">${r.autor_nick || '—'}</p>
+            <p class="text-[0.65rem] text-muted truncate">${r.autor_patente_nome || ''}</p>
+          </div>
+
+          <div class="flex-1 text-sm space-y-1">
+            ${alvoPrincipal ? `<p><b>Alvo:</b> ${alvoPrincipal.nick}</p>` : ''}
+            ${linhasExtras.map((l) => `<p>${l}</p>`).join('')}
+            ${r.fundamentacao ? `<p class="text-muted">${r.fundamentacao}</p>` : ''}
+            ${alvos.length > 1 ? `
+              <div class="flex flex-wrap gap-1.5 mt-2">
+                ${alvos.map((a) => `<span class="text-xs px-2 py-0.5 rounded-full ${(COR_STATUS_REQ[a.status] || COR_STATUS_REQ.pendente).badge}">${a.nick} · ${a.status}</span>`).join('')}
+              </div>
+            ` : ''}
+          </div>
+        </div>
+
+        ${alvoPrincipal?.decidido_por_nick ? `
+          <div class="px-4 py-2 border-t border-border text-xs text-muted flex flex-wrap gap-x-4">
+            <span>Decidido por <b class="text-dark">${alvoPrincipal.decidido_por_nick}</b></span>
+            <span>${formatarDataHoraReq(alvoPrincipal.decidido_em)}</span>
+            ${alvoPrincipal.motivo_recusa ? `<span class="text-red-500">${alvoPrincipal.motivo_recusa}</span>` : ''}
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
   async function carregarRecentes() {
     const resp = await apiFetch('/requerimentos');
     const container = document.getElementById('req-recentes');
@@ -160,15 +293,7 @@ async function montarFormularioRequerimento(config) {
     const filtrados = todos.filter((r) => valoresTipos.includes(r.tipo)).slice(0, 10);
 
     container.innerHTML = filtrados.length
-      ? filtrados.map((r) => `
-          <div class="bg-card border border-border rounded-xl px-4 py-3 shadow-sm flex items-center justify-between">
-            <div>
-              <p class="text-sm font-semibold">${tituloTipoReq(r.tipo)}</p>
-              <p class="text-xs text-muted">${r.tag_requerimento} · ${new Date(r.criado_em).toLocaleDateString('pt-BR')}</p>
-            </div>
-            <span class="text-xs font-semibold px-2.5 py-1 rounded-full capitalize ${BADGE_STATUS_REQ[r.status] || 'bg-white/10'}">${r.status}</span>
-          </div>
-        `).join('')
+      ? filtrados.map(renderCardRecente).join('')
       : '<p class="text-sm text-muted">Nenhum requerimento deste tipo ainda.</p>';
   }
   carregarRecentes();
@@ -219,6 +344,7 @@ async function montarFormularioRequerimento(config) {
     sucessoEl.classList.remove('hidden');
     document.getElementById('form-req').reset();
     alvoSelecionadoId = null;
+    renderPreviewVazio('Digite o nick do alvo pra ver o perfil aqui.');
     atualizarCamposCondicionais();
     carregarRecentes();
   });

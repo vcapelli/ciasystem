@@ -11,8 +11,8 @@
 // `HabbletPlayer` e a leitura em `verificarCodigoNaMissao`.
 
 export interface HabbletPlayer {
-  uniqueId?: string
-  name: string
+  id?: number
+  username: string
   motto: string
   figure?: string
   online?: boolean
