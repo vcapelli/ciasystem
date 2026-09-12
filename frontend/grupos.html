@@ -11,11 +11,11 @@
 <link href="https://kit-pro.fontawesome.com/releases/v7.3.1/css/pro.min.css" rel="stylesheet">
 <link rel="stylesheet" href="/assets/theme.css">
 </head>
-<body class="bg-base text-dark font-sans min-h-screen">
+<body class="bg-basebg text-dark font-sans min-h-screen">
 
   <div class="fixed inset-0 -z-10 habbo-floor-bg"></div>
 
-  <aside id="layout-sidebar" class="w-60 fixed left-0 top-[72px] bottom-0 border-r border-border bg-base p-4 overflow-y-auto"></aside>
+  <aside id="layout-sidebar" class="w-60 fixed left-0 top-[72px] bottom-0 border-r border-border bg-basebg p-4 overflow-y-auto"></aside>
 
   <main class="ml-60 max-w-6xl px-4 py-8">
     <h1 class="text-xl font-display font-bold mb-4">Grupos</h1>
@@ -40,7 +40,7 @@
   function renderGrupo(g) {
     const corEstilo = g.cor ? `style="border-left: 4px solid ${g.cor}"` : '';
     return `
-      <a href="/grupos/${g.slug}" ${corEstilo} class="flex items-center justify-between bg-base border border-border rounded-xl px-4 py-3 hover:border-accent transition-colors">
+      <a href="/grupos/${g.slug}" ${corEstilo} class="flex items-center justify-between bg-basebg border border-border rounded-xl px-4 py-3 hover:border-accent transition-colors">
         <div class="flex items-center gap-3">
           <span class="h-10 w-10 rounded-xl bg-card border border-border flex items-center justify-center text-xs font-bold overflow-hidden">
             ${g.imagem_url ? `<img src="${g.imagem_url}" class="w-full h-full object-cover" alt="">` : g.codigo}
@@ -61,21 +61,21 @@
         <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Criar grupo</h2>
         <form id="form-criar" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <input id="g-codigo" required maxlength="10" placeholder="Código (ex: APM)"
-            class="bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            class="bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
           <input id="g-nome" required placeholder="Nome completo"
-            class="bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            class="bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
           <input id="g-slug" required placeholder="slug (ex: apm)"
-            class="bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
-          <select id="g-tipo" class="bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            class="bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <select id="g-tipo" class="bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
             <option value="companhia">Companhia</option>
             <option value="subcompanhia">Subcompanhia</option>
             <option value="orgao_topo">Órgão de Topo</option>
             <option value="setor_inteligencia">Setor de Inteligência</option>
           </select>
           <input id="g-imagem" placeholder="URL da imagem/logo (opcional)"
-            class="bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            class="bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
           <label class="flex items-center gap-2 text-sm">
-            Cor <input id="g-cor" type="color" value="#046b2f" class="h-9 w-14 bg-base border border-border rounded-lg cursor-pointer">
+            Cor <input id="g-cor" type="color" value="#046b2f" class="h-9 w-14 bg-basebg border border-border rounded-lg cursor-pointer">
           </label>
           <label class="flex items-center gap-2 text-sm sm:col-span-2">
             <input id="g-aulas" type="checkbox"> Permite aulas

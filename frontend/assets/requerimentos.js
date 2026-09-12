@@ -79,7 +79,7 @@ async function montarFormularioRequerimento(config) {
             <div class="relative">
               <label class="block text-xs text-muted mb-1">${config.alvoLivre ? 'Nick do usuário (novo)' : 'Alvo'}</label>
               <input id="req-alvo" autocomplete="off" placeholder="${config.alvoLivre ? 'Digite o nick do Habblet' : 'Buscar por nick…'}"
-                class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
               <div id="req-alvo-sugestoes" class="hidden absolute z-10 mt-1 w-full bg-card border border-border rounded-lg shadow-md max-h-48 overflow-y-auto"></div>
             </div>
 
@@ -87,13 +87,13 @@ async function montarFormularioRequerimento(config) {
               <div>
                 <label class="block text-xs text-muted mb-1">Sua TAG</label>
                 <input id="req-tag-autor" maxlength="10" placeholder="TAG"
-                  class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                  class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
               </div>
 
               ${config.tipos.length > 1 ? `
                 <div>
                   <label class="block text-xs text-muted mb-1">Tipo</label>
-                  <select id="req-tipo" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                  <select id="req-tipo" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
                     ${config.tipos.map((t) => `<option value="${t.value}">${t.label}</option>`).join('')}
                   </select>
                 </div>
@@ -101,12 +101,12 @@ async function montarFormularioRequerimento(config) {
 
               <div id="req-campo-patente" class="hidden">
                 <label class="block text-xs text-muted mb-1">Patente/cargo destino</label>
-                <select id="req-patente" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></select>
+                <select id="req-patente" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></select>
               </div>
 
               <div id="req-campo-novo-nick" class="hidden">
                 <label class="block text-xs text-muted mb-1">Novo nickname</label>
-                <input id="req-novo-nick" placeholder="Novo nick do Habblet" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                <input id="req-novo-nick" placeholder="Novo nick do Habblet" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
               </div>
 
               <div id="req-campo-tag" class="hidden space-y-3">
@@ -116,50 +116,50 @@ async function montarFormularioRequerimento(config) {
                 </div>
                 <div>
                   <label id="req-tag-label" class="block text-xs text-muted mb-1">Nova TAG (2-3 caracteres)</label>
-                  <input id="req-tag" maxlength="3" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                  <input id="req-tag" maxlength="3" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
                 </div>
               </div>
 
               <div id="req-campo-crime" class="hidden">
                 <label class="block text-xs text-muted mb-1">Infração</label>
-                <select id="req-crime" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                <select id="req-crime" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
                   <option value="">— selecione —</option>
                 </select>
               </div>
 
               <div id="req-campo-provas" class="hidden">
                 <label class="block text-xs text-muted mb-1">Provas</label>
-                <input id="req-provas" placeholder="Link de prints, vídeo, etc." class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                <input id="req-provas" placeholder="Link de prints, vídeo, etc." class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
               </div>
 
               <div id="req-campo-permissao" class="relative hidden sm:col-span-2">
                 <label class="block text-xs text-muted mb-1">Permissão (concessor, se necessária)</label>
-                <input id="req-permissao" autocomplete="off" placeholder="Buscar por nick…" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                <input id="req-permissao" autocomplete="off" placeholder="Buscar por nick…" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
                 <div id="req-permissao-sugestoes" class="hidden absolute z-10 mt-1 w-full bg-card border border-border rounded-lg shadow-md max-h-48 overflow-y-auto"></div>
               </div>
 
               <div id="req-campo-data-retorno" class="hidden">
                 <label class="block text-xs text-muted mb-1">Data de retorno</label>
-                <input id="req-data-retorno" type="date" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                <input id="req-data-retorno" type="date" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
               </div>
 
               <div id="req-campo-exoneracao" class="hidden space-y-3">
                 <div>
                   <label class="block text-xs text-muted mb-1">Duração</label>
-                  <select id="req-exoneracao-tipo" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                  <select id="req-exoneracao-tipo" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
                     <option value="indeterminada">Indeterminada</option>
                     <option value="temporaria">Temporária</option>
                   </select>
                 </div>
                 <div id="req-campo-exoneracao-data" class="hidden">
                   <label class="block text-xs text-muted mb-1">Exoneração até</label>
-                  <input id="req-exoneracao-ate" type="date" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                  <input id="req-exoneracao-ate" type="date" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
                 </div>
               </div>
 
               <div class="sm:col-span-2">
                 <label class="block text-xs text-muted mb-1">Motivo / fundamentação</label>
-                <textarea id="req-motivo" rows="3" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></textarea>
+                <textarea id="req-motivo" rows="3" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></textarea>
               </div>
             </div>
 
@@ -279,7 +279,7 @@ async function montarFormularioRequerimento(config) {
         const lista = resp.ok ? await resp.json() : [];
         sugestoesEl.innerHTML = lista.length
           ? lista.map((u) => `
-              <button type="button" data-nick="${u.nick}" class="w-full text-left px-3 py-2 text-sm hover:bg-base transition-colors">
+              <button type="button" data-nick="${u.nick}" class="w-full text-left px-3 py-2 text-sm hover:bg-basebg transition-colors">
                 ${u.nick}${u.tag ? ` [${u.tag}]` : ''} <span class="text-muted">· ${u.patente_nome || 'Executivo'}</span>
               </button>
             `).join('')
@@ -373,7 +373,7 @@ async function montarFormularioRequerimento(config) {
         const lista = resp.ok ? await resp.json() : [];
         sugestoesPermissaoEl.innerHTML = lista.length
           ? lista.map((u) => `
-              <button type="button" data-id="${u.id}" data-nick="${u.nick}" class="w-full text-left px-3 py-2 text-sm hover:bg-base transition-colors">
+              <button type="button" data-id="${u.id}" data-nick="${u.nick}" class="w-full text-left px-3 py-2 text-sm hover:bg-basebg transition-colors">
                 ${u.nick}${u.tag ? ` [${u.tag}]` : ''} <span class="text-muted">· ${u.patente_nome || 'Executivo'}</span>
               </button>
             `).join('')
@@ -489,7 +489,7 @@ async function montarFormularioRequerimento(config) {
 
         <div class="flex gap-4 px-4 py-4">
           <div class="w-28 shrink-0 text-center">
-            <span class="h-16 w-16 mx-auto rounded-full bg-base border border-border overflow-hidden inline-block">
+            <span class="h-16 w-16 mx-auto rounded-full bg-basebg border border-border overflow-hidden inline-block">
               ${avatarAutor ? `<img src="${avatarAutor}" class="w-full h-[190%] object-cover object-top -mt-4 transition-transform duration-300 hover:-translate-y-[10px]" alt="">` : `<span class="w-full h-full flex items-center justify-center text-sm font-bold">${(r.autor_nick || '?').slice(0,2).toUpperCase()}</span>`}
             </span>
             <p class="text-sm font-semibold mt-1.5">${r.autor_nick || '—'}</p>

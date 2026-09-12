@@ -11,11 +11,11 @@
 <link href="https://kit-pro.fontawesome.com/releases/v7.3.1/css/pro.min.css" rel="stylesheet">
 <link rel="stylesheet" href="/assets/theme.css">
 </head>
-<body class="bg-base text-dark font-sans min-h-screen">
+<body class="bg-basebg text-dark font-sans min-h-screen">
 
   <div class="fixed inset-0 -z-10 habbo-floor-bg"></div>
 
-  <aside id="layout-sidebar" class="w-60 fixed left-0 top-[72px] bottom-0 border-r border-border bg-base p-4 overflow-y-auto"></aside>
+  <aside id="layout-sidebar" class="w-60 fixed left-0 top-[72px] bottom-0 border-r border-border bg-basebg p-4 overflow-y-auto"></aside>
 
   <main class="ml-60 max-w-6xl px-4 py-8">
       <div id="conteudo">
@@ -82,7 +82,7 @@
         <p class="text-xs uppercase tracking-wide text-muted mb-2">${titulo}</p>
         <div class="flex flex-wrap gap-2">
           ${lista.map((d) => `
-            <span title="${d.descricao || ''}" class="flex items-center gap-1.5 bg-base border border-border rounded-full pl-1 pr-3 py-1 text-xs">
+            <span title="${d.descricao || ''}" class="flex items-center gap-1.5 bg-basebg border border-border rounded-full pl-1 pr-3 py-1 text-xs">
               <img src="${d.imagem_url}" class="h-5 w-5 rounded-full object-cover" onerror="this.style.display='none'">
               ${d.titulo}
             </span>
@@ -184,7 +184,7 @@
     container.innerHTML = `
       <div class="relative mb-16">
         <div class="perfil-banner h-44 rounded-2xl overflow-hidden"></div>
-        <div class="absolute left-6 -bottom-14 h-28 w-28 rounded-full ring-4 ring-base bg-border overflow-hidden">
+        <div class="absolute left-6 -bottom-14 h-28 w-28 rounded-full ring-4 ring-basebg bg-border overflow-hidden">
           ${avatarCirculo
             ? `<img src="${avatarCirculo}" class="absolute inset-0 w-full h-full object-cover object-center" alt="">`
             : `<div class="w-full h-full flex items-center justify-center text-2xl font-bold">${perfil.nick.slice(0,2).toUpperCase()}</div>`}
@@ -217,7 +217,7 @@
                 <p class="text-xs uppercase tracking-wide text-muted mb-2">Grupos</p>
                 <div class="flex flex-wrap gap-2">
                   ${grupos.map((g) => `
-                    <span title="${g.nome} · ${g.nivel_nome}" class="h-9 w-9 rounded-xl bg-base border border-border flex items-center justify-center text-xs font-bold">
+                    <span title="${g.nome} · ${g.nivel_nome}" class="h-9 w-9 rounded-xl bg-basebg border border-border flex items-center justify-center text-xs font-bold">
                       ${g.codigo}
                     </span>
                   `).join('')}

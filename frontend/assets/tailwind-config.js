@@ -8,7 +8,7 @@ tailwind.config = {
         display: ['industry', 'Oswald', 'sans-serif'], // títulos grandes e a marca
       },
       colors: {
-        base: '#eef0f3',    // fundo geral das páginas internas
+        basebg: '#eef0f3',  // fundo geral das páginas internas
         card: '#ffffff',    // cards e superfícies
         border: '#e2e4e9',
         muted: '#6b7280',

@@ -11,11 +11,11 @@
 <link href="https://kit-pro.fontawesome.com/releases/v7.3.1/css/pro.min.css" rel="stylesheet">
 <link rel="stylesheet" href="/assets/theme.css">
 </head>
-<body class="bg-base text-dark font-sans min-h-screen">
+<body class="bg-basebg text-dark font-sans min-h-screen">
 
   <div class="fixed inset-0 -z-10 habbo-floor-bg"></div>
 
-  <aside id="layout-sidebar" class="w-60 fixed left-0 top-[72px] bottom-0 border-r border-border bg-base p-4 overflow-y-auto"></aside>
+  <aside id="layout-sidebar" class="w-60 fixed left-0 top-[72px] bottom-0 border-r border-border bg-basebg p-4 overflow-y-auto"></aside>
 
   <main class="ml-60 max-w-6xl px-4 py-8">
     <a href="/grupos.html" class="inline-flex items-center gap-1.5 bg-card border border-border rounded-full pl-2.5 pr-4 py-1.5 text-sm font-medium text-muted hover:text-dark hover:border-accent transition-colors shadow-sm">
@@ -66,7 +66,7 @@
   function renderMembro(m) {
     const avatar = m.figure ? avatarUrl(m.figure, 'mini') : null;
     return `
-      <a href="/perfil/${m.nick}" class="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-base transition-colors">
+      <a href="/perfil/${m.nick}" class="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-basebg transition-colors">
         <div class="flex items-center gap-3">
           <span class="h-9 w-9 rounded-full bg-border overflow-hidden inline-block shrink-0">
             ${avatar ? `<img src="${avatar}" class="w-full h-[190%] object-cover object-top" alt="">` : `<span class="w-full h-full flex items-center justify-center text-xs font-semibold">${m.nick.slice(0,2).toUpperCase()}</span>`}
@@ -117,11 +117,11 @@
       <form id="form-config" class="bg-card border border-border rounded-2xl p-5 space-y-3 max-w-lg shadow-sm">
         <div>
           <label class="block text-xs text-muted mb-1">Nome</label>
-          <input id="gc-nome" value="${grupo.nome}" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <input id="gc-nome" value="${grupo.nome}" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
         </div>
         <div>
           <label class="block text-xs text-muted mb-1">Tipo</label>
-          <select id="gc-tipo" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <select id="gc-tipo" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
             <option value="companhia" ${grupo.tipo === 'companhia' ? 'selected' : ''}>Companhia</option>
             <option value="subcompanhia" ${grupo.tipo === 'subcompanhia' ? 'selected' : ''}>Subcompanhia</option>
             <option value="orgao_topo" ${grupo.tipo === 'orgao_topo' ? 'selected' : ''}>Órgão de Topo</option>
@@ -130,11 +130,11 @@
         </div>
         <div>
           <label class="block text-xs text-muted mb-1">URL da imagem/logo</label>
-          <input id="gc-imagem" value="${grupo.imagem_url || ''}" placeholder="https://…" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <input id="gc-imagem" value="${grupo.imagem_url || ''}" placeholder="https://…" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
         </div>
         <div class="flex items-center gap-3">
           <label class="text-xs text-muted">Cor</label>
-          <input id="gc-cor" type="color" value="${grupo.cor || '#046b2f'}" class="h-9 w-14 bg-base border border-border rounded-lg cursor-pointer">
+          <input id="gc-cor" type="color" value="${grupo.cor || '#046b2f'}" class="h-9 w-14 bg-basebg border border-border rounded-lg cursor-pointer">
         </div>
         <label class="flex items-center gap-2 text-sm">
           <input id="gc-aulas" type="checkbox" ${grupo.permite_aulas ? 'checked' : ''}> Permite aulas

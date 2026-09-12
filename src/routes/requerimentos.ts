@@ -338,7 +338,13 @@ async function reverterEfeitoAlvo(db: D1Database, requerimentoId: string | numbe
 
     if (antes === null) {
       // Era uma porta de entrada (o usuário não existia antes deste
-      // requerimento) — reverter significa desfazer a criação.
+      // requerimento) — reverter significa desfazer a criação. Precisa
+      // limpar as referências que apontam pra esse usuário primeiro
+      // (historico.usuario_id e requerimento_alvos.usuario_id/
+      // decidido_por_id não têm CASCADE), senão o DELETE falha calado.
+      await db.prepare(`DELETE FROM historico WHERE usuario_id = ?`).bind(usuarioId).run()
+      await db.prepare(`UPDATE requerimento_alvos SET usuario_id = NULL WHERE usuario_id = ?`).bind(usuarioId).run()
+      await db.prepare(`UPDATE requerimento_alvos SET decidido_por_id = NULL WHERE decidido_por_id = ?`).bind(usuarioId).run()
       await db.prepare(`DELETE FROM usuarios WHERE id = ?`).bind(usuarioId).run()
     } else {
       await db.prepare(
