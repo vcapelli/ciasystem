@@ -261,26 +261,28 @@ async function montarFormularioRequerimento(config) {
         <div class="flex gap-4 px-4 py-4">
           <div class="w-28 shrink-0 text-center">
             <span class="h-16 w-16 mx-auto rounded-full bg-base border border-border overflow-hidden inline-block">
-              ${avatarAutor ? `<img src="${avatarAutor}" class="w-full h-[190%] object-cover object-top" alt="">` : `<span class="w-full h-full flex items-center justify-center text-sm font-bold">${(r.autor_nick || '?').slice(0,2).toUpperCase()}</span>`}
+              ${avatarAutor ? `<img src="${avatarAutor}" class="w-full h-[190%] object-cover object-top -mt-4" alt="">` : `<span class="w-full h-full flex items-center justify-center text-sm font-bold">${(r.autor_nick || '?').slice(0,2).toUpperCase()}</span>`}
             </span>
             <p class="text-sm font-semibold mt-1.5">${r.autor_nick || '—'}</p>
             <p class="text-[0.65rem] text-muted mt-2">Patente/Cargo:</p>
             <p class="text-xs font-semibold">${r.autor_patente_nome || '—'}</p>
           </div>
 
-          <div class="flex-1 text-sm space-y-1.5 min-w-0">
-            <p class="text-muted">${r.autor_patente_nome || ''} <b class="text-dark">${r.autor_nick || ''}</b> escreveu:</p>
-            ${linhasExtras.map((l) => `<p>${l}</p>`).join('')}
-            <p class="flex items-center gap-1.5 text-green-600 pt-1">✅ Li e concordo com as normas de ${tituloTipoReq(r.tipo).toLowerCase()}.</p>
+          <div class="flex-1 text-sm min-w-0">
+            <p class="text-muted mb-2">${r.autor_patente_nome || ''} <b class="text-dark">${r.autor_nick || ''}</b> escreveu:</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1.5">
+              ${linhasExtras.map((l) => `<p>${l}</p>`).join('')}
+            </div>
+            <p class="flex items-center gap-1.5 text-green-600 pt-3">✅ Li e concordo com as normas de ${tituloTipoReq(r.tipo).toLowerCase()}.</p>
 
-            <div class="pt-1">
+            <div class="pt-2">
               <p class="text-[0.65rem] text-muted">Assinatura:</p>
               <p class="assinatura text-xl leading-tight">${r.autor_nick || ''}</p>
             </div>
           </div>
         </div>
 
-        <div class="border-t border-border px-4 py-3 grid grid-cols-3 gap-3">
+        <div class="border-t border-border px-4 py-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
             <p class="text-[0.65rem] text-muted">Status:</p>
             <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full capitalize ${cor.badge} inline-block mt-1">${r.status}</span>
