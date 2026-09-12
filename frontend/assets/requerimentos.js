@@ -74,9 +74,15 @@ async function montarFormularioRequerimento(config) {
               <select id="req-patente" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></select>
             </div>
 
-            <div id="req-campo-tag" class="hidden">
-              <label class="block text-xs text-muted mb-1">Nova TAG (2-3 caracteres)</label>
-              <input id="req-tag" maxlength="3" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-accent">
+            <div id="req-campo-tag" class="hidden space-y-3">
+              <div id="req-tag-atual-wrap" class="hidden">
+                <label class="block text-xs text-muted mb-1">TAG atual</label>
+                <input id="req-tag-atual" disabled class="w-full bg-border/40 border border-border rounded-lg px-3 py-2 text-sm text-muted cursor-not-allowed uppercase">
+              </div>
+              <div>
+                <label id="req-tag-label" class="block text-xs text-muted mb-1">Nova TAG (2-3 caracteres)</label>
+                <input id="req-tag" maxlength="3" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-accent">
+              </div>
             </div>
 
             <div id="req-campo-crime" class="hidden">
@@ -190,6 +196,20 @@ async function montarFormularioRequerimento(config) {
       if (!perfilResp.ok) { renderPreviewVazio('Não foi possível carregar o perfil.'); return; }
       const perfil = await perfilResp.json();
       alvoSelecionadoId = perfil.id;
+
+      const tagAtualWrap = document.getElementById('req-tag-atual-wrap');
+      const tagAtualInput = document.getElementById('req-tag-atual');
+      const tagLabel = document.getElementById('req-tag-label');
+      if (tagAtualWrap) {
+        if (perfil.tag) {
+          tagAtualInput.value = perfil.tag;
+          tagAtualWrap.classList.remove('hidden');
+          tagLabel.textContent = 'Alterar para (2-3 caracteres)';
+        } else {
+          tagAtualWrap.classList.add('hidden');
+          tagLabel.textContent = 'Nova TAG (2-3 caracteres)';
+        }
+      }
 
       const historicoResp = await apiFetch(`/requerimentos/alvo/${perfil.id}`);
       const historico = historicoResp.ok ? await historicoResp.json() : [];

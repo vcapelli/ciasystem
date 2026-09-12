@@ -105,7 +105,11 @@ requerimentos.post('/', async (c) => {
         if (!alvo) continue
 
         const identificador = alvo.usuario_id !== null ? { usuarioId: alvo.usuario_id } : { nickAlvo: alvo.nick_alvo! }
-        const efeito = await aplicarEfeitoAprovacao(c.env.DB, body.tipo, identificador, body.dados_especificos ?? null)
+        const dadosParaEfeito = {
+          ...(body.dados_especificos ?? {}),
+          ...(body.tipo === 'tag' && body.tag_aplicada ? { tag: body.tag_aplicada } : {}),
+        }
+        const efeito = await aplicarEfeitoAprovacao(c.env.DB, body.tipo, identificador, dadosParaEfeito)
 
         if (alvo.usuario_id === null) {
           await c.env.DB.prepare(`UPDATE requerimento_alvos SET usuario_id = ? WHERE id = ?`)
@@ -214,8 +218,8 @@ requerimentos.post('/:id/alvos/:alvoId/decidir', async (c) => {
     .bind(decididoPorId).first<{ administrador_sistema: number }>()
   if (!decisor) return c.json({ erro: 'usuário decisor não encontrado' }, 404)
 
-  const requerimento = await c.env.DB.prepare(`SELECT tipo, dados_especificos FROM requerimentos WHERE id = ?`)
-    .bind(id).first<{ tipo: string; dados_especificos: string | null }>()
+  const requerimento = await c.env.DB.prepare(`SELECT tipo, dados_especificos, tag_aplicada FROM requerimentos WHERE id = ?`)
+    .bind(id).first<{ tipo: string; dados_especificos: string | null; tag_aplicada: string | null }>()
   if (!requerimento) return c.json({ erro: 'requerimento não encontrado' }, 404)
 
   if (!decisor.administrador_sistema) {
@@ -231,7 +235,8 @@ requerimentos.post('/:id/alvos/:alvoId/decidir', async (c) => {
   let usuarioIdFinal: number | null = alvo.usuario_id
 
   if (status === 'aprovado') {
-    const dadosEspecificos = requerimento.dados_especificos ? JSON.parse(requerimento.dados_especificos) : null
+    const dadosEspecificos = requerimento.dados_especificos ? JSON.parse(requerimento.dados_especificos) : {}
+    if (requerimento.tipo === 'tag' && requerimento.tag_aplicada) dadosEspecificos.tag = requerimento.tag_aplicada
     const identificador = alvo.usuario_id !== null ? { usuarioId: alvo.usuario_id } : { nickAlvo: alvo.nick_alvo! }
 
     try {
