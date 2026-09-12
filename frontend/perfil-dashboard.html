@@ -40,6 +40,16 @@
     exonerado: 'bg-red-500/15 text-red-400',
   };
 
+  const ICONE_TIPO = {
+    instrucao_inicial: 'fa-solid fa-graduation-cap', promocao: 'fa-solid fa-arrow-up', rebaixamento: 'fa-solid fa-arrow-down',
+    advertencia: 'fa-solid fa-triangle-exclamation', licenca: 'fa-solid fa-pause', volta_licenca: 'fa-solid fa-play',
+    reserva: 'fa-solid fa-clock', transferencia_conta: 'fa-solid fa-right-left', transferencia_corpo: 'fa-solid fa-right-left',
+    venda_cargo: 'fa-solid fa-sack-dollar', contratacao: 'fa-solid fa-user-plus', tag: 'fa-solid fa-tag',
+    turno_tarefa: 'fa-solid fa-clock', reforma: 'fa-solid fa-medal', desligamento_honroso: 'fa-solid fa-door-open',
+    desligamento_desonroso: 'fa-solid fa-door-open', exoneracao: 'fa-solid fa-ban', bonificacao: 'fa-solid fa-star',
+    cancelamento: 'fa-solid fa-xmark',
+  };
+
   function formatarDataCurta(iso) {
     if (!iso) return '—';
     const d = new Date(iso);
@@ -96,7 +106,27 @@
 
   function renderTimeline(itens, patentesMapa, me) {
     if (!itens.length) return '<p class="text-sm text-muted">Nenhum requerimento registrado ainda.</p>';
-    return `<div class="space-y-3">${itens.map((r) => renderCardRequerimento(r, patentesMapa, me)).join('')}</div>`;
+    return `
+      <div class="space-y-3">
+        ${itens.map((r, i) => {
+          const cor = COR_STATUS_REQ[r.status] || COR_STATUS_REQ.pendente;
+          const icone = ICONE_TIPO[r.tipo] || 'fa-solid fa-file-lines';
+          return `
+            <div class="flex gap-3">
+              <div class="flex flex-col items-center">
+                <span class="h-9 w-9 rounded-full bg-basebg border-2 flex items-center justify-center text-sm shrink-0" style="border-color: ${cor.barra}; color: ${cor.barra}">
+                  <i class="${icone}"></i>
+                </span>
+                ${i < itens.length - 1 ? '<span class="flex-1 w-px bg-border mt-1"></span>' : ''}
+              </div>
+              <div class="flex-1 mb-1 min-w-0">
+                ${renderCardRequerimento(r, patentesMapa, me)}
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
   }
 
   function renderPostagens(tweets) {
