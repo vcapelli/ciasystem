@@ -18,15 +18,19 @@ async function figuraSegura(nick: string): Promise<string | null> {
 }
 
 // GET /usuarios/me — dados do próprio usuário autenticado (nick, tag,
-// patente, se é admin do sistema, biografia, figure do Habblet). O
-// layout do frontend usa isso pra montar a navbar e o card de início.
+// patente, se é admin do sistema, biografia, figure do Habblet,
+// personalização de perfil). O layout do frontend usa isso pra montar
+// a navbar e o card de início.
 usuarios.get('/me', async (c) => {
   const usuarioId = c.get('usuarioId')
 
   const usuario = await c.env.DB.prepare(
     `SELECT u.id, u.nick, u.tag, u.corpo, u.status, u.administrador_sistema, u.biografia,
+            u.cor_avatar_fundo, u.banner_perfil_id, b.imagem_url AS banner_imagem_url,
             p.nome AS patente_nome, p.ordem AS patente_ordem
-     FROM usuarios u LEFT JOIN patentes p ON p.id = u.patente_atual_id
+     FROM usuarios u
+     LEFT JOIN patentes p ON p.id = u.patente_atual_id
+     LEFT JOIN banners_perfil b ON b.id = u.banner_perfil_id AND b.ativo = 1
      WHERE u.id = ?`
   ).bind(usuarioId).first<{ nick: string }>()
 
@@ -36,14 +40,39 @@ usuarios.get('/me', async (c) => {
   return c.json({ ...usuario, figure })
 })
 
-// PATCH /usuarios/me — só a biografia é editável por enquanto.
+// PATCH /usuarios/me — biografia, e personalização de perfil (banner
+// escolhido de uma lista curada por admin + cor de fundo do avatar,
+// essa livre). Enviar null nesses dois campos volta pro padrão.
 usuarios.patch('/me', async (c) => {
   const usuarioId = c.get('usuarioId')
-  const { biografia } = await c.req.json<{ biografia?: string }>()
+  const body = await c.req.json<{ biografia?: string; banner_perfil_id?: number | null; cor_avatar_fundo?: string | null }>()
+
+  const campos: string[] = []
+  const valores: unknown[] = []
+
+  if ('biografia' in body) { campos.push('biografia = ?'); valores.push(body.biografia ?? null) }
+
+  if ('banner_perfil_id' in body) {
+    if (body.banner_perfil_id !== null) {
+      const banner = await c.env.DB.prepare(`SELECT id FROM banners_perfil WHERE id = ? AND ativo = 1`)
+        .bind(body.banner_perfil_id).first()
+      if (!banner) return c.json({ erro: 'banner inválido' }, 400)
+    }
+    campos.push('banner_perfil_id = ?'); valores.push(body.banner_perfil_id ?? null)
+  }
+
+  if ('cor_avatar_fundo' in body) {
+    if (body.cor_avatar_fundo != null && !/^#[0-9a-fA-F]{6}$/.test(body.cor_avatar_fundo)) {
+      return c.json({ erro: 'cor_avatar_fundo precisa ser um hex válido (#rrggbb)' }, 400)
+    }
+    campos.push('cor_avatar_fundo = ?'); valores.push(body.cor_avatar_fundo ?? null)
+  }
+
+  if (!campos.length) return c.json({ ok: true })
 
   await c.env.DB.prepare(
-    `UPDATE usuarios SET biografia = ?, atualizado_em = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
-  ).bind(biografia ?? null, usuarioId).run()
+    `UPDATE usuarios SET ${campos.join(', ')}, atualizado_em = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
+  ).bind(...valores, usuarioId).run()
 
   return c.json({ ok: true })
 })
@@ -71,14 +100,18 @@ usuarios.get('/', async (c) => {
   return c.json(results)
 })
 
-// GET /usuarios/nick/:nick — perfil público de qualquer usuário, com figure.
+// GET /usuarios/nick/:nick — perfil público de qualquer usuário, com
+// figure e personalização de perfil.
 usuarios.get('/nick/:nick', async (c) => {
   const nick = c.req.param('nick')
 
   const usuario = await c.env.DB.prepare(
     `SELECT u.id, u.nick, u.tag, u.corpo, u.status, u.biografia, u.data_ingresso, u.data_ultimo_ato_funcional,
+            u.cor_avatar_fundo, u.banner_perfil_id, b.imagem_url AS banner_imagem_url,
             p.nome AS patente_nome, p.ordem AS patente_ordem
-     FROM usuarios u LEFT JOIN patentes p ON p.id = u.patente_atual_id
+     FROM usuarios u
+     LEFT JOIN patentes p ON p.id = u.patente_atual_id
+     LEFT JOIN banners_perfil b ON b.id = u.banner_perfil_id AND b.ativo = 1
      WHERE u.nick = ?`
   ).bind(nick).first<{ nick: string }>()
 

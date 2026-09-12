@@ -181,8 +181,8 @@
 
     container.innerHTML = `
       <div class="relative mb-16">
-        <div class="perfil-banner h-44 rounded-2xl overflow-hidden"></div>
-        <div class="absolute left-6 -bottom-14 h-28 w-28 rounded-full ring-4 ring-basebg bg-border overflow-hidden">
+        <div class="perfil-banner h-44 rounded-2xl overflow-hidden" ${perfil.banner_imagem_url ? `style="background-image: url('${perfil.banner_imagem_url}')"` : ''}></div>
+        <div class="absolute left-6 -bottom-14 h-28 w-28 rounded-full ring-4 ring-basebg overflow-hidden" style="background-color: ${perfil.cor_avatar_fundo || '#e2e4e9'}">>
           ${avatarCirculo
             ? `<img src="${avatarCirculo}" class="absolute inset-0 w-full h-full object-cover object-center" alt="">`
             : `<div class="w-full h-full flex items-center justify-center text-2xl font-bold">${perfil.nick.slice(0,2).toUpperCase()}</div>`}
@@ -224,6 +224,11 @@
             ` : ''}
 
             <div id="bio-area" class="mt-4"></div>
+            ${ehMeuPerfil ? `
+              <a href="/perfil-configuracoes.html" class="inline-flex items-center gap-1.5 text-xs text-muted hover:text-accent transition-colors mt-3">
+                <i class="fa-solid fa-gear"></i> Configurações do perfil
+              </a>
+            ` : ''}
           </div>
 
           <div class="bg-card border border-border rounded-2xl p-4 mt-4 shadow-sm">
