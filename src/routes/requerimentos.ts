@@ -36,8 +36,9 @@ requerimentos.post('/', async (c) => {
   if (!autor) return c.json({ erro: 'autor não encontrado' }, 404)
 
   // Ninguém pode ser alvo do próprio requerimento (promover a si mesmo,
-  // contratar a si mesmo, etc.) — vale pra qualquer tipo.
-  if (body.alvos.some((item) => item === autorId)) {
+  // contratar a si mesmo, etc.) — exceto o tipo 'tag', que é o único
+  // caso em que isso faz sentido (criar/alterar a própria TAG).
+  if (body.tipo !== 'tag' && body.alvos.some((item) => item === autorId)) {
     return c.json({ erro: 'você não pode ser o alvo do próprio requerimento' }, 400)
   }
 

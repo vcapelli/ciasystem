@@ -38,6 +38,7 @@ function formatarDataHoraReq(iso) {
  *   tiposComExoneracao: [tipo, ...],   // temporária/indeterminada
  *   tipoVoltaLicencaCondicional: bool, // só habilita 'volta_licenca' se o alvo estiver de licença
  *   usaNovoNick: bool,                 // transferência de conta
+ *   permiteAutoAlvo: bool,             // se true, ignora o bloqueio de "não pode ser o próprio alvo" (ex: TAGs)
  * }
  */
 async function montarFormularioRequerimento(config) {
@@ -65,82 +66,84 @@ async function montarFormularioRequerimento(config) {
               <div id="req-alvo-sugestoes" class="hidden absolute z-10 mt-1 w-full bg-card border border-border rounded-lg shadow-md max-h-48 overflow-y-auto"></div>
             </div>
 
-            <div>
-              <label class="block text-xs text-muted mb-1">Sua TAG</label>
-              <input id="req-tag-autor" maxlength="10" placeholder="TAG"
-                class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
-            </div>
-
-            ${config.tipos.length > 1 ? `
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label class="block text-xs text-muted mb-1">Tipo</label>
-                <select id="req-tipo" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
-                  ${config.tipos.map((t) => `<option value="${t.value}">${t.label}</option>`).join('')}
+                <label class="block text-xs text-muted mb-1">Sua TAG</label>
+                <input id="req-tag-autor" maxlength="10" placeholder="TAG"
+                  class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+              </div>
+
+              ${config.tipos.length > 1 ? `
+                <div>
+                  <label class="block text-xs text-muted mb-1">Tipo</label>
+                  <select id="req-tipo" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                    ${config.tipos.map((t) => `<option value="${t.value}">${t.label}</option>`).join('')}
+                  </select>
+                </div>
+              ` : `<input type="hidden" id="req-tipo" value="${config.tipos[0].value}">`}
+
+              <div id="req-campo-patente" class="hidden">
+                <label class="block text-xs text-muted mb-1">Patente/cargo destino</label>
+                <select id="req-patente" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></select>
+              </div>
+
+              <div id="req-campo-novo-nick" class="hidden">
+                <label class="block text-xs text-muted mb-1">Novo nickname</label>
+                <input id="req-novo-nick" placeholder="Novo nick do Habblet" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+              </div>
+
+              <div id="req-campo-tag" class="hidden space-y-3">
+                <div id="req-tag-atual-wrap" class="hidden">
+                  <label class="block text-xs text-muted mb-1">TAG atual</label>
+                  <input id="req-tag-atual" disabled class="w-full bg-border/40 border border-border rounded-lg px-3 py-2 text-sm text-muted cursor-not-allowed">
+                </div>
+                <div>
+                  <label id="req-tag-label" class="block text-xs text-muted mb-1">Nova TAG (2-3 caracteres)</label>
+                  <input id="req-tag" maxlength="3" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                </div>
+              </div>
+
+              <div id="req-campo-crime" class="hidden">
+                <label class="block text-xs text-muted mb-1">Infração</label>
+                <select id="req-crime" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                  <option value="">— selecione —</option>
                 </select>
               </div>
-            ` : `<input type="hidden" id="req-tipo" value="${config.tipos[0].value}">`}
 
-            <div id="req-campo-patente" class="hidden">
-              <label class="block text-xs text-muted mb-1">Patente/cargo destino</label>
-              <select id="req-patente" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></select>
-            </div>
-
-            <div id="req-campo-novo-nick" class="hidden">
-              <label class="block text-xs text-muted mb-1">Novo nickname</label>
-              <input id="req-novo-nick" placeholder="Novo nick do Habblet" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
-            </div>
-
-            <div id="req-campo-tag" class="hidden space-y-3">
-              <div id="req-tag-atual-wrap" class="hidden">
-                <label class="block text-xs text-muted mb-1">TAG atual</label>
-                <input id="req-tag-atual" disabled class="w-full bg-border/40 border border-border rounded-lg px-3 py-2 text-sm text-muted cursor-not-allowed">
+              <div id="req-campo-provas" class="hidden">
+                <label class="block text-xs text-muted mb-1">Provas</label>
+                <input id="req-provas" placeholder="Link de prints, vídeo, etc." class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
               </div>
-              <div>
-                <label id="req-tag-label" class="block text-xs text-muted mb-1">Nova TAG (2-3 caracteres)</label>
-                <input id="req-tag" maxlength="3" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+
+              <div id="req-campo-permissao" class="relative hidden sm:col-span-2">
+                <label class="block text-xs text-muted mb-1">Permissão (concessor, se necessária)</label>
+                <input id="req-permissao" autocomplete="off" placeholder="Buscar por nick…" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                <div id="req-permissao-sugestoes" class="hidden absolute z-10 mt-1 w-full bg-card border border-border rounded-lg shadow-md max-h-48 overflow-y-auto"></div>
               </div>
-            </div>
 
-            <div id="req-campo-crime" class="hidden">
-              <label class="block text-xs text-muted mb-1">Infração</label>
-              <select id="req-crime" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
-                <option value="">— selecione —</option>
-              </select>
-            </div>
-
-            <div id="req-campo-provas" class="hidden">
-              <label class="block text-xs text-muted mb-1">Provas</label>
-              <input id="req-provas" placeholder="Link de prints, vídeo, etc." class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
-            </div>
-
-            <div id="req-campo-permissao" class="relative hidden">
-              <label class="block text-xs text-muted mb-1">Permissão (concessor, se necessária)</label>
-              <input id="req-permissao" autocomplete="off" placeholder="Buscar por nick…" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
-              <div id="req-permissao-sugestoes" class="hidden absolute z-10 mt-1 w-full bg-card border border-border rounded-lg shadow-md max-h-48 overflow-y-auto"></div>
-            </div>
-
-            <div id="req-campo-data-retorno" class="hidden">
-              <label class="block text-xs text-muted mb-1">Data de retorno</label>
-              <input id="req-data-retorno" type="date" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
-            </div>
-
-            <div id="req-campo-exoneracao" class="hidden space-y-3">
-              <div>
-                <label class="block text-xs text-muted mb-1">Duração</label>
-                <select id="req-exoneracao-tipo" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
-                  <option value="indeterminada">Indeterminada</option>
-                  <option value="temporaria">Temporária</option>
-                </select>
+              <div id="req-campo-data-retorno" class="hidden">
+                <label class="block text-xs text-muted mb-1">Data de retorno</label>
+                <input id="req-data-retorno" type="date" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
               </div>
-              <div id="req-campo-exoneracao-data" class="hidden">
-                <label class="block text-xs text-muted mb-1">Exoneração até</label>
-                <input id="req-exoneracao-ate" type="date" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
-              </div>
-            </div>
 
-            <div>
-              <label class="block text-xs text-muted mb-1">Motivo / fundamentação</label>
-              <textarea id="req-motivo" rows="3" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></textarea>
+              <div id="req-campo-exoneracao" class="hidden space-y-3">
+                <div>
+                  <label class="block text-xs text-muted mb-1">Duração</label>
+                  <select id="req-exoneracao-tipo" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                    <option value="indeterminada">Indeterminada</option>
+                    <option value="temporaria">Temporária</option>
+                  </select>
+                </div>
+                <div id="req-campo-exoneracao-data" class="hidden">
+                  <label class="block text-xs text-muted mb-1">Exoneração até</label>
+                  <input id="req-exoneracao-ate" type="date" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                </div>
+              </div>
+
+              <div class="sm:col-span-2">
+                <label class="block text-xs text-muted mb-1">Motivo / fundamentação</label>
+                <textarea id="req-motivo" rows="3" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></textarea>
+              </div>
             </div>
 
             <button type="submit" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-5 py-2.5 text-sm transition-colors">
@@ -273,7 +276,7 @@ async function montarFormularioRequerimento(config) {
       if (!btn) return;
       await promessaMe;
 
-      if (meAtual && btn.dataset.nick === meAtual.nick) {
+      if (!config.permiteAutoAlvo && meAtual && btn.dataset.nick === meAtual.nick) {
         sugestoesEl.classList.add('hidden');
         renderPreviewVazio('Você não pode ser o alvo do próprio requerimento.');
         inputAlvo.value = '';
@@ -595,7 +598,7 @@ async function montarFormularioRequerimento(config) {
     if (config.alvoLivre) {
       alvo = inputAlvo.value.trim();
       if (!alvo) { erroEl.textContent = 'Digite o nick do alvo.'; erroEl.classList.remove('hidden'); return; }
-      if (meAtual && alvo.toLowerCase() === meAtual.nick.toLowerCase()) {
+      if (meAtual && alvo.toLowerCase() === meAtual.nick.toLowerCase() && !config.permiteAutoAlvo) {
         erroEl.textContent = 'Você não pode ser o alvo do próprio requerimento.'; erroEl.classList.remove('hidden'); return;
       }
     } else {
