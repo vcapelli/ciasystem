@@ -189,8 +189,8 @@ listagens.get('/:tipo', async (c) => {
   if (!filtroPatentes) return c.json({ erro: `listagem '${tipo}' não existe` }, 404)
 
   const { results: patentes } = await c.env.DB.prepare(
-    `SELECT id, nome, ordem FROM patentes WHERE ativo = 1 AND (${filtroPatentes}) ORDER BY ordem DESC`
-  ).all<{ id: number; nome: string; ordem: number }>()
+    `SELECT id, nome, ordem, cor FROM patentes WHERE ativo = 1 AND (${filtroPatentes}) ORDER BY ordem DESC`
+  ).all<{ id: number; nome: string; ordem: number; cor: string | null }>()
 
   const { results: membros } = await c.env.DB.prepare(
     `SELECT ${SELECT_MEMBRO}, u.patente_atual_id
@@ -202,7 +202,7 @@ listagens.get('/:tipo', async (c) => {
   const comIdentificacao = await anexarIdentificacao(c.env.DB, membros)
   const grupos = patentes.map((p) => ({
     titulo: p.nome,
-    cor: p.ordem === patentes[0]?.ordem ? 'dourado' : 'escuro',
+    cor: p.cor || (p.ordem === patentes[0]?.ordem ? 'dourado' : 'escuro'),
     itens: (comIdentificacao as (MembroListagem & { patente_atual_id: number })[]).filter((m) => m.patente_atual_id === p.id),
   }))
 

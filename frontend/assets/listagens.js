@@ -54,7 +54,7 @@ function renderLinhaMembro(u, formatoExoneracao) {
 
 function renderGrupo(g, formatoExoneracao) {
   const icone = ICONE_PATENTE[g.titulo] || 'fa-solid fa-users';
-  const cor = COR_GRUPO[g.cor] || COR_GRUPO.escuro;
+  const cor = g.cor && g.cor.startsWith('#') ? g.cor : (COR_GRUPO[g.cor] || COR_GRUPO.escuro);
   return `
     <div class="bg-card border border-border rounded-2xl shadow-sm overflow-hidden" style="border-left: 4px solid ${cor}">
       <div class="flex items-center gap-3 px-4 py-3 bg-basebg border-b border-border">

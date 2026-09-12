@@ -95,6 +95,7 @@
     const cursos = cursosResp.ok ? await cursosResp.json() : [];
 
     const oficiais = todasPatentes.filter((p) => p.sub_corpo === 'oficiais' || p.nome === 'Alto Comando Militar').sort((a, b) => b.ordem - a.ordem);
+    const pracas = todasPatentes.filter((p) => p.sub_corpo === 'pracas' || p.sub_corpo === 'pracas_especiais').sort((a, b) => b.ordem - a.ordem);
     const executivo = todasPatentes.filter((p) => p.corpo === 'executivo').sort((a, b) => b.ordem - a.ordem);
 
     function requisitosDe(patenteId) {
@@ -151,6 +152,13 @@
           </div>
           <div id="form-nova-patente-oficiais" class="hidden mb-3"></div>
           <div class="space-y-3">${oficiais.map(renderCardPatente).join('')}</div>
+
+          <div class="flex items-center justify-between mb-3 mt-6">
+            <h2 class="text-sm font-bold uppercase tracking-wide text-muted">Corpo de Praças</h2>
+            <button id="btn-nova-patente-pracas" class="text-xs font-semibold text-accent hover:underline"><i class="fa-solid fa-plus"></i> Nova patente</button>
+          </div>
+          <div id="form-nova-patente-pracas" class="hidden mb-3"></div>
+          <div class="space-y-3">${pracas.map(renderCardPatente).join('')}</div>
         </div>
         <div>
           <div class="flex items-center justify-between mb-3">
@@ -173,6 +181,7 @@
         raiz.querySelectorAll('[id^="form-requisito-"]').forEach((el) => el.classList.add('hidden'));
         if (!abrindo) return;
 
+        container.classList.remove('hidden');
         container.innerHTML = `
           <form data-form-requisito="${patenteId}" class="space-y-2 bg-basebg border border-border rounded-lg p-3">
             <select data-campo="tipo" class="w-full bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">
@@ -247,10 +256,22 @@
               <input data-campo="ordem" type="number" value="${p.ordem}" placeholder="Ordem" class="w-full bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">
               <input data-campo="vagas" type="number" value="${p.vagas ?? ''}" placeholder="Vagas (vazio = sem limite)" class="w-full bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">
             </div>
+            <div class="flex items-center gap-2">
+              <label class="text-xs text-muted">Cor do card nas listagens:</label>
+              <input data-campo="cor" type="color" value="${p.cor || '#212529'}" class="h-8 w-14 bg-card border border-border rounded-lg cursor-pointer">
+              <button type="button" data-cor-padrao class="text-xs text-muted hover:text-dark underline">Usar padrão</button>
+            </div>
             <button type="button" data-salvar-patente="${id}" class="text-xs font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-3 py-1.5 transition-colors">Salvar</button>
             <p data-erro-patente class="hidden text-xs text-red-500"></p>
           </div>
         `;
+
+        let corRemovida = false;
+        container.querySelector('[data-campo="cor"]').addEventListener('input', () => { corRemovida = false; });
+        container.querySelector('[data-cor-padrao]').addEventListener('click', () => {
+          corRemovida = true;
+          container.querySelector('[data-campo="cor"]').value = '#212529';
+        });
 
         container.querySelector('[data-salvar-patente]').addEventListener('click', async () => {
           const nome = container.querySelector('[data-campo="nome"]').value.trim();
@@ -258,7 +279,10 @@
           const vagasValor = container.querySelector('[data-campo="vagas"]').value;
           const resp = await apiFetch(`/patentes/${id}`, {
             method: 'PATCH',
-            body: JSON.stringify({ nome, ordem, vagas: vagasValor ? Number(vagasValor) : null }),
+            body: JSON.stringify({
+              nome, ordem, vagas: vagasValor ? Number(vagasValor) : null,
+              cor: corRemovida ? null : container.querySelector('[data-campo="cor"]').value,
+            }),
           });
           if (!resp.ok) {
             const d = await resp.json().catch(() => ({}));
@@ -287,16 +311,23 @@
     });
 
     // --- Nova patente/cargo (um formulário por coluna) ---
-    function ligarFormNovaPatente(botaoId, containerId, corpo, subCorpo) {
+    function ligarFormNovaPatente(botaoId, containerId, corpo, subCorpoFixo) {
       document.getElementById(botaoId).addEventListener('click', () => {
         const container = document.getElementById(containerId);
         const abrindo = container.classList.contains('hidden');
         container.classList.add('hidden');
         if (!abrindo) return;
         container.classList.remove('hidden');
+        const mostrarSeletorSubCorpo = subCorpoFixo === undefined;
         container.innerHTML = `
           <form class="bg-card border border-border rounded-2xl shadow-sm p-4 space-y-2">
             <input data-campo="nome" placeholder="Nome" required class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            ${mostrarSeletorSubCorpo ? `
+              <select data-campo="sub_corpo" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                <option value="pracas">Praças</option>
+                <option value="pracas_especiais">Praças Especiais</option>
+              </select>
+            ` : ''}
             <div class="grid grid-cols-2 gap-2">
               <input data-campo="ordem" type="number" placeholder="Ordem" required class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
               <input data-campo="vagas" type="number" placeholder="Vagas (opcional)" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
@@ -310,6 +341,7 @@
           const nome = container.querySelector('[data-campo="nome"]').value.trim();
           const ordem = Number(container.querySelector('[data-campo="ordem"]').value);
           const vagasValor = container.querySelector('[data-campo="vagas"]').value;
+          const subCorpo = mostrarSeletorSubCorpo ? container.querySelector('[data-campo="sub_corpo"]').value : subCorpoFixo;
           const resp = await apiFetch('/patentes', {
             method: 'POST',
             body: JSON.stringify({ corpo, sub_corpo: subCorpo, nome, ordem, vagas: vagasValor ? Number(vagasValor) : null }),
@@ -326,6 +358,7 @@
       });
     }
     ligarFormNovaPatente('btn-nova-patente-oficiais', 'form-nova-patente-oficiais', 'militar', 'oficiais');
+    ligarFormNovaPatente('btn-nova-patente-pracas', 'form-nova-patente-pracas', 'militar', undefined);
     ligarFormNovaPatente('btn-nova-patente-executivo', 'form-nova-patente-executivo', 'executivo', null);
   }
 

@@ -59,13 +59,19 @@ patentes.patch('/:id', async (c) => {
   const usuarioId = c.get('usuarioId')
   if (!(await ehAdmin(c.env.DB, usuarioId))) return c.json({ erro: 'só administradores do sistema gerenciam a hierarquia' }, 403)
 
-  const body = await c.req.json<{ nome?: string; ordem?: number; vagas?: number | null; valor_compra_raros?: number | null }>()
+  const body = await c.req.json<{ nome?: string; ordem?: number; vagas?: number | null; valor_compra_raros?: number | null; cor?: string | null }>()
   const campos: string[] = []
   const valores: unknown[] = []
   if (body.nome !== undefined) { campos.push('nome = ?'); valores.push(body.nome) }
   if (body.ordem !== undefined) { campos.push('ordem = ?'); valores.push(body.ordem) }
   if (body.vagas !== undefined) { campos.push('vagas = ?'); valores.push(body.vagas) }
   if (body.valor_compra_raros !== undefined) { campos.push('valor_compra_raros = ?'); valores.push(body.valor_compra_raros) }
+  if (body.cor !== undefined) {
+    if (body.cor !== null && !/^#[0-9a-fA-F]{6}$/.test(body.cor)) {
+      return c.json({ erro: 'cor precisa ser um hex válido (#rrggbb)' }, 400)
+    }
+    campos.push('cor = ?'); valores.push(body.cor)
+  }
   if (!campos.length) return c.json({ ok: true })
 
   try {
