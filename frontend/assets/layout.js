@@ -36,6 +36,7 @@ const NAV_PRINCIPAL = [
       { titulo: 'Corpo Executivo', url: '/listagens/corpo-executivo.html' },
       { titulo: 'TAGs', url: '/listagens/tags.html' },
       { titulo: 'Reformados', url: '/listagens/reformados.html' },
+      { titulo: 'Desligados', url: '/listagens/desligados.html' },
       { titulo: 'Exonerados', url: '/listagens/exonerados.html' },
     ],
   },
