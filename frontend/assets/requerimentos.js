@@ -111,10 +111,11 @@ async function montarFormularioRequerimento(config) {
 
   const inputAlvo = document.getElementById('req-alvo');
   const inputTagAutor = document.getElementById('req-tag-autor');
-  apiFetch('/usuarios/me').then(async (r) => {
+  let meAtual = null;
+  const promessaMe = apiFetch('/usuarios/me').then(async (r) => {
     if (r.ok) {
-      const me = await r.json();
-      if (me.tag) inputTagAutor.value = me.tag;
+      meAtual = await r.json();
+      if (meAtual.tag) inputTagAutor.value = meAtual.tag;
     }
   });
   const sugestoesEl = document.getElementById('req-alvo-sugestoes');
@@ -293,7 +294,7 @@ async function montarFormularioRequerimento(config) {
             <p class="text-muted">${r.autor_patente_nome || ''} <b class="text-dark">${r.autor_nick || ''}</b> escreveu:</p>
             ${linhasExtras.map((l) => `<p>${l}</p>`).join('')}
             ${identificacao ? `<p class="font-semibold">• ${identificacao}</p>` : ''}
-            <p class="flex items-center gap-1.5 text-green-600 pt-1">✅ Li e concordo com as normas de ${tituloTipoReq(r.tipo).toLowerCase()}.</p>
+            <p class="flex items-center gap-1.5 text-green-600 pt-1"><i class="fa-solid fa-circle-check"></i> Li e concordo com as normas de ${tituloTipoReq(r.tipo).toLowerCase()}.</p>
 
             <div class="pt-1">
               <p class="text-[0.65rem] text-muted">Assinatura:</p>
@@ -329,11 +330,33 @@ async function montarFormularioRequerimento(config) {
             ${alvos.map((a) => `<span class="text-xs px-2 py-0.5 rounded-full ${(COR_STATUS_REQ[a.status] || COR_STATUS_REQ.pendente).badge}">${a.nick} · ${a.status}</span>`).join('')}
           </div>
         ` : ''}
+
+        ${meAtual?.administrador_sistema ? `
+          <div class="border-t border-border px-4 py-2.5 flex items-center justify-between">
+            <div class="flex gap-2">
+              ${r.status === 'pendente' && alvoPrincipal ? `
+                <button data-acao="aprovar" data-req="${r.id}" data-alvo="${alvoPrincipal.id}" class="btn-decidir text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-500/15 text-green-600 hover:bg-green-500/25 transition-colors">
+                  <i class="fa-solid fa-check"></i> Aprovar
+                </button>
+                <button data-acao="reprovar" data-req="${r.id}" data-alvo="${alvoPrincipal.id}" class="btn-decidir text-xs font-semibold px-3 py-1.5 rounded-lg bg-red-500/15 text-red-600 hover:bg-red-500/25 transition-colors">
+                  <i class="fa-solid fa-xmark"></i> Reprovar
+                </button>
+                <button data-acao="cancelar" data-req="${r.id}" class="btn-decidir text-xs font-semibold px-3 py-1.5 rounded-lg bg-gray-500/15 text-gray-600 hover:bg-gray-500/25 transition-colors">
+                  <i class="fa-solid fa-ban"></i> Cancelar
+                </button>
+              ` : ''}
+            </div>
+            <button data-acao="excluir" data-req="${r.id}" title="Excluir do histórico" class="btn-decidir text-muted hover:text-red-600 transition-colors px-2">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
+        ` : ''}
       </div>
     `;
   }
 
   async function carregarRecentes() {
+    await promessaMe;
     const resp = await apiFetch('/requerimentos');
     const container = document.getElementById('req-recentes');
     if (!resp.ok) { container.innerHTML = '<p class="text-sm text-red-400">Erro ao carregar.</p>'; return; }
@@ -347,6 +370,34 @@ async function montarFormularioRequerimento(config) {
       : '<p class="text-sm text-muted">Nenhum requerimento deste tipo ainda.</p>';
   }
   carregarRecentes();
+
+  document.getElementById('req-recentes').addEventListener('click', async (e) => {
+    const btn = e.target.closest('.btn-decidir');
+    if (!btn) return;
+    const acao = btn.dataset.acao;
+    const reqId = btn.dataset.req;
+
+    if (acao === 'aprovar' || acao === 'reprovar') {
+      let motivo_recusa;
+      if (acao === 'reprovar') {
+        motivo_recusa = prompt('Motivo da recusa:');
+        if (motivo_recusa === null) return;
+      }
+      await apiFetch(`/requerimentos/${reqId}/alvos/${btn.dataset.alvo}/decidir`, {
+        method: 'POST',
+        body: JSON.stringify({ status: acao === 'aprovar' ? 'aprovado' : 'reprovado', motivo_recusa: motivo_recusa || undefined }),
+      });
+      carregarRecentes();
+    } else if (acao === 'cancelar') {
+      const motivo = prompt('Motivo do cancelamento (opcional):') || undefined;
+      await apiFetch(`/requerimentos/${reqId}/cancelar`, { method: 'POST', body: JSON.stringify({ motivo }) });
+      carregarRecentes();
+    } else if (acao === 'excluir') {
+      if (!confirm('Excluir este requerimento definitivamente do histórico? Essa ação não pode ser desfeita.')) return;
+      await apiFetch(`/requerimentos/${reqId}`, { method: 'DELETE' });
+      carregarRecentes();
+    }
+  });
 
   document.getElementById('form-req').addEventListener('submit', async (e) => {
     e.preventDefault();

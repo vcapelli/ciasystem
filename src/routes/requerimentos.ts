@@ -152,6 +152,7 @@ requerimentos.get('/', async (c) => {
     SELECT r.*, u.nick AS autor_nick, u.tag AS autor_tag, p.nome AS autor_patente_nome, cr.nome AS crime_nome,
       (
         SELECT json_group_array(json_object(
+          'id', ra.id,
           'nick', COALESCE(ua.nick, ra.nick_alvo),
           'status', ra.status,
           'decidido_em', ra.decidido_em,
