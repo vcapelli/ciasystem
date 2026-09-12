@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIASystem — Documentos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="/assets/tailwind-config.js"></script>
+<link href="https://kit-pro.fontawesome.com/releases/v7.3.1/css/pro.min.css" rel="stylesheet">
+<link rel="stylesheet" href="/assets/theme.css">
+</head>
+<body class="bg-basebg text-dark font-sans min-h-screen">
+
+  <div class="fixed inset-0 -z-10 habbo-floor-bg"></div>
+
+  <aside id="layout-sidebar" class="w-60 fixed left-0 top-[72px] bottom-0 border-r border-border bg-basebg p-4 overflow-y-auto"></aside>
+
+  <main class="ml-60 max-w-3xl px-6 py-8">
+    <div class="flex items-center justify-between mb-4">
+      <h1 class="text-xl font-display font-bold">Documentos</h1>
+      <button id="btn-novo-documento" class="hidden text-xs font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">
+        <i class="fa-solid fa-plus"></i> Novo documento
+      </button>
+    </div>
+
+    <div id="form-novo-documento" class="hidden bg-card border border-border rounded-2xl shadow-sm p-5 mb-5"></div>
+
+    <div id="lista-documentos" class="space-y-3">
+      <p class="text-sm text-muted">Carregando…</p>
+    </div>
+  </main>
+
+<script src="/assets/api.js"></script>
+<script src="/assets/layout.js"></script>
+<script>
+  const BADGE_STATUS_DOC = {
+    vigente: 'bg-green-500/15 text-green-600',
+    em_revisao: 'bg-accent/15 text-accent',
+    arquivado: 'bg-white/10 text-muted',
+  };
+  const TIPOS_DOC = {
+    constituicao_militar: 'Constituição Militar', codigo_penal_militar: 'Código Penal Militar',
+    guia_defesa_batalhao: 'Guia de Defesa do Batalhão', outro: 'Outro',
+  };
+
+  async function carregar(me) {
+    const docsResp = await apiFetch('/documentos');
+    const documentos = docsResp.ok ? await docsResp.json() : [];
+
+    const lista = document.getElementById('lista-documentos');
+    lista.innerHTML = documentos.length ? documentos.map((d) => `
+      <a href="/documento-dashboard.html?id=${d.id}" class="flex items-center justify-between bg-card border border-border rounded-2xl shadow-sm px-5 py-4 hover:bg-basebg transition-colors">
+        <div>
+          <p class="text-sm font-semibold">${d.titulo}</p>
+          <p class="text-xs text-muted mt-0.5">${TIPOS_DOC[d.tipo] || d.tipo} · revisão nº ${d.numero_revisao_atual}</p>
+        </div>
+        <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full capitalize ${BADGE_STATUS_DOC[d.status] || ''}">${d.status.replace(/_/g, ' ')}</span>
+      </a>
+    `).join('') : '<p class="text-sm text-muted">Nenhum documento cadastrado ainda.</p>';
+
+    document.getElementById('btn-novo-documento').classList.remove('hidden');
+
+    document.getElementById('btn-novo-documento').addEventListener('click', () => {
+      const container = document.getElementById('form-novo-documento');
+      const abrindo = container.classList.contains('hidden');
+      container.classList.add('hidden');
+      if (!abrindo) return;
+      container.classList.remove('hidden');
+      container.innerHTML = `
+        <form class="space-y-3">
+          <input data-campo="titulo" placeholder="Título" required class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <select data-campo="tipo" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            ${Object.entries(TIPOS_DOC).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}
+          </select>
+          <textarea data-campo="conteudo_atual" rows="8" placeholder="Conteúdo inicial do documento" required class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></textarea>
+          <button type="submit" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Criar</button>
+          <p data-erro class="hidden text-xs text-red-500"></p>
+        </form>
+      `;
+      container.querySelector('form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const resp = await apiFetch('/documentos', {
+          method: 'POST',
+          body: JSON.stringify({
+            titulo: container.querySelector('[data-campo="titulo"]').value.trim(),
+            tipo: container.querySelector('[data-campo="tipo"]').value,
+            conteudo_atual: container.querySelector('[data-campo="conteudo_atual"]').value,
+          }),
+        });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          const erroEl = container.querySelector('[data-erro]');
+          erroEl.textContent = d.erro || 'Não foi possível criar.';
+          erroEl.classList.remove('hidden');
+          return;
+        }
+        const { id } = await resp.json();
+        window.location.href = `/documento-dashboard.html?id=${id}`;
+      });
+    });
+  }
+
+  montarLayout('/documentos.html').then((me) => { if (me) carregar(me); });
+</script>
+</body>
+</html>

@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIASystem — Documento</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="/assets/tailwind-config.js"></script>
+<link href="https://kit-pro.fontawesome.com/releases/v7.3.1/css/pro.min.css" rel="stylesheet">
+<link rel="stylesheet" href="/assets/theme.css">
+</head>
+<body class="bg-basebg text-dark font-sans min-h-screen">
+
+  <div class="fixed inset-0 -z-10 habbo-floor-bg"></div>
+
+  <aside id="layout-sidebar" class="w-60 fixed left-0 top-[72px] bottom-0 border-r border-border bg-basebg p-4 overflow-y-auto"></aside>
+
+  <main class="ml-60 max-w-3xl px-6 py-8">
+    <a href="/documentos.html" class="text-xs text-muted hover:text-dark transition-colors">← Voltar pros documentos</a>
+    <div id="conteudo" class="mt-2">
+      <p class="text-sm text-muted">Carregando…</p>
+    </div>
+  </main>
+
+<script src="/assets/api.js"></script>
+<script src="/assets/layout.js"></script>
+<script>
+  const params = new URLSearchParams(window.location.search);
+  const documentoId = params.get('id');
+
+  const BADGE_STATUS_DOC = {
+    vigente: 'bg-green-500/15 text-green-600', em_revisao: 'bg-accent/15 text-accent', arquivado: 'bg-white/10 text-muted',
+    rascunho: 'bg-white/10 text-muted', em_aprovacao: 'bg-accent/15 text-accent', aprovado: 'bg-green-500/15 text-green-600',
+    reprovado: 'bg-red-500/15 text-red-600', agendado: 'bg-amber-500/15 text-amber-600', implementado: 'bg-green-500/15 text-green-600',
+    cancelado: 'bg-red-500/15 text-red-600', pendente: 'bg-gray-500/15 text-gray-600',
+  };
+  const TIPOS_DOC = {
+    constituicao_militar: 'Constituição Militar', codigo_penal_militar: 'Código Penal Militar',
+    guia_defesa_batalhao: 'Guia de Defesa do Batalhão', outro: 'Outro',
+  };
+  const LABEL_PAPEL = { autor: 'Autor', revisor: 'Revisor', administrador_forum: 'Administrador do Fórum' };
+
+  function formatarData(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleString('pt-BR');
+  }
+
+  async function buscarUsuarios(termo) {
+    if (termo.length < 2) return [];
+    const r = await apiFetch(`/usuarios?busca=${encodeURIComponent(termo)}`);
+    return r.ok ? await r.json() : [];
+  }
+
+  function ligarAutocompleteUsuario(inputEl, sugestoesEl, aoSelecionar) {
+    let debounce;
+    inputEl.addEventListener('input', () => {
+      aoSelecionar(null);
+      clearTimeout(debounce);
+      const termo = inputEl.value.trim();
+      if (termo.length < 2) { sugestoesEl.classList.add('hidden'); return; }
+      debounce = setTimeout(async () => {
+        const lista = await buscarUsuarios(termo);
+        sugestoesEl.innerHTML = lista.length
+          ? lista.map((u) => `<button type="button" data-id="${u.id}" data-nick="${u.nick}" class="w-full text-left px-3 py-2 text-sm hover:bg-basebg transition-colors">${u.nick}</button>`).join('')
+          : '<p class="px-3 py-2 text-sm text-muted">Nenhum usuário encontrado.</p>';
+        sugestoesEl.classList.remove('hidden');
+      }, 250);
+    });
+    sugestoesEl.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-id]');
+      if (!btn) return;
+      inputEl.value = btn.dataset.nick;
+      sugestoesEl.classList.add('hidden');
+      aoSelecionar(Number(btn.dataset.id));
+    });
+  }
+
+  // ---------- Vista principal do documento (vigente + lista de revisões) ----------
+  async function montarDocumento(me) {
+    const container = document.getElementById('conteudo');
+    container.innerHTML = '<p class="text-sm text-muted mt-2">Carregando…</p>';
+
+    const [docResp, revisoesResp] = await Promise.all([
+      apiFetch(`/documentos/${documentoId}`),
+      apiFetch(`/documentos/${documentoId}/revisoes`),
+    ]);
+    if (!docResp.ok) { container.innerHTML = '<p class="text-sm text-red-500 mt-2">Documento não encontrado.</p>'; return; }
+    const doc = await docResp.json();
+    const revisoes = revisoesResp.ok ? await revisoesResp.json() : [];
+
+    const revisaoEmCurso = revisoes.find((r) => !['implementado', 'cancelado', 'reprovado'].includes(r.status));
+
+    container.innerHTML = `
+      <div class="flex items-center justify-between mt-2 mb-1">
+        <h1 class="text-xl font-display font-bold">${doc.titulo}</h1>
+        <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full capitalize ${BADGE_STATUS_DOC[doc.status] || ''}">${doc.status.replace(/_/g, ' ')}</span>
+      </div>
+      <p class="text-xs text-muted mb-4">${TIPOS_DOC[doc.tipo] || doc.tipo} · revisão vigente nº ${doc.numero_revisao_atual} · atualizado em ${formatarData(doc.atualizado_em)}</p>
+
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-5">
+        <h2 class="text-xs font-semibold uppercase tracking-wide text-muted mb-2">Conteúdo vigente</h2>
+        <div class="text-sm whitespace-pre-wrap">${doc.conteudo_atual}</div>
+      </div>
+
+      ${!revisaoEmCurso ? `
+        <button id="btn-abrir-revisao" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors mb-6">
+          <i class="fa-solid fa-pen"></i> Abrir solicitação de alteração
+        </button>
+        <div id="form-abrir-revisao" class="hidden bg-card border border-border rounded-2xl shadow-sm p-5 mb-6"></div>
+      ` : `
+        <a href="#" data-ver-revisao="${revisaoEmCurso.id}" class="block bg-accent/10 border border-accent/30 rounded-2xl p-4 mb-6 hover:bg-accent/15 transition-colors">
+          <p class="text-sm font-semibold text-accent">Já existe uma revisão em andamento (nº ${revisaoEmCurso.numero_revisao}) — clique pra ver</p>
+        </a>
+      `}
+
+      <h2 class="text-sm font-bold uppercase tracking-wide text-muted mb-3">Histórico de revisões</h2>
+      <div class="space-y-2">
+        ${revisoes.length ? revisoes.map((r) => `
+          <a href="#" data-ver-revisao="${r.id}" class="flex items-center justify-between bg-card border border-border rounded-xl px-4 py-3 hover:bg-basebg transition-colors">
+            <div>
+              <p class="text-sm font-semibold">Revisão nº ${r.numero_revisao}</p>
+              <p class="text-xs text-muted">por ${r.autor_nick || '—'} · ${formatarData(r.criado_em)}</p>
+            </div>
+            <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full capitalize ${BADGE_STATUS_DOC[r.status] || ''}">${r.status.replace(/_/g, ' ')}</span>
+          </a>
+        `).join('') : '<p class="text-sm text-muted">Nenhuma revisão ainda.</p>'}
+      </div>
+    `;
+
+    container.querySelectorAll('[data-ver-revisao]').forEach((a) => {
+      a.addEventListener('click', (e) => { e.preventDefault(); montarRevisao(me, a.dataset.verRevisao); });
+    });
+
+    const btnAbrir = document.getElementById('btn-abrir-revisao');
+    if (btnAbrir) {
+      btnAbrir.addEventListener('click', () => {
+        const form = document.getElementById('form-abrir-revisao');
+        const abrindo = form.classList.contains('hidden');
+        form.classList.add('hidden');
+        if (!abrindo) return;
+        form.classList.remove('hidden');
+        form.innerHTML = `
+          <form class="space-y-3">
+            <label class="text-xs text-muted">Conteúdo proposto
+              <textarea data-campo="conteudo_proposto" rows="8" class="w-full mt-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">${doc.conteudo_atual}</textarea>
+            </label>
+            <label class="text-xs text-muted">O que pretende alterar? (descrição inicial)
+              <textarea data-campo="descricao_inicial" rows="2" required class="w-full mt-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></textarea>
+            </label>
+            <div class="grid grid-cols-2 gap-3">
+              <div class="relative">
+                <label class="text-xs text-muted">Revisor
+                  <input data-campo-nick="revisor" placeholder="Buscar por nick…" autocomplete="off" required class="w-full mt-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                </label>
+                <div data-sugestoes="revisor" class="hidden absolute z-10 mt-1 w-full bg-card border border-border rounded-lg shadow-md max-h-40 overflow-y-auto"></div>
+              </div>
+              <div class="relative">
+                <label class="text-xs text-muted">Administrador do Fórum
+                  <input data-campo-nick="administrador_forum" placeholder="Buscar por nick…" autocomplete="off" required class="w-full mt-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                </label>
+                <div data-sugestoes="administrador_forum" class="hidden absolute z-10 mt-1 w-full bg-card border border-border rounded-lg shadow-md max-h-40 overflow-y-auto"></div>
+              </div>
+            </div>
+            <button type="submit" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Abrir solicitação</button>
+            <p data-erro class="hidden text-xs text-red-500"></p>
+          </form>
+        `;
+
+        let revisorId = null, administradorForumId = null;
+        ligarAutocompleteUsuario(
+          form.querySelector('[data-campo-nick="revisor"]'), form.querySelector('[data-sugestoes="revisor"]'),
+          (id) => { revisorId = id; }
+        );
+        ligarAutocompleteUsuario(
+          form.querySelector('[data-campo-nick="administrador_forum"]'), form.querySelector('[data-sugestoes="administrador_forum"]'),
+          (id) => { administradorForumId = id; }
+        );
+
+        form.querySelector('form').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const erroEl = form.querySelector('[data-erro]');
+          if (!revisorId || !administradorForumId) {
+            erroEl.textContent = 'Selecione um revisor e um administrador do fórum válidos na busca.';
+            erroEl.classList.remove('hidden');
+            return;
+          }
+          const resp = await apiFetch(`/documentos/${documentoId}/revisoes`, {
+            method: 'POST',
+            body: JSON.stringify({
+              conteudo_proposto: form.querySelector('[data-campo="conteudo_proposto"]').value,
+              descricao_inicial: form.querySelector('[data-campo="descricao_inicial"]').value.trim(),
+              revisor_id: revisorId,
+              administrador_forum_id: administradorForumId,
+            }),
+          });
+          if (!resp.ok) {
+            const d = await resp.json().catch(() => ({}));
+            erroEl.textContent = d.erro || 'Não foi possível abrir a revisão.';
+            erroEl.classList.remove('hidden');
+            return;
+          }
+          montarDocumento(me);
+        });
+      });
+    }
+  }
+
+  // ---------- Vista de uma revisão específica ----------
+  async function montarRevisao(me, revisaoId) {
+    const container = document.getElementById('conteudo');
+    container.innerHTML = '<p class="text-sm text-muted mt-2">Carregando…</p>';
+
+    const resp = await apiFetch(`/documentos/${documentoId}/revisoes/${revisaoId}`);
+    if (!resp.ok) { container.innerHTML = '<p class="text-sm text-red-500 mt-2">Revisão não encontrada.</p>'; return; }
+    const r = await resp.json();
+
+    const meuPapel = r.aprovadores.find((a) => a.usuario_id === me.id);
+    const administradorForum = r.aprovadores.find((a) => a.papel === 'administrador_forum');
+    const souAdministradorForumDesta = administradorForum?.usuario_id === me.id;
+
+    container.innerHTML = `
+      <button id="btn-voltar-doc" class="text-xs text-muted hover:text-dark transition-colors mt-2 mb-2">← Voltar pro documento</button>
+      <div class="flex items-center justify-between mb-1">
+        <h1 class="text-lg font-display font-bold">Revisão nº ${r.numero_revisao}</h1>
+        <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full capitalize ${BADGE_STATUS_DOC[r.status] || ''}">${r.status.replace(/_/g, ' ')}</span>
+      </div>
+      <p class="text-xs text-muted mb-4">por ${r.autor_nick || '—'} · aberta em ${formatarData(r.criado_em)}</p>
+
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-5">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="text-xs font-semibold uppercase tracking-wide text-muted">Conteúdo proposto</h2>
+          ${r.status !== 'implementado' && r.status !== 'cancelado' && r.autor_id === me.id ? '<button id="btn-editar-conteudo" class="text-xs text-accent hover:underline">Editar</button>' : ''}
+        </div>
+        <div id="conteudo-proposto-view" class="text-sm whitespace-pre-wrap">${r.conteudo_proposto}</div>
+        <div id="conteudo-proposto-edit" class="hidden"></div>
+      </div>
+
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-5">
+        <h2 class="text-xs font-semibold uppercase tracking-wide text-muted mb-3">Aprovadores</h2>
+        <div class="space-y-2">
+          ${r.aprovadores.map((a) => `
+            <div class="flex items-center justify-between px-3 py-2 bg-basebg border border-border rounded-lg">
+              <div>
+                <p class="text-sm font-semibold">${LABEL_PAPEL[a.papel]}</p>
+                <p class="text-xs text-muted">${a.usuario_nick || '—'}${a.comentario ? ` — "${a.comentario}"` : ''}</p>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-semibold px-2 py-0.5 rounded-full capitalize ${BADGE_STATUS_DOC[a.status] || ''}">${a.status}</span>
+                ${a.papel !== 'autor' && a.status === 'pendente' && a.usuario_id === me.id ? `
+                  <button data-decidir-papel="${a.papel}" data-status="aprovado" class="text-xs font-semibold px-2 py-1 rounded-lg bg-green-500/15 text-green-600 hover:bg-green-500/25 transition-colors"><i class="fa-solid fa-check"></i></button>
+                  <button data-decidir-papel="${a.papel}" data-status="reprovado" class="text-xs font-semibold px-2 py-1 rounded-lg bg-red-500/15 text-red-600 hover:bg-red-500/25 transition-colors"><i class="fa-solid fa-xmark"></i></button>
+                ` : ''}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      ${r.status === 'aprovado' && souAdministradorForumDesta ? `
+        <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-5">
+          <h2 class="text-xs font-semibold uppercase tracking-wide text-muted mb-2">Agendar implementação</h2>
+          <div class="flex items-center gap-2">
+            <input id="input-agendar" type="datetime-local" class="bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            <button id="btn-agendar" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Agendar</button>
+          </div>
+        </div>
+      ` : ''}
+
+      ${r.status === 'agendado' ? `
+        <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-5">
+          <p class="text-sm">Agendado para <b>${formatarData(r.agendado_para)}</b>.</p>
+          ${souAdministradorForumDesta || me.administrador_sistema ? `
+            <button id="btn-implementar" class="mt-2 text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Implementar agora</button>
+          ` : ''}
+        </div>
+      ` : ''}
+
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5">
+        <h2 class="text-xs font-semibold uppercase tracking-wide text-muted mb-3">O que foi alterado</h2>
+        <div class="space-y-2 mb-3">
+          ${r.historico.map((h) => `
+            <div class="text-sm border-l-2 border-border pl-3">
+              <p>${h.descricao}</p>
+              <p class="text-xs text-muted mt-0.5">${h.criado_por_nick || '—'} · ${formatarData(h.criado_em)}</p>
+            </div>
+          `).join('')}
+        </div>
+        ${r.status !== 'implementado' && r.status !== 'cancelado' ? `
+          <form id="form-novo-historico" class="flex gap-2">
+            <input placeholder="Descreva mais uma alteração…" required class="flex-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            <button type="submit" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Adicionar</button>
+          </form>
+        ` : ''}
+      </div>
+    `;
+
+    document.getElementById('btn-voltar-doc').addEventListener('click', () => montarDocumento(me));
+
+    const btnEditar = document.getElementById('btn-editar-conteudo');
+    if (btnEditar) {
+      btnEditar.addEventListener('click', () => {
+        document.getElementById('conteudo-proposto-view').classList.add('hidden');
+        const editArea = document.getElementById('conteudo-proposto-edit');
+        editArea.classList.remove('hidden');
+        editArea.innerHTML = `
+          <textarea rows="8" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">${r.conteudo_proposto}</textarea>
+          <button id="btn-salvar-conteudo" class="mt-2 text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Salvar</button>
+        `;
+        editArea.querySelector('#btn-salvar-conteudo').addEventListener('click', async () => {
+          const novoConteudo = editArea.querySelector('textarea').value;
+          await apiFetch(`/documentos/${documentoId}/revisoes/${revisaoId}/historico`, {
+            method: 'POST',
+            body: JSON.stringify({ descricao: 'Conteúdo proposto editado.', conteudo_proposto: novoConteudo }),
+          });
+          montarRevisao(me, revisaoId);
+        });
+      });
+    }
+
+    container.querySelectorAll('[data-decidir-papel]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const comentario = btn.dataset.status === 'reprovado' ? (prompt('Motivo da reprovação (opcional):') || undefined) : undefined;
+        await apiFetch(`/documentos/${documentoId}/revisoes/${revisaoId}/aprovadores/${btn.dataset.decidirPapel}/decidir`, {
+          method: 'POST',
+          body: JSON.stringify({ status: btn.dataset.status, comentario }),
+        });
+        montarRevisao(me, revisaoId);
+      });
+    });
+
+    const btnAgendar = document.getElementById('btn-agendar');
+    if (btnAgendar) {
+      btnAgendar.addEventListener('click', async () => {
+        const valor = document.getElementById('input-agendar').value;
+        if (!valor) return;
+        await apiFetch(`/documentos/${documentoId}/revisoes/${revisaoId}/agendar`, {
+          method: 'POST',
+          body: JSON.stringify({ agendado_para: new Date(valor).toISOString() }),
+        });
+        montarRevisao(me, revisaoId);
+      });
+    }
+
+    const btnImplementar = document.getElementById('btn-implementar');
+    if (btnImplementar) {
+      btnImplementar.addEventListener('click', async () => {
+        if (!confirm('Implementar essa revisão agora? Isso substitui o conteúdo vigente do documento.')) return;
+        await apiFetch(`/documentos/${documentoId}/revisoes/${revisaoId}/implementar`, { method: 'POST' });
+        montarDocumento(me);
+      });
+    }
+
+    const formHistorico = document.getElementById('form-novo-historico');
+    if (formHistorico) {
+      formHistorico.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const input = formHistorico.querySelector('input');
+        await apiFetch(`/documentos/${documentoId}/revisoes/${revisaoId}/historico`, {
+          method: 'POST',
+          body: JSON.stringify({ descricao: input.value.trim() }),
+        });
+        montarRevisao(me, revisaoId);
+      });
+    }
+  }
+
+  montarLayout('/documentos.html').then((me) => {
+    if (!me) return;
+    if (!documentoId) { document.getElementById('conteudo').innerHTML = '<p class="text-sm text-red-500 mt-2">Nenhum documento especificado.</p>'; return; }
+    montarDocumento(me);
+  });
+</script>
+</body>
+</html>

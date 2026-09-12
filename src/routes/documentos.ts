@@ -83,7 +83,10 @@ documentos.post('/:id/revisoes', async (c) => {
 
 documentos.get('/:id/revisoes', async (c) => {
   const { results } = await c.env.DB.prepare(
-    `SELECT * FROM documento_revisoes WHERE documento_id = ? ORDER BY numero_revisao DESC`
+    `SELECT dr.*, au.nick AS autor_nick
+     FROM documento_revisoes dr
+     LEFT JOIN usuarios au ON au.id = dr.autor_id
+     WHERE dr.documento_id = ? ORDER BY dr.numero_revisao DESC`
   ).bind(c.req.param('id')).all()
   return c.json(results)
 })
@@ -91,15 +94,23 @@ documentos.get('/:id/revisoes', async (c) => {
 documentos.get('/:id/revisoes/:revisaoId', async (c) => {
   const revisaoId = c.req.param('revisaoId')
 
-  const revisao = await c.env.DB.prepare(`SELECT * FROM documento_revisoes WHERE id = ?`).bind(revisaoId).first()
+  const revisao = await c.env.DB.prepare(
+    `SELECT dr.*, au.nick AS autor_nick
+     FROM documento_revisoes dr LEFT JOIN usuarios au ON au.id = dr.autor_id
+     WHERE dr.id = ?`
+  ).bind(revisaoId).first()
   if (!revisao) return c.json({ erro: 'revisão não encontrada' }, 404)
 
   const { results: aprovadores } = await c.env.DB.prepare(
-    `SELECT * FROM documento_revisao_aprovadores WHERE revisao_id = ?`
+    `SELECT dra.*, u.nick AS usuario_nick
+     FROM documento_revisao_aprovadores dra LEFT JOIN usuarios u ON u.id = dra.usuario_id
+     WHERE dra.revisao_id = ?`
   ).bind(revisaoId).all()
 
   const { results: historico } = await c.env.DB.prepare(
-    `SELECT * FROM documento_revisao_historico WHERE revisao_id = ? ORDER BY criado_em`
+    `SELECT drh.*, u.nick AS criado_por_nick
+     FROM documento_revisao_historico drh LEFT JOIN usuarios u ON u.id = drh.criado_por_id
+     WHERE drh.revisao_id = ? ORDER BY drh.criado_em`
   ).bind(revisaoId).all()
 
   return c.json({ ...revisao, aprovadores, historico })
