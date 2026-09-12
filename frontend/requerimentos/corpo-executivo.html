@@ -36,12 +36,16 @@
       { value: 'advertencia', label: 'Advertência' },
       { value: 'licenca', label: 'Licença' },
       { value: 'volta_licenca', label: 'Volta de Licença' },
-      { value: 'transferencia_conta', label: 'Transferência de Conta' },
       { value: 'venda_cargo', label: 'Venda de Cargo' },
     ],
     alvoLivre: false,
     patenteCorpo: 'executivo',
+    patenteFiltroPorAlvo: true,
+    tipoVoltaLicencaCondicional: true,
     tiposComPatente: ['promocao', 'rebaixamento', 'venda_cargo'],
+    tiposComCrime: ['advertencia', 'rebaixamento'],
+    tiposComPermissao: ['promocao', 'rebaixamento', 'advertencia', 'venda_cargo'],
+    tiposComDataRetorno: ['licenca'],
   });
   });
 </script>

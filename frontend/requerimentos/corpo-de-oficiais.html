@@ -36,12 +36,16 @@
       { value: 'advertencia', label: 'Advertência' },
       { value: 'licenca', label: 'Licença' },
       { value: 'volta_licenca', label: 'Volta de Licença' },
-      { value: 'transferencia_conta', label: 'Transferência de Conta' },
       { value: 'transferencia_corpo', label: 'Transferência de Corpo' },
     ],
     alvoLivre: false,
     patenteCorpo: 'militar',
+    patenteFiltroPorAlvo: true,
+    tipoVoltaLicencaCondicional: true,
     tiposComPatente: ['promocao', 'rebaixamento'],
+    tiposComCrime: ['advertencia', 'rebaixamento'],
+    tiposComPermissao: ['promocao', 'rebaixamento', 'advertencia'],
+    tiposComDataRetorno: ['licenca'],
   });
   });
 </script>

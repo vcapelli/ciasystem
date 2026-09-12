@@ -26,17 +26,28 @@ function formatarDataHoraReq(iso) {
 /**
  * config = {
  *   tipos: [{ value, label }],
- *   alvoLivre: bool,              // true = nick digitado livre (porta de entrada), sem precisar já existir
- *   patenteCorpo: 'militar' | 'executivo' | null,  // se setado, mostra seletor de patente/cargo destino
+ *   alvoLivre: bool,
+ *   patenteCorpo: 'militar' | 'executivo' | null,
+ *   filtrarPatentePorAutor: bool,      // Contratação: patente < patente do autor (ou todas, se admin)
+ *   patenteFiltroPorAlvo: bool,        // promoção/rebaixamento: filtra pela patente atual do alvo
  *   tiposComPatente: [tipo, ...],
- *   tiposComCrime: [tipo, ...],
+ *   tiposComCrime: [tipo, ...],        // também mostra o campo "Provas"
  *   tiposComTag: [tipo, ...],
+ *   tiposComPermissao: [tipo, ...],
+ *   tiposComDataRetorno: [tipo, ...],  // licença
+ *   tiposComExoneracao: [tipo, ...],   // temporária/indeterminada
+ *   tipoVoltaLicencaCondicional: bool, // só habilita 'volta_licenca' se o alvo estiver de licença
+ *   usaNovoNick: bool,                 // transferência de conta
  * }
  */
 async function montarFormularioRequerimento(config) {
   const raiz = document.getElementById('form-requerimento-raiz');
 
   let alvoSelecionadoId = null;
+  let permissaoSelecionadaId = null;
+  let alvoAtualPatenteOrdem = null;
+  let alvoAtualStatus = null;
+  let patentesCacheCompleta = [];
 
   raiz.innerHTML = `
     <div class="bg-card border border-border rounded-2xl shadow-sm overflow-hidden">
@@ -74,6 +85,11 @@ async function montarFormularioRequerimento(config) {
               <select id="req-patente" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></select>
             </div>
 
+            <div id="req-campo-novo-nick" class="hidden">
+              <label class="block text-xs text-muted mb-1">Novo nickname</label>
+              <input id="req-novo-nick" placeholder="Novo nick do Habblet" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            </div>
+
             <div id="req-campo-tag" class="hidden space-y-3">
               <div id="req-tag-atual-wrap" class="hidden">
                 <label class="block text-xs text-muted mb-1">TAG atual</label>
@@ -90,6 +106,36 @@ async function montarFormularioRequerimento(config) {
               <select id="req-crime" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
                 <option value="">— selecione —</option>
               </select>
+            </div>
+
+            <div id="req-campo-provas" class="hidden">
+              <label class="block text-xs text-muted mb-1">Provas</label>
+              <input id="req-provas" placeholder="Link de prints, vídeo, etc." class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            </div>
+
+            <div id="req-campo-permissao" class="relative hidden">
+              <label class="block text-xs text-muted mb-1">Permissão (concessor, se necessária)</label>
+              <input id="req-permissao" autocomplete="off" placeholder="Buscar por nick…" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+              <div id="req-permissao-sugestoes" class="hidden absolute z-10 mt-1 w-full bg-card border border-border rounded-lg shadow-md max-h-48 overflow-y-auto"></div>
+            </div>
+
+            <div id="req-campo-data-retorno" class="hidden">
+              <label class="block text-xs text-muted mb-1">Data de retorno</label>
+              <input id="req-data-retorno" type="date" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            </div>
+
+            <div id="req-campo-exoneracao" class="hidden space-y-3">
+              <div>
+                <label class="block text-xs text-muted mb-1">Duração</label>
+                <select id="req-exoneracao-tipo" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                  <option value="indeterminada">Indeterminada</option>
+                  <option value="temporaria">Temporária</option>
+                </select>
+              </div>
+              <div id="req-campo-exoneracao-data" class="hidden">
+                <label class="block text-xs text-muted mb-1">Exoneração até</label>
+                <input id="req-exoneracao-ate" type="date" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+              </div>
             </div>
 
             <div>
@@ -129,7 +175,16 @@ async function montarFormularioRequerimento(config) {
   const campoPatente = document.getElementById('req-campo-patente');
   const campoTag = document.getElementById('req-campo-tag');
   const campoCrime = document.getElementById('req-campo-crime');
+  const campoProvas = document.getElementById('req-campo-provas');
+  const campoPermissao = document.getElementById('req-campo-permissao');
+  const campoDataRetorno = document.getElementById('req-campo-data-retorno');
+  const campoExoneracao = document.getElementById('req-campo-exoneracao');
+  const campoNovoNick = document.getElementById('req-campo-novo-nick');
   const previewEl = document.getElementById('req-alvo-preview');
+
+  document.getElementById('req-exoneracao-tipo')?.addEventListener('change', (e) => {
+    document.getElementById('req-campo-exoneracao-data').classList.toggle('hidden', e.target.value !== 'temporaria');
+  });
 
   function renderPreviewCarregando() {
     previewEl.innerHTML = '<p class="text-sm text-muted">Carregando…</p>';
@@ -162,11 +217,39 @@ async function montarFormularioRequerimento(config) {
     `;
   }
 
+  function atualizarOpcaoVoltaLicenca() {
+    if (!config.tipoVoltaLicencaCondicional || !selectTipo) return;
+    const opcaoVolta = [...selectTipo.options].find((o) => o.value === 'volta_licenca');
+    if (!opcaoVolta) return;
+    const podeVoltar = alvoAtualStatus === 'licenca';
+    opcaoVolta.disabled = !podeVoltar;
+    opcaoVolta.textContent = podeVoltar ? 'Volta de Licença' : 'Volta de Licença (alvo não está de licença)';
+    if (!podeVoltar && selectTipo.value === 'volta_licenca') {
+      const primeiraHabilitada = [...selectTipo.options].find((o) => !o.disabled);
+      if (primeiraHabilitada) selectTipo.value = primeiraHabilitada.value;
+    }
+  }
+
+  function atualizarOpcoesPatenteFiltradas() {
+    if (!config.patenteFiltroPorAlvo || !patentesCacheCompleta.length) return;
+    const tipoAtual = selectTipo.value;
+    let filtradas = patentesCacheCompleta;
+    if (alvoAtualPatenteOrdem !== null) {
+      if (tipoAtual === 'promocao') filtradas = patentesCacheCompleta.filter((p) => p.ordem > alvoAtualPatenteOrdem);
+      else if (tipoAtual === 'rebaixamento') filtradas = patentesCacheCompleta.filter((p) => p.ordem < alvoAtualPatenteOrdem);
+    }
+    document.getElementById('req-patente').innerHTML = filtradas.length
+      ? filtradas.map((p) => `<option value="${p.id}">${p.nome}</option>`).join('')
+      : '<option value="">— nenhuma patente disponível —</option>';
+  }
+
   // Autocomplete de alvo (só quando o usuário já precisa existir no sistema)
   if (!config.alvoLivre) {
     let debounce;
     inputAlvo.addEventListener('input', () => {
       alvoSelecionadoId = null;
+      alvoAtualPatenteOrdem = null;
+      alvoAtualStatus = null;
       renderPreviewVazio('Selecione um usuário na busca.');
       clearTimeout(debounce);
       const termo = inputAlvo.value.trim();
@@ -188,6 +271,16 @@ async function montarFormularioRequerimento(config) {
     sugestoesEl.addEventListener('click', async (e) => {
       const btn = e.target.closest('button[data-nick]');
       if (!btn) return;
+      await promessaMe;
+
+      if (meAtual && btn.dataset.nick === meAtual.nick) {
+        sugestoesEl.classList.add('hidden');
+        renderPreviewVazio('Você não pode ser o alvo do próprio requerimento.');
+        inputAlvo.value = '';
+        alvoSelecionadoId = null;
+        return;
+      }
+
       inputAlvo.value = btn.dataset.nick;
       sugestoesEl.classList.add('hidden');
       renderPreviewCarregando();
@@ -196,6 +289,8 @@ async function montarFormularioRequerimento(config) {
       if (!perfilResp.ok) { renderPreviewVazio('Não foi possível carregar o perfil.'); return; }
       const perfil = await perfilResp.json();
       alvoSelecionadoId = perfil.id;
+      alvoAtualPatenteOrdem = perfil.patente_ordem ?? null;
+      alvoAtualStatus = perfil.status ?? null;
 
       const tagAtualWrap = document.getElementById('req-tag-atual-wrap');
       const tagAtualInput = document.getElementById('req-tag-atual');
@@ -210,6 +305,9 @@ async function montarFormularioRequerimento(config) {
           tagLabel.textContent = 'Nova TAG (2-3 caracteres)';
         }
       }
+
+      atualizarOpcoesPatenteFiltradas();
+      atualizarOpcaoVoltaLicenca();
 
       const historicoResp = await apiFetch(`/requerimentos/alvo/${perfil.id}`);
       const historico = historicoResp.ok ? await historicoResp.json() : [];
@@ -228,6 +326,11 @@ async function montarFormularioRequerimento(config) {
       if (nick.length < 2) { renderPreviewVazio('Digite o nick do alvo pra ver o perfil aqui.'); return; }
       renderPreviewCarregando();
       debounce = setTimeout(async () => {
+        await promessaMe;
+        if (meAtual && nick.toLowerCase() === meAtual.nick.toLowerCase()) {
+          renderPreviewVazio('Você não pode ser o alvo do próprio requerimento.');
+          return;
+        }
         const resp = await apiFetch(`/habblet/perfil/${encodeURIComponent(nick)}`);
         if (!resp.ok) { renderPreviewVazio('Jogador não encontrado no Habblet.'); return; }
         renderPreviewHabblet(await resp.json());
@@ -235,11 +338,61 @@ async function montarFormularioRequerimento(config) {
     });
   }
 
+  // Autocomplete de "Permissão" (concessor) — mesmo padrão do alvo, mais simples.
+  const inputPermissao = document.getElementById('req-permissao');
+  const sugestoesPermissaoEl = document.getElementById('req-permissao-sugestoes');
+  if (inputPermissao) {
+    let debouncePermissao;
+    inputPermissao.addEventListener('input', () => {
+      permissaoSelecionadaId = null;
+      clearTimeout(debouncePermissao);
+      const termo = inputPermissao.value.trim();
+      if (termo.length < 2) { sugestoesPermissaoEl.classList.add('hidden'); return; }
+      debouncePermissao = setTimeout(async () => {
+        const resp = await apiFetch(`/usuarios?busca=${encodeURIComponent(termo)}`);
+        const lista = resp.ok ? await resp.json() : [];
+        sugestoesPermissaoEl.innerHTML = lista.length
+          ? lista.map((u) => `
+              <button type="button" data-id="${u.id}" data-nick="${u.nick}" class="w-full text-left px-3 py-2 text-sm hover:bg-base transition-colors">
+                ${u.nick}${u.tag ? ` [${u.tag}]` : ''} <span class="text-muted">· ${u.patente_nome || 'Executivo'}</span>
+              </button>
+            `).join('')
+          : '<p class="px-3 py-2 text-sm text-muted">Nenhum usuário encontrado.</p>';
+        sugestoesPermissaoEl.classList.remove('hidden');
+      }, 250);
+    });
+    sugestoesPermissaoEl.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-id]');
+      if (!btn) return;
+      permissaoSelecionadaId = Number(btn.dataset.id);
+      inputPermissao.value = btn.dataset.nick;
+      sugestoesPermissaoEl.classList.add('hidden');
+    });
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('#req-permissao-sugestoes') && e.target !== inputPermissao) sugestoesPermissaoEl.classList.add('hidden');
+    });
+  }
+
   // Carrega patentes (se essa página usa esse campo)
-  if (config.patenteCorpo) {
+  if (config.filtrarPatentePorAutor) {
+    await promessaMe;
+    if (meAtual?.administrador_sistema) {
+      const resp = await apiFetch('/patentes');
+      const lista = resp.ok ? await resp.json() : [];
+      document.getElementById('req-patente').innerHTML = lista
+        .map((p) => `<option value="${p.id}">${p.nome}${p.corpo === 'executivo' ? ' (Executivo)' : ''}</option>`).join('');
+    } else {
+      const resp = await apiFetch('/patentes?corpo=militar');
+      const todas = resp.ok ? await resp.json() : [];
+      const permitidas = meAtual?.patente_ordem ? todas.filter((p) => p.ordem < meAtual.patente_ordem) : [];
+      document.getElementById('req-patente').innerHTML = permitidas.length
+        ? permitidas.map((p) => `<option value="${p.id}">${p.nome}</option>`).join('')
+        : '<option value="">— nenhuma patente disponível pra sua patente atual —</option>';
+    }
+  } else if (config.patenteCorpo) {
     const resp = await apiFetch(`/patentes?corpo=${config.patenteCorpo}`);
-    const lista = resp.ok ? await resp.json() : [];
-    document.getElementById('req-patente').innerHTML = lista.map((p) => `<option value="${p.id}">${p.nome}</option>`).join('');
+    patentesCacheCompleta = resp.ok ? await resp.json() : [];
+    document.getElementById('req-patente').innerHTML = patentesCacheCompleta.map((p) => `<option value="${p.id}">${p.nome}</option>`).join('');
   }
 
   // Carrega crimes (se essa página usa esse campo)
@@ -262,9 +415,16 @@ async function montarFormularioRequerimento(config) {
     campoPatente.classList.toggle('hidden', !(config.tiposComPatente || []).includes(tipoAtual));
     campoTag.classList.toggle('hidden', !(config.tiposComTag || []).includes(tipoAtual));
     campoCrime.classList.toggle('hidden', !(config.tiposComCrime || []).includes(tipoAtual));
+    campoProvas.classList.toggle('hidden', !(config.tiposComCrime || []).includes(tipoAtual));
+    campoPermissao.classList.toggle('hidden', !(config.tiposComPermissao || []).includes(tipoAtual));
+    campoDataRetorno.classList.toggle('hidden', !(config.tiposComDataRetorno || []).includes(tipoAtual));
+    campoExoneracao.classList.toggle('hidden', !(config.tiposComExoneracao || []).includes(tipoAtual));
+    if (campoNovoNick) campoNovoNick.classList.toggle('hidden', !config.usaNovoNick);
+    atualizarOpcoesPatenteFiltradas();
   }
   selectTipo.addEventListener('change', atualizarCamposCondicionais);
   atualizarCamposCondicionais();
+  atualizarOpcaoVoltaLicenca();
 
   function renderCardRecente(r) {
     const cor = COR_STATUS_REQ[r.status] || COR_STATUS_REQ.pendente;
@@ -286,8 +446,12 @@ async function montarFormularioRequerimento(config) {
     if (dadosEspecificos.patente_destino_id && patentesMapa[dadosEspecificos.patente_destino_id]) {
       linhasExtras.push(`<b>Destino:</b> ${patentesMapa[dadosEspecificos.patente_destino_id]}`);
     }
+    if (dadosEspecificos.novo_nick) linhasExtras.push(`<b>Novo nickname:</b> ${dadosEspecificos.novo_nick}`);
     if (r.tag_aplicada) linhasExtras.push(`<b>Nova TAG:</b> ${r.tag_aplicada}`);
     if (r.crime_nome) linhasExtras.push(`<b>Infração:</b> ${r.crime_nome}`);
+    if (dadosEspecificos.provas) linhasExtras.push(`<b>Provas:</b> ${dadosEspecificos.provas}`);
+    if (dadosEspecificos.data_retorno) linhasExtras.push(`<b>Data de retorno:</b> ${dadosEspecificos.data_retorno}`);
+    if (dadosEspecificos.exoneracao_ate) linhasExtras.push(`<b>Exoneração até:</b> ${dadosEspecificos.exoneracao_ate}`);
     if (r.fundamentacao) linhasExtras.push(`<b>Motivo:</b> ${r.fundamentacao}`);
 
     return `
@@ -431,9 +595,18 @@ async function montarFormularioRequerimento(config) {
     if (config.alvoLivre) {
       alvo = inputAlvo.value.trim();
       if (!alvo) { erroEl.textContent = 'Digite o nick do alvo.'; erroEl.classList.remove('hidden'); return; }
+      if (meAtual && alvo.toLowerCase() === meAtual.nick.toLowerCase()) {
+        erroEl.textContent = 'Você não pode ser o alvo do próprio requerimento.'; erroEl.classList.remove('hidden'); return;
+      }
     } else {
       if (!alvoSelecionadoId) { erroEl.textContent = 'Selecione um usuário na busca.'; erroEl.classList.remove('hidden'); return; }
       alvo = alvoSelecionadoId;
+    }
+
+    if (tipo === 'volta_licenca' && alvoAtualStatus !== 'licenca') {
+      erroEl.textContent = 'Esse alvo não está de licença — não é possível registrar volta de licença.';
+      erroEl.classList.remove('hidden');
+      return;
     }
 
     const dadosEspecificos = {};
@@ -442,6 +615,21 @@ async function montarFormularioRequerimento(config) {
     }
     if (inputTagAutor.value.trim()) {
       dadosEspecificos.tag_utilizada = inputTagAutor.value.trim();
+    }
+    if ((config.tiposComCrime || []).includes(tipo) && document.getElementById('req-provas').value.trim()) {
+      dadosEspecificos.provas = document.getElementById('req-provas').value.trim();
+    }
+    if ((config.tiposComDataRetorno || []).includes(tipo) && document.getElementById('req-data-retorno').value) {
+      dadosEspecificos.data_retorno = document.getElementById('req-data-retorno').value;
+    }
+    if ((config.tiposComExoneracao || []).includes(tipo)) {
+      const duracao = document.getElementById('req-exoneracao-tipo').value;
+      if (duracao === 'temporaria' && document.getElementById('req-exoneracao-ate').value) {
+        dadosEspecificos.exoneracao_ate = document.getElementById('req-exoneracao-ate').value;
+      }
+    }
+    if (config.usaNovoNick && document.getElementById('req-novo-nick').value.trim()) {
+      dadosEspecificos.novo_nick = document.getElementById('req-novo-nick').value.trim();
     }
 
     const body = {
@@ -453,6 +641,8 @@ async function montarFormularioRequerimento(config) {
         ? Number(document.getElementById('req-crime').value) : undefined,
       tag_aplicada: (config.tiposComTag || []).includes(tipo)
         ? document.getElementById('req-tag').value.trim() : undefined,
+      autorizado_por_id: (config.tiposComPermissao || []).includes(tipo) && permissaoSelecionadaId
+        ? permissaoSelecionadaId : undefined,
     };
 
     const resposta = await apiFetch('/requerimentos', { method: 'POST', body: JSON.stringify(body) });
@@ -468,8 +658,12 @@ async function montarFormularioRequerimento(config) {
     sucessoEl.classList.remove('hidden');
     document.getElementById('form-req').reset();
     alvoSelecionadoId = null;
+    permissaoSelecionadaId = null;
+    alvoAtualPatenteOrdem = null;
+    alvoAtualStatus = null;
     renderPreviewVazio('Digite o nick do alvo pra ver o perfil aqui.');
     atualizarCamposCondicionais();
+    atualizarOpcaoVoltaLicenca();
     carregarRecentes();
   });
 }

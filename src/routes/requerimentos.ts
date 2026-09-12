@@ -35,6 +35,31 @@ requerimentos.post('/', async (c) => {
 
   if (!autor) return c.json({ erro: 'autor não encontrado' }, 404)
 
+  // Ninguém pode ser alvo do próprio requerimento (promover a si mesmo,
+  // contratar a si mesmo, etc.) — vale pra qualquer tipo.
+  if (body.alvos.some((item) => item === autorId)) {
+    return c.json({ erro: 'você não pode ser o alvo do próprio requerimento' }, 400)
+  }
+
+  // Contratação: sem ser administrador do sistema, só pode contratar
+  // pra uma patente do Corpo Militar estritamente ABAIXO da sua própria
+  // — nunca igual/superior à sua, e nunca no Corpo Executivo.
+  if (body.tipo === 'contratacao' && !autor.administrador_sistema) {
+    const patenteAutor = await c.env.DB.prepare(`SELECT ordem FROM patentes WHERE id = ?`)
+      .bind(autor.patente_atual_id).first<{ ordem: number }>()
+    const patenteDestinoId = (body.dados_especificos as { patente_destino_id?: number } | undefined)?.patente_destino_id
+    const patenteDestino = patenteDestinoId
+      ? await c.env.DB.prepare(`SELECT ordem, corpo FROM patentes WHERE id = ?`).bind(patenteDestinoId).first<{ ordem: number; corpo: string }>()
+      : null
+
+    if (!patenteDestino || patenteDestino.corpo !== 'militar') {
+      return c.json({ erro: 'contratação sem ser administrador do sistema só é permitida pro Corpo Militar' }, 403)
+    }
+    if (!patenteAutor || patenteDestino.ordem >= patenteAutor.ordem) {
+      return c.json({ erro: 'você não pode contratar alguém pra uma patente igual ou superior à sua' }, 403)
+    }
+  }
+
   const acao = acaoHierarquiaDoTipo(body.tipo)
   if (acao && !autor.administrador_sistema) {
     for (const item of body.alvos) {

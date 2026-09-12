@@ -21,6 +21,7 @@ const NAV_PRINCIPAL = [
       { titulo: 'Corpo de Praças', url: '/requerimentos/corpo-de-pracas.html' },
       { titulo: 'Corpo de Oficiais', url: '/requerimentos/corpo-de-oficiais.html' },
       { titulo: 'Corpo Executivo', url: '/requerimentos/corpo-executivo.html' },
+      { titulo: 'Transferência de Conta', url: '/requerimentos/transferencia-conta.html' },
       { titulo: 'TAGs', url: '/requerimentos/tags.html' },
       { titulo: 'Desligamentos', url: '/requerimentos/desligamentos.html' },
       { titulo: 'Reforma', url: '/requerimentos/reforma.html' },

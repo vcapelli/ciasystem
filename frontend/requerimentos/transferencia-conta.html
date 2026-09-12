@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CIASystem — Exoneração</title>
+<title>CIASystem — Transferência de Conta</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
@@ -18,7 +18,7 @@
   <aside id="layout-sidebar" class="w-60 fixed left-0 top-[72px] bottom-0 border-r border-border bg-base p-4 overflow-y-auto"></aside>
 
   <main class="ml-60 px-6 py-8">
-    <h1 class="text-xl font-display font-bold mb-4">Exoneração</h1>
+    <h1 class="text-xl font-display font-bold mb-4">Transferência de Conta</h1>
     <div id="form-requerimento-raiz">
       <p class="text-sm text-muted">Carregando…</p>
     </div>
@@ -28,14 +28,12 @@
 <script src="/assets/layout.js"></script>
 <script src="/assets/requerimentos.js"></script>
 <script>
-  montarLayout('/requerimentos/exoneracao.html').then((me) => {
+  montarLayout('/requerimentos/transferencia-conta.html').then((me) => {
     if (me) montarFormularioRequerimento({
-    tipos: [{ value: 'exoneracao', label: 'Exoneração' }],
-    alvoLivre: false,
-    tiposComCrime: ['exoneracao'],
-    tiposComPermissao: ['exoneracao'],
-    tiposComExoneracao: ['exoneracao'],
-  });
+      tipos: [{ value: 'transferencia_conta', label: 'Transferência de Conta' }],
+      alvoLivre: false,
+      usaNovoNick: true,
+    });
   });
 </script>
 </body>
