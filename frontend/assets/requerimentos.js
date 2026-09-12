@@ -10,6 +10,8 @@ const PREFIXO_IDENTIFICACAO_REQ = {
   promocao: '', rebaixamento: 'R/',
   // outros tipos entram aqui conforme forem confirmados nos moldes oficiais
 };
+
+const COR_STATUS_REQ = {
   pendente: { badge: 'bg-gray-500/15 text-gray-600', barra: '#9ca3af' },
   aprovado: { badge: 'bg-green-500/15 text-green-600', barra: '#22c55e' },
   reprovado: { badge: 'bg-red-500/15 text-red-600', barra: '#ef4444' },
