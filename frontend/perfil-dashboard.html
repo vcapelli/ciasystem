@@ -157,6 +157,8 @@
   function renderConfiguracoes(dados, banners, me) {
     let bannerSelecionadoId = dados.banner_perfil_id || null;
     let corSelecionada = dados.cor_avatar_fundo || null;
+    let imagemSelecionada = dados.avatar_fundo_imagem_url || null;
+    let modoFundoAvatar = imagemSelecionada ? 'imagem' : 'cor';
 
     setTimeout(() => {
       const raiz = document.getElementById('config-perfil-raiz');
@@ -177,11 +179,21 @@
           </div>
 
           <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-4">
-            <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Cor de fundo do avatar</h2>
-            <div class="flex items-center gap-3">
-              <input id="cor-avatar" type="color" value="${corSelecionada || '#e2e4e9'}" class="h-10 w-16 bg-basebg border border-border rounded-lg cursor-pointer">
-              <button type="button" id="btn-cor-padrao" class="text-xs text-muted hover:text-dark transition-colors underline">Usar padrão</button>
+            <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Fundo do avatar</h2>
+            <div class="flex gap-2 mb-3">
+              <button type="button" data-modo="cor" class="btn-modo-fundo text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${modoFundoAvatar === 'cor' ? 'bg-accent text-white' : 'bg-basebg text-muted'}">Cor</button>
+              <button type="button" data-modo="imagem" class="btn-modo-fundo text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${modoFundoAvatar === 'imagem' ? 'bg-accent text-white' : 'bg-basebg text-muted'}">Imagem</button>
             </div>
+
+            ${modoFundoAvatar === 'cor' ? `
+              <div class="flex items-center gap-3">
+                <input id="cor-avatar" type="color" value="${corSelecionada || '#e2e4e9'}" class="h-10 w-16 bg-basebg border border-border rounded-lg cursor-pointer">
+                <button type="button" id="btn-cor-padrao" class="text-xs text-muted hover:text-dark transition-colors underline">Usar padrão</button>
+              </div>
+            ` : `
+              <input id="imagem-avatar" placeholder="https://…" value="${imagemSelecionada || ''}" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+              <p class="text-xs text-muted mt-1">Cole o link de uma imagem — livre, sem precisar de aprovação.</p>
+            `}
           </div>
 
           <button id="btn-salvar-config" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-5 py-2.5 text-sm transition-colors">
@@ -219,17 +231,29 @@
           });
         });
 
-        document.getElementById('cor-avatar').addEventListener('input', (e) => { corSelecionada = e.target.value; });
-        document.getElementById('btn-cor-padrao').addEventListener('click', () => {
+        raiz.querySelectorAll('.btn-modo-fundo').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            modoFundoAvatar = btn.dataset.modo;
+            repintar();
+          });
+        });
+
+        document.getElementById('cor-avatar')?.addEventListener('input', (e) => { corSelecionada = e.target.value; });
+        document.getElementById('btn-cor-padrao')?.addEventListener('click', () => {
           corSelecionada = null;
           document.getElementById('cor-avatar').value = '#e2e4e9';
         });
+        document.getElementById('imagem-avatar')?.addEventListener('input', (e) => { imagemSelecionada = e.target.value.trim() || null; });
 
         document.getElementById('btn-salvar-config').addEventListener('click', async () => {
           const msg = document.getElementById('msg-salvar-config');
           const resp = await apiFetch('/usuarios/me', {
             method: 'PATCH',
-            body: JSON.stringify({ banner_perfil_id: bannerSelecionadoId, cor_avatar_fundo: corSelecionada }),
+            body: JSON.stringify({
+              banner_perfil_id: bannerSelecionadoId,
+              cor_avatar_fundo: modoFundoAvatar === 'cor' ? corSelecionada : null,
+              avatar_fundo_imagem_url: modoFundoAvatar === 'imagem' ? imagemSelecionada : null,
+            }),
           });
           msg.classList.remove('hidden');
           if (resp.ok) {
@@ -323,7 +347,8 @@
     container.innerHTML = `
       <div class="relative mb-16">
         <div class="perfil-banner h-44 rounded-2xl overflow-hidden" ${perfil.banner_imagem_url ? `style="background-image: url('${perfil.banner_imagem_url}')"` : ''}></div>
-        <div class="absolute left-6 -bottom-14 h-28 w-28 rounded-full ring-4 ring-basebg overflow-hidden" style="background-color: ${perfil.cor_avatar_fundo || '#e2e4e9'}">>
+        <div class="absolute left-6 -bottom-14 h-28 w-28 rounded-full ring-4 ring-basebg overflow-hidden"
+          style="${perfil.avatar_fundo_imagem_url ? `background-image: url('${perfil.avatar_fundo_imagem_url}'); background-size: cover; background-position: center;` : `background-color: ${perfil.cor_avatar_fundo || '#e2e4e9'};`}">
           ${avatarCirculo
             ? `<img src="${avatarCirculo}" class="absolute inset-0 w-full h-full object-cover object-center" alt="">`
             : `<div class="w-full h-full flex items-center justify-center text-2xl font-bold">${perfil.nick.slice(0,2).toUpperCase()}</div>`}

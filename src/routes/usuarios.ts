@@ -26,7 +26,7 @@ usuarios.get('/me', async (c) => {
 
   const usuario = await c.env.DB.prepare(
     `SELECT u.id, u.nick, u.tag, u.corpo, u.status, u.administrador_sistema, u.biografia,
-            u.cor_avatar_fundo, u.banner_perfil_id, b.imagem_url AS banner_imagem_url,
+            u.cor_avatar_fundo, u.avatar_fundo_imagem_url, u.banner_perfil_id, b.imagem_url AS banner_imagem_url,
             p.nome AS patente_nome, p.ordem AS patente_ordem
      FROM usuarios u
      LEFT JOIN patentes p ON p.id = u.patente_atual_id
@@ -45,7 +45,12 @@ usuarios.get('/me', async (c) => {
 // essa livre). Enviar null nesses dois campos volta pro padrão.
 usuarios.patch('/me', async (c) => {
   const usuarioId = c.get('usuarioId')
-  const body = await c.req.json<{ biografia?: string; banner_perfil_id?: number | null; cor_avatar_fundo?: string | null }>()
+  const body = await c.req.json<{
+    biografia?: string
+    banner_perfil_id?: number | null
+    cor_avatar_fundo?: string | null
+    avatar_fundo_imagem_url?: string | null
+  }>()
 
   const campos: string[] = []
   const valores: unknown[] = []
@@ -66,6 +71,15 @@ usuarios.patch('/me', async (c) => {
       return c.json({ erro: 'cor_avatar_fundo precisa ser um hex válido (#rrggbb)' }, 400)
     }
     campos.push('cor_avatar_fundo = ?'); valores.push(body.cor_avatar_fundo ?? null)
+  }
+
+  if ('avatar_fundo_imagem_url' in body) {
+    // Livre, sem curadoria (é uma escolha pessoal, igual a biografia) —
+    // só uma checagem simples de formato de URL.
+    if (body.avatar_fundo_imagem_url != null && !/^https?:\/\//.test(body.avatar_fundo_imagem_url)) {
+      return c.json({ erro: 'avatar_fundo_imagem_url precisa ser uma URL http(s) válida' }, 400)
+    }
+    campos.push('avatar_fundo_imagem_url = ?'); valores.push(body.avatar_fundo_imagem_url ?? null)
   }
 
   if (!campos.length) return c.json({ ok: true })
@@ -107,7 +121,7 @@ usuarios.get('/nick/:nick', async (c) => {
 
   const usuario = await c.env.DB.prepare(
     `SELECT u.id, u.nick, u.tag, u.corpo, u.status, u.biografia, u.data_ingresso, u.data_ultimo_ato_funcional,
-            u.cor_avatar_fundo, u.banner_perfil_id, b.imagem_url AS banner_imagem_url,
+            u.cor_avatar_fundo, u.avatar_fundo_imagem_url, u.banner_perfil_id, b.imagem_url AS banner_imagem_url,
             p.nome AS patente_nome, p.ordem AS patente_ordem
      FROM usuarios u
      LEFT JOIN patentes p ON p.id = u.patente_atual_id
