@@ -339,6 +339,43 @@ requerimentos.delete('/:id', async (c) => {
   const requerimento = await c.env.DB.prepare(`SELECT id FROM requerimentos WHERE id = ?`).bind(id).first()
   if (!requerimento) return c.json({ erro: 'requerimento não encontrado' }, 404)
 
+  // Reverte o efeito de cada alvo aprovado, usando o snapshot
+  // "antes"/"depois" gravado no histórico no momento da aprovação —
+  // sem isso a exclusão só apagaria o registro, mas deixaria a
+  // mudança (patente, TAG, status etc.) aplicada pra sempre.
+  const { results: alvosAprovados } = await c.env.DB.prepare(
+    `SELECT id, usuario_id FROM requerimento_alvos WHERE requerimento_id = ? AND status = 'aprovado'`
+  ).bind(id).all<{ id: number; usuario_id: number | null }>()
+
+  for (const alvo of alvosAprovados) {
+    if (alvo.usuario_id === null) continue
+
+    const registroHistorico = await c.env.DB.prepare(
+      `SELECT detalhes FROM historico WHERE requerimento_id = ? AND requerimento_alvo_id = ?`
+    ).bind(id, alvo.id).first<{ detalhes: string | null }>()
+    if (!registroHistorico?.detalhes) continue
+
+    try {
+      const { antes } = JSON.parse(registroHistorico.detalhes) as {
+        antes: { patente_atual_id: number; corpo: string; status: string; tag: string | null } | null
+      }
+
+      if (antes === null) {
+        // Era uma porta de entrada (o usuário não existia antes deste
+        // requerimento) — reverter significa desfazer a criação.
+        await c.env.DB.prepare(`DELETE FROM usuarios WHERE id = ?`).bind(alvo.usuario_id).run()
+      } else {
+        await c.env.DB.prepare(
+          `UPDATE usuarios SET patente_atual_id = ?, corpo = ?, status = ?, tag = ?, atualizado_em = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
+        ).bind(antes.patente_atual_id, antes.corpo, antes.status, antes.tag, alvo.usuario_id).run()
+      }
+    } catch {
+      // Se reverter falhar (ex: o usuário já foi excluído ou alterado
+      // por outra coisa depois), segue com a exclusão do requerimento
+      // mesmo assim — não travar a operação do admin por isso.
+    }
+  }
+
   // `historico` não tem ON DELETE CASCADE de propósito (é o registro
   // permanente) — apagar aqui é uma decisão explícita de admin.
   await c.env.DB.prepare(`DELETE FROM historico WHERE requerimento_id = ?`).bind(id).run()

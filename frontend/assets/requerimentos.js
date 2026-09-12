@@ -57,7 +57,7 @@ async function montarFormularioRequerimento(config) {
             <div>
               <label class="block text-xs text-muted mb-1">Sua TAG</label>
               <input id="req-tag-autor" maxlength="10" placeholder="TAG"
-                class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-accent">
+                class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
             </div>
 
             ${config.tipos.length > 1 ? `
@@ -77,11 +77,11 @@ async function montarFormularioRequerimento(config) {
             <div id="req-campo-tag" class="hidden space-y-3">
               <div id="req-tag-atual-wrap" class="hidden">
                 <label class="block text-xs text-muted mb-1">TAG atual</label>
-                <input id="req-tag-atual" disabled class="w-full bg-border/40 border border-border rounded-lg px-3 py-2 text-sm text-muted cursor-not-allowed uppercase">
+                <input id="req-tag-atual" disabled class="w-full bg-border/40 border border-border rounded-lg px-3 py-2 text-sm text-muted cursor-not-allowed">
               </div>
               <div>
                 <label id="req-tag-label" class="block text-xs text-muted mb-1">Nova TAG (2-3 caracteres)</label>
-                <input id="req-tag" maxlength="3" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-accent">
+                <input id="req-tag" maxlength="3" class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
               </div>
             </div>
 
@@ -441,7 +441,7 @@ async function montarFormularioRequerimento(config) {
       dadosEspecificos.patente_destino_id = Number(document.getElementById('req-patente').value);
     }
     if (inputTagAutor.value.trim()) {
-      dadosEspecificos.tag_utilizada = inputTagAutor.value.trim().toUpperCase();
+      dadosEspecificos.tag_utilizada = inputTagAutor.value.trim();
     }
 
     const body = {
@@ -452,7 +452,7 @@ async function montarFormularioRequerimento(config) {
       crime_id: (config.tiposComCrime || []).includes(tipo) && document.getElementById('req-crime').value
         ? Number(document.getElementById('req-crime').value) : undefined,
       tag_aplicada: (config.tiposComTag || []).includes(tipo)
-        ? document.getElementById('req-tag').value.trim().toUpperCase() : undefined,
+        ? document.getElementById('req-tag').value.trim() : undefined,
     };
 
     const resposta = await apiFetch('/requerimentos', { method: 'POST', body: JSON.stringify(body) });
