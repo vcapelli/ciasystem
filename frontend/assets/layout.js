@@ -8,14 +8,14 @@
 // alguém cadastrar um link novo.
 
 const NAV_PRINCIPAL = [
-  { titulo: 'Início', url: '/index.html', icone: '🏠' },
-  { titulo: 'Feed', url: '/feed.html', icone: '🗨️' },
-  { titulo: 'Membros', url: '/membros.html', icone: '👥' },
-  { titulo: 'Grupos', url: '/grupos.html', icone: '🏢' },
-  { titulo: 'Documentos', url: '/documentos.html', icone: '📄' },
-  { titulo: 'E-mail', url: '/email.html', icone: '✉️' },
+  { titulo: 'Início', url: '/index.html', icone: 'fa-solid fa-house' },
+  { titulo: 'Feed', url: '/feed.html', icone: 'fa-solid fa-comments' },
+  { titulo: 'Membros', url: '/membros.html', icone: 'fa-solid fa-users' },
+  { titulo: 'Grupos', url: '/grupos.html', icone: 'fa-solid fa-building' },
+  { titulo: 'Documentos', url: '/documentos.html', icone: 'fa-solid fa-file-lines' },
+  { titulo: 'E-mail', url: '/email.html', icone: 'fa-solid fa-envelope' },
   {
-    titulo: 'Requerimentos', icone: '📝', filhos: [
+    titulo: 'Requerimentos', icone: 'fa-solid fa-file-pen', filhos: [
       { titulo: 'Instrução Inicial', url: '/requerimentos/instrucao-inicial.html' },
       { titulo: 'Contratação', url: '/requerimentos/contratacao.html' },
       { titulo: 'Corpo de Praças', url: '/requerimentos/corpo-de-pracas.html' },
@@ -29,7 +29,7 @@ const NAV_PRINCIPAL = [
     ],
   },
   {
-    titulo: 'Listagens', icone: '📋', filhos: [
+    titulo: 'Listagens', icone: 'fa-solid fa-list', filhos: [
       { titulo: 'Soldados', url: '/listagens/soldados.html' },
       { titulo: 'Corpo de Praças', url: '/listagens/corpo-de-pracas.html' },
       { titulo: 'Corpo de Oficiais', url: '/listagens/corpo-de-oficiais.html' },
@@ -76,7 +76,7 @@ function renderItemMenu(item, paginaAtiva) {
     return `
       <details class="group" ${abrir ? 'open' : ''}>
         <summary class="flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer text-sm text-muted hover:bg-black/5 hover:text-dark transition-colors">
-          <span>${item.icone || ''}</span><span>${item.titulo}</span>
+          <i class="${item.icone || ''} text-gray-400 w-4 text-center"></i><span>${item.titulo}</span>
         </summary>
         <div class="ml-6 mt-1 space-y-0.5">
           ${item.filhos.map((f) => `
@@ -88,7 +88,7 @@ function renderItemMenu(item, paginaAtiva) {
   }
   return `
     <a href="${item.url}" class="flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-colors ${linkAtivo(item.url, paginaAtiva)}">
-      <span>${item.icone || ''}</span><span>${item.titulo}</span>
+      <i class="${item.icone || ''} text-gray-400 w-4 text-center"></i><span>${item.titulo}</span>
     </a>
   `;
 }
@@ -105,7 +105,7 @@ function renderSidebar(itensExtras, paginaAtiva) {
         <div class="space-y-1">
           ${extras.map((item) => `
             <a href="${item.url || '#'}" class="flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-muted hover:bg-black/5 hover:text-dark transition-colors">
-              <span>${item.icone || '🔗'}</span><span>${item.titulo}</span>
+              <i class="${item.icone || 'fa-solid fa-link'} text-gray-400 w-4 text-center"></i><span>${item.titulo}</span>
             </a>
           `).join('')}
         </div>
