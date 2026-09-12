@@ -17,6 +17,12 @@ async function figuraSegura(nick: string): Promise<string | null> {
   }
 }
 
+async function ehAdmin(db: D1Database, usuarioId: number): Promise<boolean> {
+  const u = await db.prepare(`SELECT administrador_sistema FROM usuarios WHERE id = ?`)
+    .bind(usuarioId).first<{ administrador_sistema: number }>()
+  return Boolean(u?.administrador_sistema)
+}
+
 // GET /usuarios/me — dados do próprio usuário autenticado (nick, tag,
 // patente, se é admin do sistema, biografia, figure do Habblet,
 // personalização de perfil). O layout do frontend usa isso pra montar
@@ -111,6 +117,86 @@ usuarios.patch('/:id/admin', async (c) => {
     .bind(administrador_sistema ? 1 : 0, alvoId).run()
 
   return c.json({ ok: true })
+})
+
+// GET /usuarios/:id — registro completo (todos os campos editáveis),
+// pro painel de admin. Só admin.
+usuarios.get('/:id', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  const atual = await c.env.DB.prepare(`SELECT administrador_sistema FROM usuarios WHERE id = ?`)
+    .bind(usuarioId).first<{ administrador_sistema: number }>()
+  if (!atual?.administrador_sistema) return c.json({ erro: 'só administradores do sistema veem isso' }, 403)
+
+  const usuario = await c.env.DB.prepare(`SELECT * FROM usuarios WHERE id = ?`).bind(c.req.param('id')).first()
+  if (!usuario) return c.json({ erro: 'usuário não encontrado' }, 404)
+  return c.json(usuario)
+})
+
+// PATCH /usuarios/:id — edição geral (nick, tag, tipo, corpo, patente,
+// status, datas, biografia, exoneração). Não mexe em senha nem no
+// flag administrador_sistema (isso continua só pelo /admin dedicado,
+// que tem a trava de não remover o próprio acesso). Só admin.
+usuarios.patch('/:id', async (c) => {
+  const usuarioAtualId = c.get('usuarioId')
+  if (!(await ehAdmin(c.env.DB, usuarioAtualId))) return c.json({ erro: 'só administradores do sistema editam usuários' }, 403)
+
+  const alvoId = c.req.param('id')
+  const atual = await c.env.DB.prepare(`SELECT tipo, corpo, patente_atual_id FROM usuarios WHERE id = ?`)
+    .bind(alvoId).first<{ tipo: string; corpo: string | null; patente_atual_id: number | null }>()
+  if (!atual) return c.json({ erro: 'usuário não encontrado' }, 404)
+
+  const body = await c.req.json<{
+    nick?: string
+    tag?: string | null
+    tipo?: 'jogador' | 'conta_oficial'
+    corpo?: 'militar' | 'executivo' | null
+    patente_atual_id?: number | null
+    status?: string
+    data_ingresso?: string
+    data_ultimo_ato_funcional?: string | null
+    biografia?: string | null
+    exoneracao_ate?: string | null
+  }>()
+
+  // Valida a mesma regra do CHECK constraint antes de tentar salvar,
+  // pra devolver um erro legível em vez do erro cru do SQLite.
+  const tipoFinal = body.tipo ?? atual.tipo
+  const corpoFinal = body.corpo !== undefined ? body.corpo : atual.corpo
+  const patenteFinal = body.patente_atual_id !== undefined ? body.patente_atual_id : atual.patente_atual_id
+  if (tipoFinal === 'conta_oficial' && (corpoFinal !== null || patenteFinal !== null)) {
+    return c.json({ erro: 'conta oficial não pode ter corpo nem patente — limpe os dois campos' }, 400)
+  }
+  if (tipoFinal === 'jogador' && (corpoFinal === null || patenteFinal === null)) {
+    return c.json({ erro: 'jogador precisa ter corpo e patente definidos' }, 400)
+  }
+
+  const campos: string[] = []
+  const valores: unknown[] = []
+  const set = (coluna: string, valor: unknown) => { campos.push(`${coluna} = ?`); valores.push(valor) }
+
+  if (body.nick !== undefined) set('nick', body.nick)
+  if (body.tag !== undefined) set('tag', body.tag)
+  if (body.tipo !== undefined) set('tipo', body.tipo)
+  if (body.corpo !== undefined) set('corpo', body.corpo)
+  if (body.patente_atual_id !== undefined) set('patente_atual_id', body.patente_atual_id)
+  if (body.status !== undefined) set('status', body.status)
+  if (body.data_ingresso !== undefined) set('data_ingresso', body.data_ingresso)
+  if (body.data_ultimo_ato_funcional !== undefined) set('data_ultimo_ato_funcional', body.data_ultimo_ato_funcional)
+  if (body.biografia !== undefined) set('biografia', body.biografia)
+  if (body.exoneracao_ate !== undefined) set('exoneracao_ate', body.exoneracao_ate)
+
+  if (!campos.length) return c.json({ ok: true })
+
+  try {
+    await c.env.DB.prepare(
+      `UPDATE usuarios SET ${campos.join(', ')}, atualizado_em = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
+    ).bind(...valores, alvoId).run()
+    return c.json({ ok: true })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (msg.includes('UNIQUE')) return c.json({ erro: 'já existe um usuário com esse nick ou TAG' }, 409)
+    return c.json({ erro: 'não foi possível salvar — confira os dados' }, 400)
+  }
 })
 
 // GET /usuarios?busca=texto — busca simples por nick (autocomplete de

@@ -105,10 +105,11 @@
     function renderCardPatente(p) {
       const reqs = requisitosDe(p.id);
       return `
-        <details class="bg-card border border-border rounded-2xl shadow-sm overflow-hidden group">
+        <details class="bg-card border border-border rounded-2xl shadow-sm overflow-hidden group" style="border-left: 4px solid ${p.cor || '#212529'}">
           <summary class="flex items-center justify-between px-4 py-3 cursor-pointer list-none">
             <div class="flex items-center gap-2">
               <i class="fa-solid fa-chevron-right text-xs text-muted transition-transform group-open:rotate-90"></i>
+              <span class="h-2.5 w-2.5 rounded-full shrink-0" style="background: ${p.cor || '#212529'}"></span>
               <p class="text-sm font-semibold">${p.nome}</p>
               <span class="text-xs text-muted">${p.vagas ? `· ${p.vagas} vaga(s)` : ''}</span>
             </div>
@@ -531,9 +532,10 @@
     const raiz = document.getElementById('conteudo-aba');
     raiz.innerHTML = `
       <input id="busca-usuario-admin" placeholder="Buscar por nick…" class="w-full bg-card border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent mb-4">
-      <div id="lista-usuarios-admin" class="bg-card border border-border rounded-2xl divide-y divide-border overflow-hidden shadow-sm">
+      <div id="lista-usuarios-admin" class="bg-card border border-border rounded-2xl divide-y divide-border overflow-hidden shadow-sm mb-5">
         <p class="text-sm text-muted p-4">Digite pra buscar.</p>
       </div>
+      <div id="editor-usuario-admin"></div>
     `;
 
     let debounce;
@@ -551,10 +553,13 @@
               <p class="text-sm font-semibold">${u.nick}${u.tag ? ` [${u.tag}]` : ''}</p>
               <p class="text-xs text-muted">${u.patente_nome || '—'}</p>
             </div>
-            <label class="flex items-center gap-2 text-xs text-muted">
-              Admin do sistema
-              <input type="checkbox" data-toggle-admin="${u.id}" ${u.administrador_sistema ? 'checked' : ''}>
-            </label>
+            <div class="flex items-center gap-4">
+              <label class="flex items-center gap-2 text-xs text-muted">
+                Admin do sistema
+                <input type="checkbox" data-toggle-admin="${u.id}" ${u.administrador_sistema ? 'checked' : ''}>
+              </label>
+              <button type="button" data-editar-usuario="${u.id}" class="text-xs font-semibold text-accent hover:underline">Editar</button>
+            </div>
           </div>
         `).join('') : '<p class="text-sm text-muted p-4">Nenhum usuário encontrado.</p>';
 
@@ -571,7 +576,151 @@
             }
           });
         });
+
+        lista.querySelectorAll('[data-editar-usuario]').forEach((btn) => {
+          btn.addEventListener('click', () => abrirEditorUsuario(btn.dataset.editarUsuario));
+        });
       }, 250);
+    });
+  }
+
+  async function abrirEditorUsuario(id) {
+    const editor = document.getElementById('editor-usuario-admin');
+    editor.innerHTML = '<p class="text-sm text-muted">Carregando…</p>';
+
+    const [usuarioResp, patentesResp] = await Promise.all([apiFetch(`/usuarios/${id}`), apiFetch('/patentes')]);
+    if (!usuarioResp.ok) { editor.innerHTML = '<p class="text-sm text-red-500">Não foi possível carregar esse usuário.</p>'; return; }
+    const u = await usuarioResp.json();
+    const todasPatentes = patentesResp.ok ? await patentesResp.json() : [];
+
+    const STATUS_OPCOES = ['ativo', 'licenca', 'reformado', 'desligado_honroso', 'desligado_desonroso', 'exonerado'];
+
+    function opcoesPatente(corpo) {
+      return todasPatentes.filter((p) => p.corpo === corpo)
+        .sort((a, b) => b.ordem - a.ordem)
+        .map((p) => `<option value="${p.id}" ${u.patente_atual_id === p.id ? 'selected' : ''}>${p.nome}</option>`).join('');
+    }
+
+    editor.innerHTML = `
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-sm font-bold uppercase tracking-wide text-muted">Editando ${u.nick}</h2>
+          <button type="button" id="btn-fechar-editor" class="text-muted hover:text-dark transition-colors text-sm"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <form id="form-editar-usuario" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label class="text-xs text-muted">Nick
+            <input data-campo="nick" value="${u.nick}" class="w-full mt-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          </label>
+          <label class="text-xs text-muted">TAG
+            <input data-campo="tag" value="${u.tag || ''}" class="w-full mt-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          </label>
+
+          <label class="text-xs text-muted">Tipo de conta
+            <select data-campo="tipo" class="w-full mt-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+              <option value="jogador" ${u.tipo === 'jogador' ? 'selected' : ''}>Jogador</option>
+              <option value="conta_oficial" ${u.tipo === 'conta_oficial' ? 'selected' : ''}>Conta oficial</option>
+            </select>
+          </label>
+          <label class="text-xs text-muted">Status
+            <select data-campo="status" class="w-full mt-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+              ${STATUS_OPCOES.map((s) => `<option value="${s}" ${u.status === s ? 'selected' : ''}>${s.replace(/_/g, ' ')}</option>`).join('')}
+            </select>
+          </label>
+
+          <label class="text-xs text-muted" data-campo-corpo>Corpo
+            <select data-campo="corpo" class="w-full mt-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+              <option value="militar" ${u.corpo === 'militar' ? 'selected' : ''}>Militar</option>
+              <option value="executivo" ${u.corpo === 'executivo' ? 'selected' : ''}>Executivo</option>
+            </select>
+          </label>
+          <label class="text-xs text-muted" data-campo-patente>Patente/Cargo
+            <select data-campo="patente_atual_id" class="w-full mt-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+              ${opcoesPatente(u.corpo || 'militar')}
+            </select>
+          </label>
+
+          <label class="text-xs text-muted">Data de ingresso
+            <input data-campo="data_ingresso" type="date" value="${(u.data_ingresso || '').slice(0, 10)}" class="w-full mt-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          </label>
+          <label class="text-xs text-muted">Data do último ato funcional
+            <input data-campo="data_ultimo_ato_funcional" type="date" value="${(u.data_ultimo_ato_funcional || '').slice(0, 10)}" class="w-full mt-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          </label>
+
+          <label class="text-xs text-muted" data-campo-exoneracao>Exoneração até (vazio = indeterminado)
+            <input data-campo="exoneracao_ate" type="date" value="${(u.exoneracao_ate || '').slice(0, 10)}" class="w-full mt-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          </label>
+
+          <label class="text-xs text-muted sm:col-span-2">Biografia
+            <textarea data-campo="biografia" rows="3" class="w-full mt-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">${u.biografia || ''}</textarea>
+          </label>
+
+          <div class="sm:col-span-2 flex items-center gap-3 mt-1">
+            <button type="submit" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-5 py-2 text-sm transition-colors">Salvar</button>
+            <p id="msg-editar-usuario" class="hidden text-xs"></p>
+          </div>
+        </form>
+      </div>
+    `;
+
+    const form = document.getElementById('form-editar-usuario');
+    const selectTipo = form.querySelector('[data-campo="tipo"]');
+    const selectCorpo = form.querySelector('[data-campo="corpo"]');
+    const selectPatente = form.querySelector('[data-campo="patente_atual_id"]');
+    const campoCorpoWrap = form.querySelector('[data-campo-corpo]');
+    const campoPatenteWrap = form.querySelector('[data-campo-patente]');
+    const campoExoneracaoWrap = form.querySelector('[data-campo-exoneracao]');
+
+    function atualizarVisibilidade() {
+      const ehConta = selectTipo.value === 'conta_oficial';
+      campoCorpoWrap.classList.toggle('hidden', ehConta);
+      campoPatenteWrap.classList.toggle('hidden', ehConta);
+      campoExoneracaoWrap.classList.toggle('hidden', form.querySelector('[data-campo="status"]').value !== 'exonerado');
+    }
+    selectTipo.addEventListener('change', atualizarVisibilidade);
+    form.querySelector('[data-campo="status"]').addEventListener('change', atualizarVisibilidade);
+    atualizarVisibilidade();
+
+    selectCorpo.addEventListener('change', () => {
+      selectPatente.innerHTML = opcoesPatente(selectCorpo.value);
+    });
+
+    document.getElementById('btn-fechar-editor').addEventListener('click', () => { editor.innerHTML = ''; });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const msg = document.getElementById('msg-editar-usuario');
+      const ehConta = selectTipo.value === 'conta_oficial';
+
+      const corpoValor = form.querySelector('[data-campo="corpo"]').value;
+      const patenteValor = form.querySelector('[data-campo="patente_atual_id"]').value;
+      const exoneracaoValor = form.querySelector('[data-campo="exoneracao_ate"]').value;
+      const statusValor = form.querySelector('[data-campo="status"]').value;
+
+      const resp = await apiFetch(`/usuarios/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          nick: form.querySelector('[data-campo="nick"]').value.trim(),
+          tag: form.querySelector('[data-campo="tag"]').value.trim() || null,
+          tipo: selectTipo.value,
+          corpo: ehConta ? null : corpoValor,
+          patente_atual_id: ehConta ? null : Number(patenteValor),
+          status: statusValor,
+          data_ingresso: form.querySelector('[data-campo="data_ingresso"]').value || undefined,
+          data_ultimo_ato_funcional: form.querySelector('[data-campo="data_ultimo_ato_funcional"]').value || null,
+          exoneracao_ate: statusValor === 'exonerado' ? (exoneracaoValor || null) : null,
+          biografia: form.querySelector('[data-campo="biografia"]').value.trim() || null,
+        }),
+      });
+
+      msg.classList.remove('hidden');
+      if (resp.ok) {
+        msg.textContent = 'Salvo!';
+        msg.className = 'text-xs text-green-600';
+      } else {
+        const d = await resp.json().catch(() => ({}));
+        msg.textContent = d.erro || 'Não foi possível salvar.';
+        msg.className = 'text-xs text-red-500';
+      }
     });
   }
 
