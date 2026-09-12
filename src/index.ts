@@ -29,6 +29,7 @@ import crimes from './routes/crimes'
 import habblet from './routes/habblet'
 import bannersPerfil from './routes/banners-perfil'
 import listagens from './routes/listagens'
+import permissoes from './routes/permissoes'
 
 // `Bindings` descreve os recursos do Cloudflare disponíveis no Worker
 // (bindings configurados em wrangler.toml + secrets). `Variables` é o
@@ -107,6 +108,7 @@ protegido.route('/crimes', crimes)
 protegido.route('/habblet', habblet)
 protegido.route('/banners-perfil', bannersPerfil)
 protegido.route('/listagens', listagens)
+protegido.route('/permissoes-requerimentos', permissoes)
 protegido.route('/configuracoes', configuracoesAdmin)
 
 app.route('/', protegido)

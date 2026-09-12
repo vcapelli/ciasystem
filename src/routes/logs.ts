@@ -29,8 +29,12 @@ logs.get('/', async (c) => {
   if (tipoEvento) { condicoes.push('tipo_evento = ?'); params.push(tipoEvento) }
 
   const where = condicoes.length ? `WHERE ${condicoes.join(' AND ')}` : ''
-  const { results } = await c.env.DB.prepare(`SELECT * FROM logs_eventos ${where} ORDER BY criado_em DESC LIMIT 200`)
-    .bind(...params).all()
+  const { results } = await c.env.DB.prepare(
+    `SELECT le.*, u.nick AS usuario_nick FROM logs_eventos le
+     LEFT JOIN usuarios u ON u.id = le.usuario_id
+     ${where.replace(/\b(usuario_id|ip|tipo_evento)\b/g, 'le.$1')}
+     ORDER BY le.criado_em DESC LIMIT 200`
+  ).bind(...params).all()
 
   return c.json(results)
 })

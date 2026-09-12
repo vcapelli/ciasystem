@@ -91,6 +91,28 @@ usuarios.patch('/me', async (c) => {
   return c.json({ ok: true })
 })
 
+// PATCH /usuarios/:id/admin — concede ou remove administrador_sistema
+// de outra conta. Só quem já é admin, e ninguém pode remover o
+// próprio acesso por aqui (evita se trancar fora sem querer).
+usuarios.patch('/:id/admin', async (c) => {
+  const usuarioAtualId = c.get('usuarioId')
+  const alvoId = c.req.param('id')
+  const { administrador_sistema } = await c.req.json<{ administrador_sistema: boolean }>()
+
+  const atual = await c.env.DB.prepare(`SELECT administrador_sistema FROM usuarios WHERE id = ?`)
+    .bind(usuarioAtualId).first<{ administrador_sistema: number }>()
+  if (!atual?.administrador_sistema) return c.json({ erro: 'só administradores do sistema concedem isso' }, 403)
+
+  if (String(usuarioAtualId) === alvoId && !administrador_sistema) {
+    return c.json({ erro: 'você não pode remover seu próprio acesso de administrador' }, 400)
+  }
+
+  await c.env.DB.prepare(`UPDATE usuarios SET administrador_sistema = ? WHERE id = ?`)
+    .bind(administrador_sistema ? 1 : 0, alvoId).run()
+
+  return c.json({ ok: true })
+})
+
 // GET /usuarios?busca=texto — busca simples por nick (autocomplete de
 // alvos em formulários, listagem de membros etc.) — sem figure aqui de
 // propósito: uma lista de até 100 usuários faria 100 chamadas externas
@@ -100,12 +122,12 @@ usuarios.get('/', async (c) => {
 
   const query = busca
     ? c.env.DB.prepare(
-        `SELECT u.id, u.nick, u.tag, u.corpo, u.status, p.nome AS patente_nome
+        `SELECT u.id, u.nick, u.tag, u.corpo, u.status, u.administrador_sistema, p.nome AS patente_nome
          FROM usuarios u LEFT JOIN patentes p ON p.id = u.patente_atual_id
          WHERE u.nick LIKE ? ORDER BY u.nick LIMIT 20`
       ).bind(`%${busca}%`)
     : c.env.DB.prepare(
-        `SELECT u.id, u.nick, u.tag, u.corpo, u.status, p.nome AS patente_nome
+        `SELECT u.id, u.nick, u.tag, u.corpo, u.status, u.administrador_sistema, p.nome AS patente_nome
          FROM usuarios u LEFT JOIN patentes p ON p.id = u.patente_atual_id
          ORDER BY p.ordem DESC LIMIT 100`
       )

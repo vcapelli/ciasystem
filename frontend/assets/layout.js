@@ -94,11 +94,12 @@ function renderItemMenu(item, paginaAtiva) {
   `;
 }
 
-function renderSidebar(itensExtras, paginaAtiva) {
+function renderSidebar(itensExtras, paginaAtiva, souAdmin) {
   const extras = (itensExtras || []).filter((i) => !i.item_pai_id);
   return `
     <div class="space-y-1">
       ${NAV_PRINCIPAL.map((item) => renderItemMenu(item, paginaAtiva)).join('')}
+      ${souAdmin ? renderItemMenu({ titulo: 'Admin', url: '/admin.html', icone: 'fa-solid fa-user-shield' }, paginaAtiva) : ''}
     </div>
     ${extras.length ? `
       <div class="mt-6 pt-4 border-t border-border">
@@ -145,7 +146,7 @@ async function montarLayout(paginaAtiva) {
   document.body.insertAdjacentHTML('afterbegin', renderNavbar(me, config.logo_url));
 
   const sidebarHost = document.getElementById('layout-sidebar');
-  if (sidebarHost) sidebarHost.innerHTML = renderSidebar(itensExtras, paginaAtiva);
+  if (sidebarHost) sidebarHost.innerHTML = renderSidebar(itensExtras, paginaAtiva, me.administrador_sistema);
 
   document.getElementById('btn-logout')?.addEventListener('click', () => Auth.logout());
 

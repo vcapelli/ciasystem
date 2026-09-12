@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIASystem — Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="/assets/tailwind-config.js"></script>
+<link href="https://kit-pro.fontawesome.com/releases/v7.3.1/css/pro.min.css" rel="stylesheet">
+<link rel="stylesheet" href="/assets/theme.css">
+</head>
+<body class="bg-basebg text-dark font-sans min-h-screen">
+
+  <div class="fixed inset-0 -z-10 habbo-floor-bg"></div>
+
+  <aside id="layout-sidebar" class="w-60 fixed left-0 top-[72px] bottom-0 border-r border-border bg-basebg p-4 overflow-y-auto"></aside>
+
+  <main class="ml-60 max-w-4xl px-6 py-8">
+    <h1 class="text-xl font-display font-bold mb-4">Administração</h1>
+    <div id="conteudo">
+      <p class="text-sm text-muted">Carregando…</p>
+    </div>
+  </main>
+
+<script src="/assets/api.js"></script>
+<script src="/assets/layout.js"></script>
+<script>
+  const TIPOS_REQUERIMENTO = [
+    'instrucao_inicial','promocao','rebaixamento','advertencia','licenca','volta_licenca','reserva',
+    'transferencia_conta','transferencia_corpo','venda_cargo','contratacao','tag','turno_tarefa','reforma',
+    'desligamento_honroso','desligamento_desonroso','exoneracao','bonificacao','cancelamento',
+  ];
+
+  function tituloTipoAdmin(tipo) {
+    return tipo.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+  }
+
+  let abaAtual = 'permissoes';
+
+  function renderAbasAdmin() {
+    const abas = [
+      { id: 'permissoes', label: 'Permissões' },
+      { id: 'configuracoes', label: 'Configurações' },
+      { id: 'usuarios', label: 'Usuários' },
+      { id: 'logs', label: 'Logs' },
+    ];
+    return `
+      <div class="flex gap-6 border-b border-border mb-5">
+        ${abas.map((a) => `
+          <button data-aba="${a.id}" class="btn-aba-admin pb-3 text-sm font-semibold border-b-2 transition-colors ${abaAtual === a.id ? 'border-accent text-dark' : 'border-transparent text-muted hover:text-dark'}">
+            ${a.label}
+          </button>
+        `).join('')}
+      </div>
+      <div id="conteudo-aba"></div>
+    `;
+  }
+
+  // ---------- Permissões ----------
+  async function carregarPermissoes() {
+    const raiz = document.getElementById('conteudo-aba');
+    raiz.innerHTML = '<p class="text-sm text-muted">Carregando…</p>';
+
+    const [permResp, gruposResp] = await Promise.all([apiFetch('/permissoes-requerimentos'), apiFetch('/grupos')]);
+    const permissoesLista = permResp.ok ? await permResp.json() : [];
+    const grupos = gruposResp.ok ? await gruposResp.json() : [];
+
+    raiz.innerHTML = `
+      <div class="bg-card border border-border rounded-2xl shadow-sm divide-y divide-border overflow-hidden mb-5">
+        ${permissoesLista.length ? permissoesLista.map((p) => `
+          <div class="flex items-center justify-between px-4 py-3">
+            <div>
+              <p class="text-sm font-semibold">${p.usuario_nick ? `Usuário: ${p.usuario_nick}` : `Grupo: ${p.grupo_nome}`}</p>
+              <p class="text-xs text-muted mt-0.5">
+                ${p.tipo ? tituloTipoAdmin(p.tipo) : 'Todos os tipos'} ·
+                ${p.pode_aprovar ? 'Aprovar' : ''}${p.pode_aprovar && p.pode_cancelar ? ' + ' : ''}${p.pode_cancelar ? 'Cancelar' : ''}
+                · definido por ${p.definido_por_nick || '—'}
+              </p>
+            </div>
+            <button data-remover-permissao="${p.id}" class="text-muted hover:text-red-600 transition-colors px-2">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
+        `).join('') : '<p class="text-sm text-muted p-4">Nenhuma permissão concedida ainda.</p>'}
+      </div>
+
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Conceder nova permissão</h2>
+        <form id="form-permissao" class="space-y-3">
+          <div class="flex gap-2">
+            <button type="button" data-alvo-modo="usuario" class="btn-alvo-modo flex-1 text-xs font-semibold px-3 py-2 rounded-lg bg-accent text-white">Usuário</button>
+            <button type="button" data-alvo-modo="grupo" class="btn-alvo-modo flex-1 text-xs font-semibold px-3 py-2 rounded-lg bg-basebg text-muted">Grupo</button>
+          </div>
+
+          <div id="campo-alvo-usuario" class="relative">
+            <input id="perm-usuario-nick" placeholder="Buscar por nick…" autocomplete="off" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            <div id="perm-usuario-sugestoes" class="hidden absolute z-10 mt-1 w-full bg-card border border-border rounded-lg shadow-md max-h-48 overflow-y-auto"></div>
+          </div>
+          <div id="campo-alvo-grupo" class="hidden">
+            <select id="perm-grupo-id" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+              ${grupos.map((g) => `<option value="${g.id}">${g.nome}</option>`).join('')}
+            </select>
+          </div>
+
+          <select id="perm-tipo" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            <option value="">Todos os tipos</option>
+            ${TIPOS_REQUERIMENTO.map((t) => `<option value="${t}">${tituloTipoAdmin(t)}</option>`).join('')}
+          </select>
+
+          <div class="flex gap-4">
+            <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="perm-aprovar"> Pode aprovar/reprovar</label>
+            <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="perm-cancelar"> Pode cancelar</label>
+          </div>
+
+          <button type="submit" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Conceder</button>
+          <p id="perm-erro" class="hidden text-xs text-red-500"></p>
+        </form>
+      </div>
+    `;
+
+    let alvoModo = 'usuario';
+    let usuarioSelecionadoId = null;
+
+    raiz.querySelectorAll('.btn-alvo-modo').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        alvoModo = btn.dataset.alvoModo;
+        raiz.querySelectorAll('.btn-alvo-modo').forEach((b) => b.className = 'btn-alvo-modo flex-1 text-xs font-semibold px-3 py-2 rounded-lg bg-basebg text-muted');
+        btn.className = 'btn-alvo-modo flex-1 text-xs font-semibold px-3 py-2 rounded-lg bg-accent text-white';
+        document.getElementById('campo-alvo-usuario').classList.toggle('hidden', alvoModo !== 'usuario');
+        document.getElementById('campo-alvo-grupo').classList.toggle('hidden', alvoModo !== 'grupo');
+      });
+    });
+
+    let debounce;
+    const inputNick = document.getElementById('perm-usuario-nick');
+    const sugestoes = document.getElementById('perm-usuario-sugestoes');
+    inputNick.addEventListener('input', () => {
+      usuarioSelecionadoId = null;
+      clearTimeout(debounce);
+      const termo = inputNick.value.trim();
+      if (termo.length < 2) { sugestoes.classList.add('hidden'); return; }
+      debounce = setTimeout(async () => {
+        const r = await apiFetch(`/usuarios?busca=${encodeURIComponent(termo)}`);
+        const lista = r.ok ? await r.json() : [];
+        sugestoes.innerHTML = lista.length
+          ? lista.map((u) => `<button type="button" data-id="${u.id}" data-nick="${u.nick}" class="w-full text-left px-3 py-2 text-sm hover:bg-basebg transition-colors">${u.nick}</button>`).join('')
+          : '<p class="px-3 py-2 text-sm text-muted">Nenhum usuário encontrado.</p>';
+        sugestoes.classList.remove('hidden');
+      }, 250);
+    });
+    sugestoes.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-id]');
+      if (!btn) return;
+      usuarioSelecionadoId = Number(btn.dataset.id);
+      inputNick.value = btn.dataset.nick;
+      sugestoes.classList.add('hidden');
+    });
+
+    raiz.querySelectorAll('[data-remover-permissao]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Remover essa permissão?')) return;
+        await apiFetch(`/permissoes-requerimentos/${btn.dataset.removerPermissao}`, { method: 'DELETE' });
+        carregarPermissoes();
+      });
+    });
+
+    document.getElementById('form-permissao').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const erroEl = document.getElementById('perm-erro');
+      erroEl.classList.add('hidden');
+
+      if (alvoModo === 'usuario' && !usuarioSelecionadoId) {
+        erroEl.textContent = 'Selecione um usuário na busca.'; erroEl.classList.remove('hidden'); return;
+      }
+
+      const resp = await apiFetch('/permissoes-requerimentos', {
+        method: 'POST',
+        body: JSON.stringify({
+          usuario_id: alvoModo === 'usuario' ? usuarioSelecionadoId : undefined,
+          grupo_id: alvoModo === 'grupo' ? Number(document.getElementById('perm-grupo-id').value) : undefined,
+          tipo: document.getElementById('perm-tipo').value || null,
+          pode_aprovar: document.getElementById('perm-aprovar').checked,
+          pode_cancelar: document.getElementById('perm-cancelar').checked,
+        }),
+      });
+
+      if (!resp.ok) {
+        const d = await resp.json().catch(() => ({}));
+        erroEl.textContent = d.erro || 'Não foi possível conceder.';
+        erroEl.classList.remove('hidden');
+        return;
+      }
+      carregarPermissoes();
+    });
+  }
+
+  // ---------- Configurações ----------
+  async function carregarConfiguracoes() {
+    const raiz = document.getElementById('conteudo-aba');
+    const config = await buscarConfiguracoes();
+
+    raiz.innerHTML = `
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5 max-w-lg">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Logo do sistema</h2>
+        <input id="config-logo-url" value="${config.logo_url || ''}" placeholder="https://…" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent mb-3">
+        <button id="btn-salvar-logo" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Salvar</button>
+        <p id="config-msg" class="hidden text-xs mt-2"></p>
+      </div>
+    `;
+
+    document.getElementById('btn-salvar-logo').addEventListener('click', async () => {
+      const msg = document.getElementById('config-msg');
+      const resp = await apiFetch('/configuracoes', {
+        method: 'PATCH',
+        body: JSON.stringify({ logo_url: document.getElementById('config-logo-url').value.trim() }),
+      });
+      msg.classList.remove('hidden');
+      msg.textContent = resp.ok ? 'Salvo!' : 'Não foi possível salvar.';
+      msg.className = `text-xs mt-2 ${resp.ok ? 'text-green-600' : 'text-red-500'}`;
+    });
+  }
+
+  // ---------- Usuários ----------
+  async function carregarUsuarios() {
+    const raiz = document.getElementById('conteudo-aba');
+    raiz.innerHTML = `
+      <input id="busca-usuario-admin" placeholder="Buscar por nick…" class="w-full bg-card border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent mb-4">
+      <div id="lista-usuarios-admin" class="bg-card border border-border rounded-2xl divide-y divide-border overflow-hidden shadow-sm">
+        <p class="text-sm text-muted p-4">Digite pra buscar.</p>
+      </div>
+    `;
+
+    let debounce;
+    document.getElementById('busca-usuario-admin').addEventListener('input', (e) => {
+      clearTimeout(debounce);
+      const termo = e.target.value.trim();
+      const lista = document.getElementById('lista-usuarios-admin');
+      if (termo.length < 2) { lista.innerHTML = '<p class="text-sm text-muted p-4">Digite pra buscar.</p>'; return; }
+      debounce = setTimeout(async () => {
+        const r = await apiFetch(`/usuarios?busca=${encodeURIComponent(termo)}`);
+        const usuariosLista = r.ok ? await r.json() : [];
+        lista.innerHTML = usuariosLista.length ? usuariosLista.map((u) => `
+          <div class="flex items-center justify-between px-4 py-3">
+            <div>
+              <p class="text-sm font-semibold">${u.nick}${u.tag ? ` [${u.tag}]` : ''}</p>
+              <p class="text-xs text-muted">${u.patente_nome || '—'}</p>
+            </div>
+            <label class="flex items-center gap-2 text-xs text-muted">
+              Admin do sistema
+              <input type="checkbox" data-toggle-admin="${u.id}" ${u.administrador_sistema ? 'checked' : ''}>
+            </label>
+          </div>
+        `).join('') : '<p class="text-sm text-muted p-4">Nenhum usuário encontrado.</p>';
+
+        lista.querySelectorAll('[data-toggle-admin]').forEach((chk) => {
+          chk.addEventListener('change', async () => {
+            const resp = await apiFetch(`/usuarios/${chk.dataset.toggleAdmin}/admin`, {
+              method: 'PATCH',
+              body: JSON.stringify({ administrador_sistema: chk.checked }),
+            });
+            if (!resp.ok) {
+              const d = await resp.json().catch(() => ({}));
+              alert(d.erro || 'Não foi possível alterar.');
+              chk.checked = !chk.checked;
+            }
+          });
+        });
+      }, 250);
+    });
+  }
+
+  // ---------- Logs ----------
+  async function carregarLogs() {
+    const raiz = document.getElementById('conteudo-aba');
+    raiz.innerHTML = '<p class="text-sm text-muted">Carregando…</p>';
+
+    const resp = await apiFetch('/logs');
+    const logsLista = resp.ok ? await resp.json() : [];
+
+    raiz.innerHTML = `
+      <div class="bg-card border border-border rounded-2xl shadow-sm divide-y divide-border overflow-hidden">
+        ${logsLista.length ? logsLista.map((l) => `
+          <div class="px-4 py-2.5 text-sm">
+            <div class="flex items-center justify-between">
+              <p class="font-semibold">${tituloTipoAdmin(l.tipo_evento)}</p>
+              <p class="text-xs text-muted">${new Date(l.criado_em).toLocaleString('pt-BR')}</p>
+            </div>
+            <p class="text-xs text-muted mt-0.5">${l.usuario_nick || 'sistema'}${l.referencia_tipo ? ` · ${l.referencia_tipo} #${l.referencia_id}` : ''}</p>
+          </div>
+        `).join('') : '<p class="text-sm text-muted p-4">Nenhum evento registrado ainda.</p>'}
+      </div>
+    `;
+  }
+
+  const CARREGADORES_ABA = {
+    permissoes: carregarPermissoes,
+    configuracoes: carregarConfiguracoes,
+    usuarios: carregarUsuarios,
+    logs: carregarLogs,
+  };
+
+  function montarAdmin() {
+    wireAbas();
+    CARREGADORES_ABA[abaAtual]();
+  }
+
+  function wireAbas() {
+    const container = document.getElementById('conteudo');
+    container.innerHTML = renderAbasAdmin();
+    container.querySelectorAll('.btn-aba-admin').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        abaAtual = btn.dataset.aba;
+        wireAbas();
+        CARREGADORES_ABA[abaAtual]();
+      });
+    });
+  }
+
+  montarLayout('/admin.html').then((me) => {
+    if (!me) return;
+    if (!me.administrador_sistema) {
+      document.getElementById('conteudo').innerHTML = '<p class="text-sm text-red-500">Essa página é restrita a administradores do sistema.</p>';
+      return;
+    }
+    montarAdmin();
+  });
+</script>
+</body>
+</html>
