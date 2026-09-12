@@ -187,7 +187,12 @@ requerimentos.get('/', async (c) => {
           'status', ra.status,
           'decidido_em', ra.decidido_em,
           'decidido_por_nick', ud.nick,
-          'motivo_recusa', ra.motivo_recusa
+          'motivo_recusa', ra.motivo_recusa,
+          'patente_atual_id_agora', ua.patente_atual_id,
+          'patente_antes_id', (
+            SELECT json_extract(h.detalhes, '$.antes.patente_atual_id')
+            FROM historico h WHERE h.requerimento_alvo_id = ra.id LIMIT 1
+          )
         ))
         FROM requerimento_alvos ra
         LEFT JOIN usuarios ua ON ua.id = ra.usuario_id
@@ -316,6 +321,36 @@ requerimentos.post('/:id/alvos/:alvoId/decidir', async (c) => {
 // administrador_sistema OU permissão dedicada de cancelamento
 // (requerimentos_permissoes, por usuário ou por grupo — configurável
 // no futuro painel de admin).
+// Reverte o efeito aplicado a UM alvo, usando o snapshot "antes"
+// gravado no histórico no momento da aprovação. Usado tanto por
+// cancelar (um requerimento já aprovado) quanto por excluir.
+async function reverterEfeitoAlvo(db: D1Database, requerimentoId: string | number, alvoId: number, usuarioId: number | null) {
+  if (usuarioId === null) return
+  const registroHistorico = await db.prepare(
+    `SELECT detalhes FROM historico WHERE requerimento_id = ? AND requerimento_alvo_id = ?`
+  ).bind(requerimentoId, alvoId).first<{ detalhes: string | null }>()
+  if (!registroHistorico?.detalhes) return
+
+  try {
+    const { antes } = JSON.parse(registroHistorico.detalhes) as {
+      antes: { patente_atual_id: number; corpo: string; status: string; tag: string | null } | null
+    }
+
+    if (antes === null) {
+      // Era uma porta de entrada (o usuário não existia antes deste
+      // requerimento) — reverter significa desfazer a criação.
+      await db.prepare(`DELETE FROM usuarios WHERE id = ?`).bind(usuarioId).run()
+    } else {
+      await db.prepare(
+        `UPDATE usuarios SET patente_atual_id = ?, corpo = ?, status = ?, tag = ?, atualizado_em = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
+      ).bind(antes.patente_atual_id, antes.corpo, antes.status, antes.tag, usuarioId).run()
+    }
+  } catch {
+    // Se reverter falhar (ex: usuário alterado por outra coisa depois),
+    // segue em frente sem travar a operação do admin.
+  }
+}
+
 requerimentos.post('/:id/cancelar', async (c) => {
   const usuarioId = c.get('usuarioId')
   const id = c.req.param('id')
@@ -334,10 +369,20 @@ requerimentos.post('/:id/cancelar', async (c) => {
     if (!pode) return c.json({ erro: 'sem permissão para cancelar requerimentos deste tipo' }, 403)
   }
 
+  // Alvos já aprovados: reverte o efeito (volta pra como estava antes)
+  // antes de marcar como cancelado. Alvos ainda pendentes: só cancela.
+  const { results: alvosAprovados } = await c.env.DB.prepare(
+    `SELECT id, usuario_id FROM requerimento_alvos WHERE requerimento_id = ? AND status = 'aprovado'`
+  ).bind(id).all<{ id: number; usuario_id: number | null }>()
+
+  for (const alvo of alvosAprovados) {
+    await reverterEfeitoAlvo(c.env.DB, id, alvo.id, alvo.usuario_id)
+  }
+
   await c.env.DB.prepare(
     `UPDATE requerimento_alvos SET status = 'cancelado', decidido_em = strftime('%Y-%m-%dT%H:%M:%SZ','now'),
        decidido_por_id = ?, motivo_recusa = ?
-     WHERE requerimento_id = ? AND status = 'pendente'`
+     WHERE requerimento_id = ? AND status IN ('pendente', 'aprovado')`
   ).bind(usuarioId, motivo ?? null, id).run()
 
   await recalcularStatusRequerimento(c.env.DB, Number(id))
@@ -374,32 +419,7 @@ requerimentos.delete('/:id', async (c) => {
   ).bind(id).all<{ id: number; usuario_id: number | null }>()
 
   for (const alvo of alvosAprovados) {
-    if (alvo.usuario_id === null) continue
-
-    const registroHistorico = await c.env.DB.prepare(
-      `SELECT detalhes FROM historico WHERE requerimento_id = ? AND requerimento_alvo_id = ?`
-    ).bind(id, alvo.id).first<{ detalhes: string | null }>()
-    if (!registroHistorico?.detalhes) continue
-
-    try {
-      const { antes } = JSON.parse(registroHistorico.detalhes) as {
-        antes: { patente_atual_id: number; corpo: string; status: string; tag: string | null } | null
-      }
-
-      if (antes === null) {
-        // Era uma porta de entrada (o usuário não existia antes deste
-        // requerimento) — reverter significa desfazer a criação.
-        await c.env.DB.prepare(`DELETE FROM usuarios WHERE id = ?`).bind(alvo.usuario_id).run()
-      } else {
-        await c.env.DB.prepare(
-          `UPDATE usuarios SET patente_atual_id = ?, corpo = ?, status = ?, tag = ?, atualizado_em = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
-        ).bind(antes.patente_atual_id, antes.corpo, antes.status, antes.tag, alvo.usuario_id).run()
-      }
-    } catch {
-      // Se reverter falhar (ex: o usuário já foi excluído ou alterado
-      // por outra coisa depois), segue com a exclusão do requerimento
-      // mesmo assim — não travar a operação do admin por isso.
-    }
+    await reverterEfeitoAlvo(c.env.DB, id, alvo.id, alvo.usuario_id)
   }
 
   // `historico` não tem ON DELETE CASCADE de propósito (é o registro

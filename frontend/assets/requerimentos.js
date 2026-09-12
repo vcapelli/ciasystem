@@ -2,8 +2,25 @@
 // /requerimentos/*.html — cada página só passa uma config descrevendo
 // quais tipos aceita e quais campos extras precisa.
 
+const TITULOS_TIPO_REQ = {
+  instrucao_inicial: 'Instrução Inicial', contratacao: 'Contratação', promocao: 'Promoção',
+  rebaixamento: 'Rebaixamento', advertencia: 'Advertência', licenca: 'Licença',
+  volta_licenca: 'Volta de Licença', transferencia_conta: 'Transferência de Conta',
+  transferencia_corpo: 'Transferência de Corpo', venda_cargo: 'Venda de Cargo', tag: 'TAG',
+  turno_tarefa: 'Turno/Tarefa', reforma: 'Reforma', desligamento_honroso: 'Desligamento Honroso',
+  desligamento_desonroso: 'Desligamento Desonroso', exoneracao: 'Exoneração',
+  bonificacao: 'Bonificação', cancelamento: 'Cancelamento',
+};
+
 function tituloTipoReq(tipo) {
-  return tipo.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+  return TITULOS_TIPO_REQ[tipo] || tipo.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+}
+
+function formatarDataCurtaReq(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  return `${String(d.getDate()).padStart(2,'0')} ${MESES[d.getMonth()]} ${d.getFullYear()}`;
 }
 
 const PREFIXO_IDENTIFICACAO_REQ = {
@@ -441,13 +458,16 @@ async function montarFormularioRequerimento(config) {
     const avatarAutor = r.autor_figure ? avatarUrl(r.autor_figure, 'mini', '2') : null;
     const prefixoId = PREFIXO_IDENTIFICACAO_REQ[r.tipo] ?? '';
     const tagUsada = dadosEspecificos.tag_utilizada || r.autor_tag || '—';
-    const identificacao = alvoPrincipal ? `${alvoPrincipal.nick} [${prefixoId}${tagUsada}] ${formatarDataHoraReq(r.criado_em).split(',')[0]}` : null;
+    const identificacao = alvoPrincipal ? `${alvoPrincipal.nick} [${prefixoId}${tagUsada}] ${formatarDataCurtaReq(r.criado_em)}` : null;
 
     const linhasExtras = [];
     linhasExtras.push(`<b>${ehInstrucaoInicial ? 'Nick e TAG do Instrutor' : 'Requerido por'}:</b> ${r.autor_nick || '—'}${r.autor_tag ? ` [${r.autor_tag}]` : ''}`);
-    linhasExtras.push(`<b>${ehInstrucaoInicial ? 'Recruta(s) aprovado(s)' : 'Alvo(s)'}:</b> ${alvosTexto}`);
+    linhasExtras.push(`<b>${ehInstrucaoInicial ? 'Recruta(s) aprovado(s)' : 'Alvo'}:</b> ${alvosTexto}`);
     if (dadosEspecificos.patente_destino_id && patentesMapa[dadosEspecificos.patente_destino_id]) {
-      linhasExtras.push(`<b>Destino:</b> ${patentesMapa[dadosEspecificos.patente_destino_id]}`);
+      const nomeDestino = patentesMapa[dadosEspecificos.patente_destino_id];
+      const idAntiga = alvoPrincipal?.patente_antes_id ?? alvoPrincipal?.patente_atual_id_agora;
+      const nomeAntiga = idAntiga ? patentesMapa[idAntiga] : null;
+      linhasExtras.push(`<b>Destino:</b> ${nomeAntiga && nomeAntiga !== nomeDestino ? `${nomeAntiga} > ${nomeDestino}` : nomeDestino}`);
     }
     if (dadosEspecificos.novo_nick) linhasExtras.push(`<b>Novo nickname:</b> ${dadosEspecificos.novo_nick}`);
     if (r.tag_aplicada) linhasExtras.push(`<b>Nova TAG:</b> ${r.tag_aplicada}`);
@@ -497,7 +517,7 @@ async function montarFormularioRequerimento(config) {
           </div>
           <div>
             <p class="text-[0.65rem] text-muted">Usuário responsável:</p>
-            <p class="assinatura text-base ${alvoPrincipal?.decidido_por_nick ? '' : 'text-muted italic text-xs font-sans'}">${alvoPrincipal?.decidido_por_nick || 'Não preenchido'}</p>
+            <p class="assinatura text-base ${alvoPrincipal?.decidido_por_nick ? 'text-dark' : 'text-muted italic text-xs font-sans'}">${alvoPrincipal?.decidido_por_nick || 'Não preenchido'}</p>
           </div>
           <div>
             <p class="text-[0.65rem] text-muted">Data da decisão:</p>
@@ -528,6 +548,8 @@ async function montarFormularioRequerimento(config) {
                 <button data-acao="reprovar" data-req="${r.id}" data-alvo="${alvoPrincipal.id}" class="btn-decidir text-xs font-semibold px-3 py-1.5 rounded-lg bg-red-500/15 text-red-600 hover:bg-red-500/25 transition-colors">
                   <i class="fa-solid fa-xmark"></i> Reprovar
                 </button>
+              ` : ''}
+              ${r.status !== 'cancelado' ? `
                 <button data-acao="cancelar" data-req="${r.id}" class="btn-decidir text-xs font-semibold px-3 py-1.5 rounded-lg bg-gray-500/15 text-gray-600 hover:bg-gray-500/25 transition-colors">
                   <i class="fa-solid fa-ban"></i> Cancelar
                 </button>
@@ -576,6 +598,7 @@ async function montarFormularioRequerimento(config) {
       });
       carregarRecentes();
     } else if (acao === 'cancelar') {
+      if (!confirm('Cancelar este requerimento? Se ele já estava aprovado, o efeito aplicado será revertido (ex: volta à patente/TAG/status de antes).')) return;
       const motivo = prompt('Motivo do cancelamento (opcional):') || undefined;
       await apiFetch(`/requerimentos/${reqId}/cancelar`, { method: 'POST', body: JSON.stringify({ motivo }) });
       carregarRecentes();
