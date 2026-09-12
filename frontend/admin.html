@@ -42,6 +42,10 @@
   function renderAbasAdmin() {
     const abas = [
       { id: 'permissoes', label: 'Permissões' },
+      { id: 'sugestoes', label: 'Sugestões' },
+      { id: 'banners', label: 'Banners' },
+      { id: 'infracoes', label: 'Infrações' },
+      { id: 'menu', label: 'Menu' },
       { id: 'configuracoes', label: 'Configurações' },
       { id: 'usuarios', label: 'Usuários' },
       { id: 'logs', label: 'Logs' },
@@ -294,8 +298,212 @@
     `;
   }
 
+  // ---------- Sugestões ----------
+  async function carregarSugestoes() {
+    const raiz = document.getElementById('conteudo-aba');
+    raiz.innerHTML = '<p class="text-sm text-muted">Carregando…</p>';
+
+    const resp = await apiFetch('/sugestoes');
+    const lista = resp.ok ? await resp.json() : [];
+
+    const BADGE_SUGESTAO = {
+      pendente: 'bg-gray-500/15 text-gray-600',
+      aprovada: 'bg-green-500/15 text-green-600',
+      rejeitada: 'bg-red-500/15 text-red-600',
+    };
+
+    raiz.innerHTML = `
+      <div class="space-y-3">
+        ${lista.length ? lista.map((s) => `
+          <div class="bg-card border border-border rounded-2xl shadow-sm p-4">
+            <div class="flex items-center justify-between gap-2">
+              <p class="text-sm font-semibold">${s.titulo}</p>
+              <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full capitalize ${BADGE_SUGESTAO[s.status] || ''}">${s.status}</span>
+            </div>
+            <p class="text-xs text-muted mt-1">por ${s.autor_nick || '—'} · ${new Date(s.criado_em).toLocaleDateString('pt-BR')}</p>
+            <p class="text-sm mt-2 whitespace-pre-wrap">${s.descricao}</p>
+            ${s.motivo_decisao ? `<p class="text-xs text-muted mt-2">Decisão: ${s.motivo_decisao} (${s.decidido_por_nick || '—'})</p>` : ''}
+            ${s.status === 'pendente' ? `
+              <div class="flex gap-2 mt-3">
+                <button data-decidir="${s.id}" data-status="aprovada" class="btn-decidir-sugestao text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-500/15 text-green-600 hover:bg-green-500/25 transition-colors">
+                  <i class="fa-solid fa-check"></i> Aprovar
+                </button>
+                <button data-decidir="${s.id}" data-status="rejeitada" class="btn-decidir-sugestao text-xs font-semibold px-3 py-1.5 rounded-lg bg-red-500/15 text-red-600 hover:bg-red-500/25 transition-colors">
+                  <i class="fa-solid fa-xmark"></i> Rejeitar
+                </button>
+              </div>
+            ` : ''}
+          </div>
+        `).join('') : '<p class="text-sm text-muted">Nenhuma sugestão registrada ainda.</p>'}
+      </div>
+    `;
+
+    raiz.querySelectorAll('.btn-decidir-sugestao').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const motivo = prompt('Motivo da decisão (opcional):') || undefined;
+        await apiFetch(`/sugestoes/${btn.dataset.decidir}/decidir`, {
+          method: 'POST',
+          body: JSON.stringify({ status: btn.dataset.status, motivo_decisao: motivo }),
+        });
+        carregarSugestoes();
+      });
+    });
+  }
+
+  // ---------- Banners de perfil ----------
+  async function carregarBanners() {
+    const raiz = document.getElementById('conteudo-aba');
+    raiz.innerHTML = '<p class="text-sm text-muted">Carregando…</p>';
+
+    const resp = await apiFetch('/banners-perfil');
+    const banners = resp.ok ? await resp.json() : [];
+
+    raiz.innerHTML = `
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-5">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Banners disponíveis</h2>
+        <div class="space-y-2 mb-4">
+          ${banners.length ? banners.map((b) => `
+            <div class="flex items-center gap-3 bg-basebg border border-border rounded-xl p-2">
+              <div class="h-12 w-20 rounded-lg bg-cover bg-center shrink-0" style="background-image: url('${b.imagem_url}')"></div>
+              <p class="text-sm flex-1 truncate">${b.nome || b.imagem_url}</p>
+              <button type="button" data-remover-banner="${b.id}" class="text-muted hover:text-red-600 transition-colors px-2">
+                <i class="fa-solid fa-trash"></i>
+              </button>
+            </div>
+          `).join('') : '<p class="text-sm text-muted">Nenhum banner cadastrado ainda.</p>'}
+        </div>
+        <form id="form-novo-banner-admin" class="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2">
+          <input id="novo-banner-url-admin" placeholder="URL da imagem" required class="bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <input id="novo-banner-nome-admin" placeholder="Nome (opcional)" class="bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <button type="submit" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Adicionar</button>
+        </form>
+      </div>
+    `;
+
+    document.getElementById('form-novo-banner-admin').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await apiFetch('/banners-perfil', {
+        method: 'POST',
+        body: JSON.stringify({
+          imagem_url: document.getElementById('novo-banner-url-admin').value.trim(),
+          nome: document.getElementById('novo-banner-nome-admin').value.trim() || undefined,
+        }),
+      });
+      carregarBanners();
+    });
+
+    raiz.querySelectorAll('[data-remover-banner]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Remover esse banner da lista?')) return;
+        await apiFetch(`/banners-perfil/${btn.dataset.removerBanner}`, { method: 'DELETE' });
+        carregarBanners();
+      });
+    });
+  }
+
+  // ---------- Infrações (crimes) ----------
+  async function carregarInfracoes() {
+    const raiz = document.getElementById('conteudo-aba');
+    raiz.innerHTML = '<p class="text-sm text-muted">Carregando…</p>';
+
+    const resp = await apiFetch('/crimes');
+    const lista = resp.ok ? await resp.json() : [];
+
+    raiz.innerHTML = `
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5 max-w-lg">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Infrações cadastradas</h2>
+        <div class="space-y-1 mb-4">
+          ${lista.length ? lista.map((cr) => `
+            <div class="flex items-center justify-between px-3 py-2 bg-basebg border border-border rounded-lg">
+              <p class="text-sm">${cr.nome}</p>
+              <button type="button" data-remover-crime="${cr.id}" class="text-muted hover:text-red-600 transition-colors px-2">
+                <i class="fa-solid fa-trash"></i>
+              </button>
+            </div>
+          `).join('') : '<p class="text-sm text-muted">Nenhuma infração cadastrada.</p>'}
+        </div>
+        <form id="form-nova-infracao" class="flex gap-2">
+          <input id="nova-infracao-nome" placeholder="Nome da infração" required class="flex-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <button type="submit" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Adicionar</button>
+        </form>
+      </div>
+    `;
+
+    document.getElementById('form-nova-infracao').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await apiFetch('/crimes', { method: 'POST', body: JSON.stringify({ nome: document.getElementById('nova-infracao-nome').value.trim() }) });
+      carregarInfracoes();
+    });
+
+    raiz.querySelectorAll('[data-remover-crime]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Remover essa infração?')) return;
+        await apiFetch(`/crimes/${btn.dataset.removerCrime}`, { method: 'DELETE' });
+        carregarInfracoes();
+      });
+    });
+  }
+
+  // ---------- Menu personalizado ----------
+  async function carregarMenuAdmin() {
+    const raiz = document.getElementById('conteudo-aba');
+    raiz.innerHTML = '<p class="text-sm text-muted">Carregando…</p>';
+
+    const resp = await apiFetch('/menu/todos');
+    const itens = resp.ok ? await resp.json() : [];
+
+    raiz.innerHTML = `
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-5">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Itens extras do menu</h2>
+        <p class="text-xs text-muted mb-3">Aparecem na seção "Mais" do menu lateral, embaixo dos itens fixos.</p>
+        <div class="space-y-1 mb-4">
+          ${itens.length ? itens.map((i) => `
+            <div class="flex items-center justify-between px-3 py-2 bg-basebg border border-border rounded-lg">
+              <div>
+                <p class="text-sm">${i.titulo}</p>
+                <p class="text-xs text-muted">${i.url || '—'}</p>
+              </div>
+              <button type="button" data-remover-item-menu="${i.id}" class="text-muted hover:text-red-600 transition-colors px-2">
+                <i class="fa-solid fa-trash"></i>
+              </button>
+            </div>
+          `).join('') : '<p class="text-sm text-muted">Nenhum item extra cadastrado.</p>'}
+        </div>
+        <form id="form-novo-item-menu" class="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2">
+          <input id="novo-item-titulo" placeholder="Título" required class="bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <input id="novo-item-url" placeholder="URL (ex: /pagina.html)" required class="bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <button type="submit" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Adicionar</button>
+        </form>
+      </div>
+    `;
+
+    document.getElementById('form-novo-item-menu').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await apiFetch('/menu', {
+        method: 'POST',
+        body: JSON.stringify({
+          titulo: document.getElementById('novo-item-titulo').value.trim(),
+          url: document.getElementById('novo-item-url').value.trim(),
+        }),
+      });
+      carregarMenuAdmin();
+    });
+
+    raiz.querySelectorAll('[data-remover-item-menu]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Remover esse item do menu?')) return;
+        await apiFetch(`/menu/${btn.dataset.removerItemMenu}`, { method: 'DELETE' });
+        carregarMenuAdmin();
+      });
+    });
+  }
+
   const CARREGADORES_ABA = {
     permissoes: carregarPermissoes,
+    sugestoes: carregarSugestoes,
+    banners: carregarBanners,
+    infracoes: carregarInfracoes,
+    menu: carregarMenuAdmin,
     configuracoes: carregarConfiguracoes,
     usuarios: carregarUsuarios,
     logs: carregarLogs,

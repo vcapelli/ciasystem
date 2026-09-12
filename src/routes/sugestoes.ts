@@ -23,9 +23,13 @@ sugestoes.post('/', async (c) => {
 
 sugestoes.get('/', async (c) => {
   const status = c.req.query('status')
+  const base = `SELECT s.*, a.nick AS autor_nick, d.nick AS decidido_por_nick
+     FROM sugestoes s
+     LEFT JOIN usuarios a ON a.id = s.autor_id
+     LEFT JOIN usuarios d ON d.id = s.decidido_por_id`
   const query = status
-    ? c.env.DB.prepare(`SELECT * FROM sugestoes WHERE status = ? ORDER BY criado_em DESC`).bind(status)
-    : c.env.DB.prepare(`SELECT * FROM sugestoes ORDER BY criado_em DESC`)
+    ? c.env.DB.prepare(`${base} WHERE s.status = ? ORDER BY s.criado_em DESC`).bind(status)
+    : c.env.DB.prepare(`${base} ORDER BY s.criado_em DESC`)
   const { results } = await query.all()
   return c.json(results)
 })

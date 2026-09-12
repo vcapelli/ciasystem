@@ -42,7 +42,8 @@ menu.post('/', async (c) => {
   return c.json({ id: meta.last_row_id }, 201)
 })
 
-// GET /menu — árvore de itens visíveis pro usuário autenticado
+// GET /menu — árvore de itens visíveis pro usuário autenticado (já
+// filtrada por grupo/patente mínima).
 menu.get('/', async (c) => {
   const usuarioId = c.get('usuarioId')
 
@@ -81,6 +82,27 @@ menu.get('/', async (c) => {
   }
 
   return c.json(visiveis)
+})
+
+// GET /menu/todos — lista TODOS os itens ativos, sem filtro de
+// visibilidade (pro painel de admin gerenciar). Só admin.
+menu.get('/todos', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  if (!(await ehAdmin(c.env.DB, usuarioId))) {
+    return c.json({ erro: 'só administradores do sistema gerenciam o menu' }, 403)
+  }
+  const { results } = await c.env.DB.prepare(`SELECT * FROM menu_itens WHERE ativo = 1 ORDER BY item_pai_id, ordem`).all()
+  return c.json(results)
+})
+
+// DELETE /menu/:id — desativa um item do menu (soft delete). Só admin.
+menu.delete('/:id', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  if (!(await ehAdmin(c.env.DB, usuarioId))) {
+    return c.json({ erro: 'só administradores do sistema gerenciam o menu' }, 403)
+  }
+  await c.env.DB.prepare(`UPDATE menu_itens SET ativo = 0 WHERE id = ?`).bind(c.req.param('id')).run()
+  return c.json({ ok: true })
 })
 
 export default menu
