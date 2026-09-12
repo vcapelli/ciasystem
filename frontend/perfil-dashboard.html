@@ -88,11 +88,12 @@
     `;
   }
 
-  function renderAbas(nick) {
+  function renderAbas(nick, ehMeuPerfil) {
     const abas = [
       { id: 'linha-do-tempo', label: 'Linha do tempo', href: `/perfil/${nick}` },
       { id: 'postagens', label: 'Postagens', href: `/perfil/${nick}/postagens` },
     ];
+    if (ehMeuPerfil) abas.push({ id: 'configuracoes', label: 'Configurações', href: `/perfil/${nick}/configuracoes` });
     return `
       <div class="flex gap-6 border-b border-border mb-4">
         ${abas.map((a) => `
@@ -143,6 +144,142 @@
     `;
   }
 
+  function renderThumbBanner(banner, selecionado) {
+    return `
+      <button type="button" data-banner-id="${banner.id}"
+        class="thumb-banner relative h-20 rounded-xl overflow-hidden border-2 transition-colors ${selecionado ? 'border-accent' : 'border-transparent'}"
+        style="background-image: url('${banner.imagem_url}'); background-size: cover; background-position: center;">
+        ${selecionado ? '<span class="absolute top-1 right-1 h-5 w-5 rounded-full bg-accent text-white flex items-center justify-center text-xs"><i class="fa-solid fa-check"></i></span>' : ''}
+      </button>
+    `;
+  }
+
+  function renderConfiguracoes(dados, banners, me) {
+    let bannerSelecionadoId = dados.banner_perfil_id || null;
+    let corSelecionada = dados.cor_avatar_fundo || null;
+
+    setTimeout(() => {
+      const raiz = document.getElementById('config-perfil-raiz');
+      if (!raiz) return;
+
+      function repintar() {
+        raiz.innerHTML = `
+          <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-4">
+            <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Banner do perfil</h2>
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <button type="button" data-banner-id="" class="thumb-banner relative h-20 rounded-xl overflow-hidden border-2 flex items-center justify-center text-xs text-muted bg-basebg ${!bannerSelecionadoId ? 'border-accent' : 'border-transparent'}">
+                Padrão do sistema
+                ${!bannerSelecionadoId ? '<span class="absolute top-1 right-1 h-5 w-5 rounded-full bg-accent text-white flex items-center justify-center text-xs"><i class="fa-solid fa-check"></i></span>' : ''}
+              </button>
+              ${banners.map((b) => renderThumbBanner(b, bannerSelecionadoId === b.id)).join('')}
+            </div>
+            ${!banners.length ? '<p class="text-xs text-muted mt-2">Nenhum banner extra cadastrado ainda — fala com um administrador do sistema.</p>' : ''}
+          </div>
+
+          <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-4">
+            <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Cor de fundo do avatar</h2>
+            <div class="flex items-center gap-3">
+              <input id="cor-avatar" type="color" value="${corSelecionada || '#e2e4e9'}" class="h-10 w-16 bg-basebg border border-border rounded-lg cursor-pointer">
+              <button type="button" id="btn-cor-padrao" class="text-xs text-muted hover:text-dark transition-colors underline">Usar padrão</button>
+            </div>
+          </div>
+
+          <button id="btn-salvar-config" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-5 py-2.5 text-sm transition-colors">
+            Salvar
+          </button>
+          <p id="msg-salvar-config" class="hidden text-xs mt-2"></p>
+
+          ${me.administrador_sistema ? `
+            <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mt-6">
+              <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Administração — banners disponíveis</h2>
+              <div class="space-y-2 mb-4">
+                ${banners.length ? banners.map((b) => `
+                  <div class="flex items-center gap-3 bg-basebg border border-border rounded-xl p-2">
+                    <div class="h-12 w-20 rounded-lg bg-cover bg-center shrink-0" style="background-image: url('${b.imagem_url}')"></div>
+                    <p class="text-sm flex-1 truncate">${b.nome || b.imagem_url}</p>
+                    <button type="button" data-remover-id="${b.id}" class="btn-remover-banner text-muted hover:text-red-600 transition-colors px-2">
+                      <i class="fa-solid fa-trash"></i>
+                    </button>
+                  </div>
+                `).join('') : '<p class="text-sm text-muted">Nenhum banner cadastrado ainda.</p>'}
+              </div>
+              <form id="form-novo-banner" class="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2">
+                <input id="novo-banner-url" placeholder="URL da imagem" required class="bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                <input id="novo-banner-nome" placeholder="Nome (opcional)" class="bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                <button type="submit" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Adicionar</button>
+              </form>
+            </div>
+          ` : ''}
+        `;
+
+        raiz.querySelectorAll('.thumb-banner').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            bannerSelecionadoId = btn.dataset.bannerId ? Number(btn.dataset.bannerId) : null;
+            repintar();
+          });
+        });
+
+        document.getElementById('cor-avatar').addEventListener('input', (e) => { corSelecionada = e.target.value; });
+        document.getElementById('btn-cor-padrao').addEventListener('click', () => {
+          corSelecionada = null;
+          document.getElementById('cor-avatar').value = '#e2e4e9';
+        });
+
+        document.getElementById('btn-salvar-config').addEventListener('click', async () => {
+          const msg = document.getElementById('msg-salvar-config');
+          const resp = await apiFetch('/usuarios/me', {
+            method: 'PATCH',
+            body: JSON.stringify({ banner_perfil_id: bannerSelecionadoId, cor_avatar_fundo: corSelecionada }),
+          });
+          msg.classList.remove('hidden');
+          if (resp.ok) {
+            msg.textContent = 'Salvo! Recarregue a página do perfil pra ver o resultado.';
+            msg.className = 'text-xs mt-2 text-green-600';
+          } else {
+            const d = await resp.json().catch(() => ({}));
+            msg.textContent = d.erro || 'Não foi possível salvar.';
+            msg.className = 'text-xs mt-2 text-red-500';
+          }
+        });
+
+        const formNovoBanner = document.getElementById('form-novo-banner');
+        if (formNovoBanner) {
+          formNovoBanner.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const resp = await apiFetch('/banners-perfil', {
+              method: 'POST',
+              body: JSON.stringify({
+                imagem_url: document.getElementById('novo-banner-url').value.trim(),
+                nome: document.getElementById('novo-banner-nome').value.trim() || undefined,
+              }),
+            });
+            if (resp.ok) {
+              const nova = await apiFetch('/banners-perfil');
+              banners.length = 0;
+              banners.push(...(nova.ok ? await nova.json() : []));
+              repintar();
+            }
+          });
+
+          raiz.querySelectorAll('.btn-remover-banner').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+              if (!confirm('Remover esse banner da lista?')) return;
+              await apiFetch(`/banners-perfil/${btn.dataset.removerId}`, { method: 'DELETE' });
+              const idx = banners.findIndex((b) => String(b.id) === btn.dataset.removerId);
+              if (idx >= 0) banners.splice(idx, 1);
+              if (bannerSelecionadoId === Number(btn.dataset.removerId)) bannerSelecionadoId = null;
+              repintar();
+            });
+          });
+        }
+      }
+
+      repintar();
+    }, 0);
+
+    return '<div id="config-perfil-raiz"><p class="text-sm text-muted">Carregando…</p></div>';
+  }
+
   async function carregar(me) {
     const container = document.getElementById('conteudo');
     const respPerfil = await apiFetch(`/usuarios/nick/${encodeURIComponent(nickAlvo)}`);
@@ -155,7 +292,7 @@
     const perfil = await respPerfil.json();
     const ehMeuPerfil = me.nick === perfil.nick;
 
-    const [emblemasResp, honrariasResp, conquistasResp, gruposResp, requerimentosResp, tweetsResp, patentesResp] = await Promise.all([
+    const [emblemasResp, honrariasResp, conquistasResp, gruposResp, requerimentosResp, tweetsResp, patentesResp, bannersResp, meCompletoResp] = await Promise.all([
       apiFetch(`/emblemas/usuario/${perfil.id}`),
       apiFetch(`/honrarias/usuario/${perfil.id}`),
       apiFetch(`/conquistas/usuario/${perfil.id}`),
@@ -163,6 +300,8 @@
       apiFetch(`/requerimentos/alvo/${perfil.id}`),
       apiFetch(`/tweets?autor_id=${perfil.id}`),
       apiFetch(`/patentes`),
+      ehMeuPerfil && aba === 'configuracoes' ? apiFetch('/banners-perfil') : Promise.resolve(null),
+      ehMeuPerfil && aba === 'configuracoes' ? apiFetch('/usuarios/me') : Promise.resolve(null),
     ]);
     const emblemas = emblemasResp.ok ? await emblemasResp.json() : [];
     const honrarias = honrariasResp.ok ? await honrariasResp.json() : [];
@@ -174,6 +313,8 @@
     if (patentesResp.ok) {
       for (const p of await patentesResp.json()) patentesMapa[p.id] = p.nome;
     }
+    const banners = bannersResp?.ok ? await bannersResp.json() : [];
+    const meCompleto = meCompletoResp?.ok ? await meCompletoResp.json() : me;
 
     const ultimoRequerimento = requerimentos[0]?.criado_em;
     const avatarCirculo = perfil.figure ? avatarUrl(perfil.figure, 'mini', '2') : null;
@@ -224,11 +365,6 @@
             ` : ''}
 
             <div id="bio-area" class="mt-4"></div>
-            ${ehMeuPerfil ? `
-              <a href="/perfil-configuracoes.html" class="inline-flex items-center gap-1.5 text-xs text-muted hover:text-accent transition-colors mt-3">
-                <i class="fa-solid fa-gear"></i> Configurações do perfil
-              </a>
-            ` : ''}
           </div>
 
           <div class="bg-card border border-border rounded-2xl p-4 mt-4 shadow-sm">
@@ -241,8 +377,8 @@
         </div>
 
         <div>
-          ${renderAbas(perfil.nick)}
-          ${aba === 'postagens' ? renderPostagens(tweets) : renderTimeline(requerimentos, patentesMapa, me)}
+          ${renderAbas(perfil.nick, ehMeuPerfil)}
+          ${aba === 'postagens' ? renderPostagens(tweets) : aba === 'configuracoes' && ehMeuPerfil ? renderConfiguracoes(meCompleto, banners, me) : renderTimeline(requerimentos, patentesMapa, me)}
         </div>
       </div>
     `;
