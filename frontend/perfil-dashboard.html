@@ -25,6 +25,7 @@
 
 <script src="/assets/api.js"></script>
 <script src="/assets/layout.js"></script>
+<script src="/assets/requerimentos.js"></script>
 <script>
   const partes = location.pathname.split('/').filter(Boolean); // ['perfil', nick, aba?]
   const nickAlvo = decodeURIComponent(partes[1] || '');
@@ -37,21 +38,6 @@
     desligado_honroso: 'bg-white/10 text-muted',
     desligado_desonroso: 'bg-red-500/15 text-red-400',
     exonerado: 'bg-red-500/15 text-red-400',
-  };
-
-  const ICONE_TIPO = {
-    instrucao_inicial: '🎓', promocao: '↑', rebaixamento: '↓', advertencia: '⚠',
-    licenca: '⏸', volta_licenca: '▶', reserva: '💤', transferencia_conta: '⇄',
-    transferencia_corpo: '⇄', venda_cargo: '💰', contratacao: '➕', tag: '🏷',
-    turno_tarefa: '🕒', reforma: '🎖', desligado_honroso: '🚪', desligamento_honroso: '🚪',
-    desligamento_desonroso: '🚪', exoneracao: '⛔', bonificacao: '⭐', cancelamento: '✖',
-  };
-
-  const COR_STATUS = {
-    pendente: { anel: 'ring-gray-400/40', bg: 'bg-gray-500/20', texto: 'text-gray-300' },
-    aprovado: { anel: 'ring-green-400/40', bg: 'bg-green-500/20', texto: 'text-green-400' },
-    reprovado: { anel: 'ring-red-400/40', bg: 'bg-red-500/20', texto: 'text-red-400' },
-    cancelado: { anel: 'ring-red-400/40', bg: 'bg-red-500/20', texto: 'text-red-400' },
   };
 
   function formatarDataCurta(iso) {
@@ -108,32 +94,9 @@
     `;
   }
 
-  function renderTimeline(itens) {
+  function renderTimeline(itens, patentesMapa, me) {
     if (!itens.length) return '<p class="text-sm text-muted">Nenhum requerimento registrado ainda.</p>';
-    return `
-      <div class="space-y-4">
-        ${itens.map((item) => {
-          const cor = COR_STATUS[item.status] || COR_STATUS.pendente;
-          const icone = ICONE_TIPO[item.tipo] || '📄';
-          return `
-            <div class="flex gap-3">
-              <div class="flex flex-col items-center">
-                <span class="h-9 w-9 rounded-full ${cor.bg} ring-2 ${cor.anel} flex items-center justify-center text-sm shrink-0">${icone}</span>
-                <span class="flex-1 w-px bg-border mt-1"></span>
-              </div>
-              <div class="bg-card border border-border rounded-xl px-4 py-3 flex-1 mb-1 shadow-sm">
-                <div class="flex items-center justify-between gap-2">
-                  <p class="text-sm font-semibold">${tituloTipo(item.tipo)}</p>
-                  <span class="text-xs font-semibold ${cor.texto} capitalize">${item.status}</span>
-                </div>
-                <p class="text-xs text-muted mt-0.5">${item.tag_requerimento} · ${formatarDataCurta(item.criado_em)}</p>
-                ${item.motivo_recusa ? `<p class="text-xs text-red-400 mt-1">${item.motivo_recusa}</p>` : ''}
-              </div>
-            </div>
-          `;
-        }).join('')}
-      </div>
-    `;
+    return `<div class="space-y-3">${itens.map((r) => renderCardRequerimento(r, patentesMapa, me)).join('')}</div>`;
   }
 
   function renderPostagens(tweets) {
@@ -162,13 +125,14 @@
     const perfil = await respPerfil.json();
     const ehMeuPerfil = me.nick === perfil.nick;
 
-    const [emblemasResp, honrariasResp, conquistasResp, gruposResp, requerimentosResp, tweetsResp] = await Promise.all([
+    const [emblemasResp, honrariasResp, conquistasResp, gruposResp, requerimentosResp, tweetsResp, patentesResp] = await Promise.all([
       apiFetch(`/emblemas/usuario/${perfil.id}`),
       apiFetch(`/honrarias/usuario/${perfil.id}`),
       apiFetch(`/conquistas/usuario/${perfil.id}`),
       apiFetch(`/grupos/usuario/${perfil.id}`),
       apiFetch(`/requerimentos/alvo/${perfil.id}`),
       apiFetch(`/tweets?autor_id=${perfil.id}`),
+      apiFetch(`/patentes`),
     ]);
     const emblemas = emblemasResp.ok ? await emblemasResp.json() : [];
     const honrarias = honrariasResp.ok ? await honrariasResp.json() : [];
@@ -176,6 +140,10 @@
     const grupos = gruposResp.ok ? await gruposResp.json() : [];
     const requerimentos = requerimentosResp.ok ? await requerimentosResp.json() : [];
     const tweets = tweetsResp.ok ? await tweetsResp.json() : [];
+    const patentesMapa = {};
+    if (patentesResp.ok) {
+      for (const p of await patentesResp.json()) patentesMapa[p.id] = p.nome;
+    }
 
     const ultimoRequerimento = requerimentos[0]?.criado_em;
     const avatarCirculo = perfil.figure ? avatarUrl(perfil.figure, 'mini', '2') : null;
@@ -239,7 +207,7 @@
 
         <div>
           ${renderAbas(perfil.nick)}
-          ${aba === 'postagens' ? renderPostagens(tweets) : renderTimeline(requerimentos)}
+          ${aba === 'postagens' ? renderPostagens(tweets) : renderTimeline(requerimentos, patentesMapa, me)}
         </div>
       </div>
     `;
@@ -264,7 +232,11 @@
     }
   }
 
-  montarLayout('/perfil').then((me) => { if (me) carregar(me); });
+  montarLayout('/perfil').then((me) => {
+    if (!me) return;
+    carregar(me);
+    ligarAcoesRequerimento(document.getElementById('conteudo'), () => carregar(me));
+  });
 </script>
 </body>
 </html>

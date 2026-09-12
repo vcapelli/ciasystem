@@ -201,45 +201,42 @@ requerimentos.post('/', async (c) => {
   return c.json({ id: requerimentoId, tag_requerimento: tagRequerimento }, 201)
 })
 
-requerimentos.get('/', async (c) => {
-  const status = c.req.query('status')
+const BASE_QUERY_REQUERIMENTOS = `
+  SELECT r.*, u.nick AS autor_nick, u.tag AS autor_tag, p.nome AS autor_patente_nome, cr.nome AS crime_nome,
+    (
+      SELECT json_group_array(json_object(
+        'id', ra.id,
+        'nick', COALESCE(ra.nick_alvo, ua.nick),
+        'tag', ua.tag,
+        'status', ra.status,
+        'decidido_em', ra.decidido_em,
+        'decidido_por_nick', ud.nick,
+        'motivo_recusa', ra.motivo_recusa,
+        'patente_atual_id_agora', ua.patente_atual_id,
+        'patente_antes_id', (
+          SELECT json_extract(h.detalhes, '$.antes.patente_atual_id')
+          FROM historico h WHERE h.requerimento_alvo_id = ra.id LIMIT 1
+        )
+      ))
+      FROM requerimento_alvos ra
+      LEFT JOIN usuarios ua ON ua.id = ra.usuario_id
+      LEFT JOIN usuarios ud ON ud.id = ra.decidido_por_id
+      WHERE ra.requerimento_id = r.id
+    ) AS alvos_json
+  FROM requerimentos r
+  LEFT JOIN usuarios u ON u.id = r.autor_id
+  LEFT JOIN patentes p ON p.id = u.patente_atual_id
+  LEFT JOIN crimes cr ON cr.id = r.crime_id
+`
 
-  const base = `
-    SELECT r.*, u.nick AS autor_nick, u.tag AS autor_tag, p.nome AS autor_patente_nome, cr.nome AS crime_nome,
-      (
-        SELECT json_group_array(json_object(
-          'id', ra.id,
-          'nick', COALESCE(ra.nick_alvo, ua.nick),
-          'tag', ua.tag,
-          'status', ra.status,
-          'decidido_em', ra.decidido_em,
-          'decidido_por_nick', ud.nick,
-          'motivo_recusa', ra.motivo_recusa,
-          'patente_atual_id_agora', ua.patente_atual_id,
-          'patente_antes_id', (
-            SELECT json_extract(h.detalhes, '$.antes.patente_atual_id')
-            FROM historico h WHERE h.requerimento_alvo_id = ra.id LIMIT 1
-          )
-        ))
-        FROM requerimento_alvos ra
-        LEFT JOIN usuarios ua ON ua.id = ra.usuario_id
-        LEFT JOIN usuarios ud ON ud.id = ra.decidido_por_id
-        WHERE ra.requerimento_id = r.id
-      ) AS alvos_json
-    FROM requerimentos r
-    LEFT JOIN usuarios u ON u.id = r.autor_id
-    LEFT JOIN patentes p ON p.id = u.patente_atual_id
-    LEFT JOIN crimes cr ON cr.id = r.crime_id
-  `
+// Roda a query base + busca a figure de cada autor distinto em
+// paralelo — usado tanto na listagem geral quanto na de um alvo
+// específico, pra sempre devolver exatamente o mesmo formato (o
+// frontend usa um único componente de card pros dois casos).
+async function buscarRequerimentosComFigure(db: D1Database, whereEOrdenacao: string, params: unknown[] = []) {
+  const { results } = await db.prepare(`${BASE_QUERY_REQUERIMENTOS} ${whereEOrdenacao}`)
+    .bind(...params).all<{ autor_nick: string | null }>()
 
-  const query = status
-    ? c.env.DB.prepare(`${base} WHERE r.status = ? ORDER BY r.criado_em DESC LIMIT 50`).bind(status)
-    : c.env.DB.prepare(`${base} ORDER BY r.criado_em DESC LIMIT 50`)
-
-  const { results } = await query.all<{ autor_nick: string | null }>()
-
-  // Busca a figure de cada autor distinto, em paralelo — o conjunto de
-  // autores costuma ser bem menor que o de requerimentos.
   const nicksUnicos = [...new Set(results.map((r) => r.autor_nick).filter(Boolean))] as string[]
   const figurasPorNick: Record<string, string | null> = {}
   await Promise.all(
@@ -248,7 +245,14 @@ requerimentos.get('/', async (c) => {
     })
   )
 
-  const comFigure = results.map((r) => ({ ...r, autor_figure: r.autor_nick ? figurasPorNick[r.autor_nick] ?? null : null }))
+  return results.map((r) => ({ ...r, autor_figure: r.autor_nick ? figurasPorNick[r.autor_nick] ?? null : null }))
+}
+
+requerimentos.get('/', async (c) => {
+  const status = c.req.query('status')
+  const comFigure = status
+    ? await buscarRequerimentosComFigure(c.env.DB, `WHERE r.status = ? ORDER BY r.criado_em DESC LIMIT 50`, [status])
+    : await buscarRequerimentosComFigure(c.env.DB, `ORDER BY r.criado_em DESC LIMIT 50`)
 
   return c.json(comFigure)
 })
@@ -448,19 +452,13 @@ requerimentos.delete('/:id', async (c) => {
 requerimentos.get('/alvo/:usuarioId', async (c) => {
   const usuarioId = c.req.param('usuarioId')
 
-  const { results } = await c.env.DB.prepare(
-    `SELECT ra.id AS alvo_id, ra.status, ra.decidido_em, ra.motivo_recusa,
-            r.id AS requerimento_id, r.tipo, r.tag_requerimento, r.criado_em, r.tag_aplicada,
-            au.nick AS autor_nick, au.tag AS autor_tag
-     FROM requerimento_alvos ra
-     JOIN requerimentos r ON r.id = ra.requerimento_id
-     LEFT JOIN usuarios au ON au.id = r.autor_id
-     WHERE ra.usuario_id = ?
-     ORDER BY r.criado_em DESC
-     LIMIT 100`
-  ).bind(usuarioId).all()
+  const comFigure = await buscarRequerimentosComFigure(
+    c.env.DB,
+    `WHERE EXISTS (SELECT 1 FROM requerimento_alvos ra WHERE ra.requerimento_id = r.id AND ra.usuario_id = ?) ORDER BY r.criado_em DESC LIMIT 100`,
+    [usuarioId]
+  )
 
-  return c.json(results)
+  return c.json(comFigure)
 })
 
 export default requerimentos

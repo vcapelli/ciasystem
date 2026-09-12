@@ -23,6 +23,170 @@ function formatarDataCurtaReq(iso) {
   return `${String(d.getDate()).padStart(2,'0')} ${MESES[d.getMonth()]} ${d.getFullYear()}`;
 }
 
+/**
+ * Card completo de um requerimento — usado tanto na lista "Recentes"
+ * das páginas de requerimento quanto na linha do tempo do perfil, pra
+ * ficarem idênticos nos dois lugares.
+ * `patentesMapa` = { id: nome } de todas as patentes.
+ * `meAtual` = usuário logado (pra saber se mostra o apêndice de admin).
+ */
+function renderCardRequerimento(r, patentesMapa, meAtual) {
+  const cor = COR_STATUS_REQ[r.status] || COR_STATUS_REQ.pendente;
+  const alvos = r.alvos_json ? JSON.parse(r.alvos_json) : [];
+  const alvoPrincipal = alvos[0];
+  const alvosTexto = alvos.map((a) => a.nick).join(' / ') || '—';
+  let dadosEspecificos = {};
+  try { dadosEspecificos = r.dados_especificos ? JSON.parse(r.dados_especificos) : {}; } catch {}
+
+  const ehInstrucaoInicial = r.tipo === 'instrucao_inicial';
+  const avatarAutor = r.autor_figure ? avatarUrl(r.autor_figure, 'mini', '2') : null;
+  const prefixoId = PREFIXO_IDENTIFICACAO_REQ[r.tipo] ?? '';
+  const tagUsada = dadosEspecificos.tag_utilizada || r.autor_tag || '—';
+  const identificacao = r.tipo === 'exoneracao'
+    ? (alvoPrincipal ? `${alvoPrincipal.nick} [${alvoPrincipal.tag || '---'}] [${tagUsada}] {${r.crime_nome || r.fundamentacao || ''}} - ${formatarDataCurtaReq(r.criado_em)} até ${dadosEspecificos.exoneracao_ate ? formatarDataCurtaReq(dadosEspecificos.exoneracao_ate) : 'Indeterminado'}` : null)
+    : (alvoPrincipal ? `${alvoPrincipal.nick} [${prefixoId}${tagUsada}] ${formatarDataCurtaReq(r.criado_em)}` : null);
+
+  const linhasExtras = [];
+  linhasExtras.push(`<b>${ehInstrucaoInicial ? 'Nick e TAG do Instrutor' : 'Requerido por'}:</b> ${r.autor_nick || '—'}${r.autor_tag ? ` [${r.autor_tag}]` : ''}`);
+  linhasExtras.push(`<b>${ehInstrucaoInicial ? 'Recruta(s) aprovado(s)' : 'Alvo'}:</b> ${alvosTexto}`);
+  if (dadosEspecificos.patente_destino_id && patentesMapa[dadosEspecificos.patente_destino_id]) {
+    const nomeDestino = patentesMapa[dadosEspecificos.patente_destino_id];
+    const idAntiga = alvoPrincipal?.patente_antes_id ?? alvoPrincipal?.patente_atual_id_agora;
+    const nomeAntiga = idAntiga ? patentesMapa[idAntiga] : null;
+    linhasExtras.push(`<b>Destino:</b> ${nomeAntiga && nomeAntiga !== nomeDestino ? `${nomeAntiga} > ${nomeDestino}` : nomeDestino}`);
+  }
+  if (dadosEspecificos.novo_nick) linhasExtras.push(`<b>Novo nickname:</b> ${dadosEspecificos.novo_nick}`);
+  if (r.tag_aplicada) linhasExtras.push(`<b>Nova TAG:</b> ${r.tag_aplicada}`);
+  if (r.crime_nome) linhasExtras.push(`<b>Infração:</b> ${r.crime_nome}`);
+  if (dadosEspecificos.provas) linhasExtras.push(`<b>Provas:</b> ${dadosEspecificos.provas}`);
+  if (dadosEspecificos.data_retorno) linhasExtras.push(`<b>Data de retorno:</b> ${dadosEspecificos.data_retorno}`);
+  if (dadosEspecificos.exoneracao_ate) linhasExtras.push(`<b>Exoneração até:</b> ${dadosEspecificos.exoneracao_ate}`);
+  if (r.fundamentacao) linhasExtras.push(`<b>Motivo:</b> ${r.fundamentacao}`);
+
+  return `
+    <div class="bg-card border border-border text-dark rounded-2xl shadow-sm overflow-hidden" style="border-left: 4px solid ${cor.barra}">
+      <div class="flex items-center justify-between px-4 py-2.5 border-b border-border">
+        <div class="flex items-center gap-2">
+          <p class="text-sm font-bold">${tituloTipoReq(r.tipo)}</p>
+          <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full capitalize ${cor.badge}">${r.status}</span>
+        </div>
+        <p class="text-xs text-muted">${formatarDataHoraReq(r.criado_em)}</p>
+      </div>
+
+      <div class="flex gap-4 px-4 py-4">
+        <div class="w-28 shrink-0 text-center">
+          <span class="h-16 w-16 mx-auto rounded-full bg-basebg border border-border overflow-hidden inline-block">
+            ${avatarAutor ? `<img src="${avatarAutor}" class="w-full h-[190%] object-cover object-top -mt-4 transition-transform duration-300 hover:-translate-y-[10px]" alt="">` : `<span class="w-full h-full flex items-center justify-center text-sm font-bold">${(r.autor_nick || '?').slice(0,2).toUpperCase()}</span>`}
+          </span>
+          <p class="text-sm font-semibold mt-1.5">${r.autor_nick || '—'}</p>
+          <p class="text-[0.65rem] text-muted mt-2">Patente/Cargo:</p>
+          <p class="text-xs font-semibold">${r.autor_patente_nome || '—'}</p>
+        </div>
+
+        <div class="flex-1 text-sm space-y-1.5 min-w-0">
+          <p class="text-muted">${r.autor_patente_nome || ''} <b class="text-dark">${r.autor_nick || ''}</b> escreveu:</p>
+          ${linhasExtras.map((l) => `<p>${l}</p>`).join('')}
+          ${identificacao ? `<p class="font-semibold">• ${identificacao}</p>` : ''}
+          <p class="flex items-center gap-1.5 text-green-600 pt-1"><i class="fa-solid fa-circle-check"></i> Li e concordo com as normas de ${tituloTipoReq(r.tipo).toLowerCase()}.</p>
+
+          <div class="pt-1">
+            <p class="text-[0.65rem] text-muted">Assinatura:</p>
+            <p class="assinatura text-xl leading-tight">${r.autor_nick || ''}</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="border-t border-border px-4 py-3 grid grid-cols-3 gap-3">
+        <div>
+          <p class="text-[0.65rem] text-muted">Status:</p>
+          <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full capitalize ${cor.badge} inline-block mt-1">${r.status}</span>
+        </div>
+        <div>
+          <p class="text-[0.65rem] text-muted">Usuário responsável:</p>
+          <p class="assinatura text-base ${alvoPrincipal?.decidido_por_nick ? 'text-dark' : 'text-muted italic text-xs font-sans'}">${alvoPrincipal?.decidido_por_nick || 'Não preenchido'}</p>
+        </div>
+        <div>
+          <p class="text-[0.65rem] text-muted">Data da decisão:</p>
+          <p class="text-xs mt-1">${alvoPrincipal?.decidido_em ? formatarDataHoraReq(alvoPrincipal.decidido_em) : 'Não preenchida'}</p>
+        </div>
+      </div>
+
+      ${alvoPrincipal?.motivo_recusa ? `
+        <div class="px-4 pb-3">
+          <p class="text-[0.65rem] text-muted">Motivo da recusa:</p>
+          <p class="text-xs mt-0.5 text-red-600">${alvoPrincipal.motivo_recusa}</p>
+        </div>
+      ` : ''}
+
+      ${alvos.length > 1 ? `
+        <div class="flex flex-wrap gap-1.5 px-4 pb-4">
+          ${alvos.map((a) => `<span class="text-xs px-2 py-0.5 rounded-full ${(COR_STATUS_REQ[a.status] || COR_STATUS_REQ.pendente).badge}">${a.nick} · ${a.status}</span>`).join('')}
+        </div>
+      ` : ''}
+
+      ${meAtual?.administrador_sistema ? `
+        <div class="border-t border-border px-4 py-2.5 flex items-center justify-between">
+          <div class="flex gap-2">
+            ${r.status === 'pendente' && alvoPrincipal ? `
+              <button data-acao="aprovar" data-req="${r.id}" data-alvo="${alvoPrincipal.id}" class="btn-decidir text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-500/15 text-green-600 hover:bg-green-500/25 transition-colors">
+                <i class="fa-solid fa-check"></i> Aprovar
+              </button>
+              <button data-acao="reprovar" data-req="${r.id}" data-alvo="${alvoPrincipal.id}" class="btn-decidir text-xs font-semibold px-3 py-1.5 rounded-lg bg-red-500/15 text-red-600 hover:bg-red-500/25 transition-colors">
+                <i class="fa-solid fa-xmark"></i> Reprovar
+              </button>
+            ` : ''}
+            ${r.status !== 'cancelado' ? `
+              <button data-acao="cancelar" data-req="${r.id}" class="btn-decidir text-xs font-semibold px-3 py-1.5 rounded-lg bg-gray-500/15 text-gray-600 hover:bg-gray-500/25 transition-colors">
+                <i class="fa-solid fa-ban"></i> Cancelar
+              </button>
+            ` : ''}
+          </div>
+          <button data-acao="excluir" data-req="${r.id}" title="Excluir do histórico" class="btn-decidir text-muted hover:text-red-600 transition-colors px-2">
+            <i class="fa-solid fa-trash"></i>
+          </button>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+/**
+ * Liga os cliques de Aprovar/Reprovar/Cancelar/Excluir dentro de um
+ * container que tenha cards renderizados por renderCardRequerimento.
+ * `aoConcluir` é chamado depois de qualquer ação, pra recarregar a lista.
+ */
+function ligarAcoesRequerimento(container, aoConcluir) {
+  container.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.btn-decidir');
+    if (!btn) return;
+    const acao = btn.dataset.acao;
+    const reqId = btn.dataset.req;
+
+    if (acao === 'aprovar' || acao === 'reprovar') {
+      let motivo_recusa;
+      if (acao === 'reprovar') {
+        motivo_recusa = prompt('Motivo da recusa:');
+        if (motivo_recusa === null) return;
+      }
+      await apiFetch(`/requerimentos/${reqId}/alvos/${btn.dataset.alvo}/decidir`, {
+        method: 'POST',
+        body: JSON.stringify({ status: acao === 'aprovar' ? 'aprovado' : 'reprovado', motivo_recusa: motivo_recusa || undefined }),
+      });
+      aoConcluir();
+    } else if (acao === 'cancelar') {
+      if (!confirm('Cancelar este requerimento? Se ele já estava aprovado, o efeito aplicado será revertido (ex: volta à patente/TAG/status de antes).')) return;
+      const motivo = prompt('Motivo do cancelamento (opcional):') || undefined;
+      await apiFetch(`/requerimentos/${reqId}/cancelar`, { method: 'POST', body: JSON.stringify({ motivo }) });
+      aoConcluir();
+    } else if (acao === 'excluir') {
+      if (!confirm('Excluir este requerimento definitivamente do histórico? Essa ação não pode ser desfeita.')) return;
+      await apiFetch(`/requerimentos/${reqId}`, { method: 'DELETE' });
+      aoConcluir();
+    }
+  });
+}
+
+
 const PREFIXO_IDENTIFICACAO_REQ = {
   promocao: '', rebaixamento: 'R/',
   // outros tipos entram aqui conforme forem confirmados nos moldes oficiais
@@ -463,123 +627,7 @@ async function montarFormularioRequerimento(config) {
   atualizarOpcaoVoltaLicenca();
 
   function renderCardRecente(r) {
-    const cor = COR_STATUS_REQ[r.status] || COR_STATUS_REQ.pendente;
-    const alvos = r.alvos_json ? JSON.parse(r.alvos_json) : [];
-    const alvoPrincipal = alvos[0];
-    const alvosTexto = alvos.map((a) => a.nick).join(' / ') || '—';
-    let dadosEspecificos = {};
-    try { dadosEspecificos = r.dados_especificos ? JSON.parse(r.dados_especificos) : {}; } catch {}
-
-    const ehInstrucaoInicial = r.tipo === 'instrucao_inicial';
-    const avatarAutor = r.autor_figure ? avatarUrl(r.autor_figure, 'mini', '2') : null;
-    const prefixoId = PREFIXO_IDENTIFICACAO_REQ[r.tipo] ?? '';
-    const tagUsada = dadosEspecificos.tag_utilizada || r.autor_tag || '—';
-    const identificacao = r.tipo === 'exoneracao'
-      ? (alvoPrincipal ? `${alvoPrincipal.nick} [${alvoPrincipal.tag || '---'}] [${tagUsada}] {${r.crime_nome || r.fundamentacao || ''}} - ${formatarDataCurtaReq(r.criado_em)} até ${dadosEspecificos.exoneracao_ate ? formatarDataCurtaReq(dadosEspecificos.exoneracao_ate) : 'Indeterminado'}` : null)
-      : (alvoPrincipal ? `${alvoPrincipal.nick} [${prefixoId}${tagUsada}] ${formatarDataCurtaReq(r.criado_em)}` : null);
-
-    const linhasExtras = [];
-    linhasExtras.push(`<b>${ehInstrucaoInicial ? 'Nick e TAG do Instrutor' : 'Requerido por'}:</b> ${r.autor_nick || '—'}${r.autor_tag ? ` [${r.autor_tag}]` : ''}`);
-    linhasExtras.push(`<b>${ehInstrucaoInicial ? 'Recruta(s) aprovado(s)' : 'Alvo'}:</b> ${alvosTexto}`);
-    if (dadosEspecificos.patente_destino_id && patentesMapa[dadosEspecificos.patente_destino_id]) {
-      const nomeDestino = patentesMapa[dadosEspecificos.patente_destino_id];
-      const idAntiga = alvoPrincipal?.patente_antes_id ?? alvoPrincipal?.patente_atual_id_agora;
-      const nomeAntiga = idAntiga ? patentesMapa[idAntiga] : null;
-      linhasExtras.push(`<b>Destino:</b> ${nomeAntiga && nomeAntiga !== nomeDestino ? `${nomeAntiga} > ${nomeDestino}` : nomeDestino}`);
-    }
-    if (dadosEspecificos.novo_nick) linhasExtras.push(`<b>Novo nickname:</b> ${dadosEspecificos.novo_nick}`);
-    if (r.tag_aplicada) linhasExtras.push(`<b>Nova TAG:</b> ${r.tag_aplicada}`);
-    if (r.crime_nome) linhasExtras.push(`<b>Infração:</b> ${r.crime_nome}`);
-    if (dadosEspecificos.provas) linhasExtras.push(`<b>Provas:</b> ${dadosEspecificos.provas}`);
-    if (dadosEspecificos.data_retorno) linhasExtras.push(`<b>Data de retorno:</b> ${dadosEspecificos.data_retorno}`);
-    if (dadosEspecificos.exoneracao_ate) linhasExtras.push(`<b>Exoneração até:</b> ${dadosEspecificos.exoneracao_ate}`);
-    if (r.fundamentacao) linhasExtras.push(`<b>Motivo:</b> ${r.fundamentacao}`);
-
-    return `
-      <div class="bg-card border border-border text-dark rounded-2xl shadow-sm overflow-hidden" style="border-left: 4px solid ${cor.barra}">
-        <div class="flex items-center justify-between px-4 py-2.5 border-b border-border">
-          <div class="flex items-center gap-2">
-            <p class="text-sm font-bold">${tituloTipoReq(r.tipo)}</p>
-            <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full capitalize ${cor.badge}">${r.status}</span>
-          </div>
-          <p class="text-xs text-muted">${formatarDataHoraReq(r.criado_em)}</p>
-        </div>
-
-        <div class="flex gap-4 px-4 py-4">
-          <div class="w-28 shrink-0 text-center">
-            <span class="h-16 w-16 mx-auto rounded-full bg-basebg border border-border overflow-hidden inline-block">
-              ${avatarAutor ? `<img src="${avatarAutor}" class="w-full h-[190%] object-cover object-top -mt-4 transition-transform duration-300 hover:-translate-y-[10px]" alt="">` : `<span class="w-full h-full flex items-center justify-center text-sm font-bold">${(r.autor_nick || '?').slice(0,2).toUpperCase()}</span>`}
-            </span>
-            <p class="text-sm font-semibold mt-1.5">${r.autor_nick || '—'}</p>
-            <p class="text-[0.65rem] text-muted mt-2">Patente/Cargo:</p>
-            <p class="text-xs font-semibold">${r.autor_patente_nome || '—'}</p>
-          </div>
-
-          <div class="flex-1 text-sm space-y-1.5 min-w-0">
-            <p class="text-muted">${r.autor_patente_nome || ''} <b class="text-dark">${r.autor_nick || ''}</b> escreveu:</p>
-            ${linhasExtras.map((l) => `<p>${l}</p>`).join('')}
-            ${identificacao ? `<p class="font-semibold">• ${identificacao}</p>` : ''}
-            <p class="flex items-center gap-1.5 text-green-600 pt-1"><i class="fa-solid fa-circle-check"></i> Li e concordo com as normas de ${tituloTipoReq(r.tipo).toLowerCase()}.</p>
-
-            <div class="pt-1">
-              <p class="text-[0.65rem] text-muted">Assinatura:</p>
-              <p class="assinatura text-xl leading-tight">${r.autor_nick || ''}</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="border-t border-border px-4 py-3 grid grid-cols-3 gap-3">
-          <div>
-            <p class="text-[0.65rem] text-muted">Status:</p>
-            <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full capitalize ${cor.badge} inline-block mt-1">${r.status}</span>
-          </div>
-          <div>
-            <p class="text-[0.65rem] text-muted">Usuário responsável:</p>
-            <p class="assinatura text-base ${alvoPrincipal?.decidido_por_nick ? 'text-dark' : 'text-muted italic text-xs font-sans'}">${alvoPrincipal?.decidido_por_nick || 'Não preenchido'}</p>
-          </div>
-          <div>
-            <p class="text-[0.65rem] text-muted">Data da decisão:</p>
-            <p class="text-xs mt-1">${alvoPrincipal?.decidido_em ? formatarDataHoraReq(alvoPrincipal.decidido_em) : 'Não preenchida'}</p>
-          </div>
-        </div>
-
-        ${alvoPrincipal?.motivo_recusa ? `
-          <div class="px-4 pb-3">
-            <p class="text-[0.65rem] text-muted">Motivo da recusa:</p>
-            <p class="text-xs mt-0.5 text-red-600">${alvoPrincipal.motivo_recusa}</p>
-          </div>
-        ` : ''}
-
-        ${alvos.length > 1 ? `
-          <div class="flex flex-wrap gap-1.5 px-4 pb-4">
-            ${alvos.map((a) => `<span class="text-xs px-2 py-0.5 rounded-full ${(COR_STATUS_REQ[a.status] || COR_STATUS_REQ.pendente).badge}">${a.nick} · ${a.status}</span>`).join('')}
-          </div>
-        ` : ''}
-
-        ${meAtual?.administrador_sistema ? `
-          <div class="border-t border-border px-4 py-2.5 flex items-center justify-between">
-            <div class="flex gap-2">
-              ${r.status === 'pendente' && alvoPrincipal ? `
-                <button data-acao="aprovar" data-req="${r.id}" data-alvo="${alvoPrincipal.id}" class="btn-decidir text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-500/15 text-green-600 hover:bg-green-500/25 transition-colors">
-                  <i class="fa-solid fa-check"></i> Aprovar
-                </button>
-                <button data-acao="reprovar" data-req="${r.id}" data-alvo="${alvoPrincipal.id}" class="btn-decidir text-xs font-semibold px-3 py-1.5 rounded-lg bg-red-500/15 text-red-600 hover:bg-red-500/25 transition-colors">
-                  <i class="fa-solid fa-xmark"></i> Reprovar
-                </button>
-              ` : ''}
-              ${r.status !== 'cancelado' ? `
-                <button data-acao="cancelar" data-req="${r.id}" class="btn-decidir text-xs font-semibold px-3 py-1.5 rounded-lg bg-gray-500/15 text-gray-600 hover:bg-gray-500/25 transition-colors">
-                  <i class="fa-solid fa-ban"></i> Cancelar
-                </button>
-              ` : ''}
-            </div>
-            <button data-acao="excluir" data-req="${r.id}" title="Excluir do histórico" class="btn-decidir text-muted hover:text-red-600 transition-colors px-2">
-              <i class="fa-solid fa-trash"></i>
-            </button>
-          </div>
-        ` : ''}
-      </div>
-    `;
+    return renderCardRequerimento(r, patentesMapa, meAtual);
   }
 
   async function carregarRecentes() {
@@ -598,34 +646,7 @@ async function montarFormularioRequerimento(config) {
   }
   carregarRecentes();
 
-  document.getElementById('req-recentes').addEventListener('click', async (e) => {
-    const btn = e.target.closest('.btn-decidir');
-    if (!btn) return;
-    const acao = btn.dataset.acao;
-    const reqId = btn.dataset.req;
-
-    if (acao === 'aprovar' || acao === 'reprovar') {
-      let motivo_recusa;
-      if (acao === 'reprovar') {
-        motivo_recusa = prompt('Motivo da recusa:');
-        if (motivo_recusa === null) return;
-      }
-      await apiFetch(`/requerimentos/${reqId}/alvos/${btn.dataset.alvo}/decidir`, {
-        method: 'POST',
-        body: JSON.stringify({ status: acao === 'aprovar' ? 'aprovado' : 'reprovado', motivo_recusa: motivo_recusa || undefined }),
-      });
-      carregarRecentes();
-    } else if (acao === 'cancelar') {
-      if (!confirm('Cancelar este requerimento? Se ele já estava aprovado, o efeito aplicado será revertido (ex: volta à patente/TAG/status de antes).')) return;
-      const motivo = prompt('Motivo do cancelamento (opcional):') || undefined;
-      await apiFetch(`/requerimentos/${reqId}/cancelar`, { method: 'POST', body: JSON.stringify({ motivo }) });
-      carregarRecentes();
-    } else if (acao === 'excluir') {
-      if (!confirm('Excluir este requerimento definitivamente do histórico? Essa ação não pode ser desfeita.')) return;
-      await apiFetch(`/requerimentos/${reqId}`, { method: 'DELETE' });
-      carregarRecentes();
-    }
-  });
+  ligarAcoesRequerimento(document.getElementById('req-recentes'), carregarRecentes);
 
   document.getElementById('form-req').addEventListener('submit', async (e) => {
     e.preventDefault();
