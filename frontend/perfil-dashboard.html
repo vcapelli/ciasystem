@@ -60,6 +60,16 @@
     return `${String(d.getDate()).padStart(2,'0')} ${MESES[d.getMonth()]} ${d.getFullYear()}`;
   }
 
+  const PREFIXO_IDENTIFICACAO = {
+    promocao: '', rebaixamento: 'R/',
+    // outros tipos entram aqui conforme forem confirmados nos moldes oficiais
+  };
+
+  function montarIdentificacao(nick, tipo, autorTag, data) {
+    const prefixo = PREFIXO_IDENTIFICACAO[tipo] ?? '';
+    return `${nick} [${prefixo}${autorTag || '—'}] ${formatarDataCurta(data)}`;
+  }
+
   function tituloTipo(tipo) {
     return tipo.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
   }
@@ -190,7 +200,7 @@
             ` : ''}
 
             <h1 class="text-xl font-display font-bold">${perfil.nick}${perfil.tag ? ` <span class="text-muted font-normal text-base">[${perfil.tag}]</span>` : ''}</h1>
-            <p class="text-xs text-muted mt-1">${perfil.nick}${perfil.tag ? ` [${perfil.tag}]` : ''} · ${formatarDataCurta(perfil.data_ultimo_ato_funcional)}</p>
+            <p class="text-xs text-muted mt-1">${requerimentos[0] ? montarIdentificacao(perfil.nick, requerimentos[0].tipo, requerimentos[0].autor_tag, requerimentos[0].criado_em) : `${perfil.nick}${perfil.tag ? ` [${perfil.tag}]` : ''}`}</p>
             <p class="text-xs text-muted mt-0.5">Último requerimento: ${formatarDataCurta(ultimoRequerimento)}</p>
 
             <div class="mt-2">

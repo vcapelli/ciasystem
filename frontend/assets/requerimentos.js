@@ -6,7 +6,10 @@ function tituloTipoReq(tipo) {
   return tipo.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
 }
 
-const COR_STATUS_REQ = {
+const PREFIXO_IDENTIFICACAO_REQ = {
+  promocao: '', rebaixamento: 'R/',
+  // outros tipos entram aqui conforme forem confirmados nos moldes oficiais
+};
   pendente: { badge: 'bg-gray-500/15 text-gray-600', barra: '#9ca3af' },
   aprovado: { badge: 'bg-green-500/15 text-green-600', barra: '#22c55e' },
   reprovado: { badge: 'bg-red-500/15 text-red-600', barra: '#ef4444' },
@@ -47,6 +50,12 @@ async function montarFormularioRequerimento(config) {
               <input id="req-alvo" autocomplete="off" placeholder="${config.alvoLivre ? 'Digite o nick do Habblet' : 'Buscar por nick…'}"
                 class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
               <div id="req-alvo-sugestoes" class="hidden absolute z-10 mt-1 w-full bg-card border border-border rounded-lg shadow-md max-h-48 overflow-y-auto"></div>
+            </div>
+
+            <div>
+              <label class="block text-xs text-muted mb-1">Sua TAG</label>
+              <input id="req-tag-autor" maxlength="10" placeholder="TAG"
+                class="w-full bg-base border border-border rounded-lg px-3 py-2 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-accent">
             </div>
 
             ${config.tipos.length > 1 ? `
@@ -99,6 +108,13 @@ async function montarFormularioRequerimento(config) {
   `;
 
   const inputAlvo = document.getElementById('req-alvo');
+  const inputTagAutor = document.getElementById('req-tag-autor');
+  apiFetch('/usuarios/me').then(async (r) => {
+    if (r.ok) {
+      const me = await r.json();
+      if (me.tag) inputTagAutor.value = me.tag;
+    }
+  });
   const sugestoesEl = document.getElementById('req-alvo-sugestoes');
   const selectTipo = document.getElementById('req-tipo');
   const campoPatente = document.getElementById('req-campo-patente');
@@ -237,6 +253,9 @@ async function montarFormularioRequerimento(config) {
 
     const ehInstrucaoInicial = r.tipo === 'instrucao_inicial';
     const avatarAutor = r.autor_figure ? avatarUrl(r.autor_figure, 'mini', '2') : null;
+    const prefixoId = PREFIXO_IDENTIFICACAO_REQ[r.tipo] ?? '';
+    const tagUsada = dadosEspecificos.tag_utilizada || r.autor_tag || '—';
+    const identificacao = alvoPrincipal ? `${alvoPrincipal.nick} [${prefixoId}${tagUsada}] ${formatarDataHoraReq(r.criado_em).split(',')[0]}` : null;
 
     const linhasExtras = [];
     linhasExtras.push(`<b>${ehInstrucaoInicial ? 'Nick e TAG do Instrutor' : 'Requerido por'}:</b> ${r.autor_nick || '—'}${r.autor_tag ? ` [${r.autor_tag}]` : ''}`);
@@ -260,7 +279,7 @@ async function montarFormularioRequerimento(config) {
 
         <div class="flex gap-4 px-4 py-4">
           <div class="w-28 shrink-0 text-center">
-            <span class="h-16 w-16 mx-auto rounded-full bg-base border border-border overflow-hidden inline-block">
+            <span class="h-16 w-16 mx-auto rounded-full bg-base border border-border overflow-hidden inline-block transition-transform duration-300 hover:-translate-y-[10px]">
               ${avatarAutor ? `<img src="${avatarAutor}" class="w-full h-[190%] object-cover object-top -mt-4" alt="">` : `<span class="w-full h-full flex items-center justify-center text-sm font-bold">${(r.autor_nick || '?').slice(0,2).toUpperCase()}</span>`}
             </span>
             <p class="text-sm font-semibold mt-1.5">${r.autor_nick || '—'}</p>
@@ -271,6 +290,7 @@ async function montarFormularioRequerimento(config) {
           <div class="flex-1 text-sm space-y-1.5 min-w-0">
             <p class="text-muted">${r.autor_patente_nome || ''} <b class="text-dark">${r.autor_nick || ''}</b> escreveu:</p>
             ${linhasExtras.map((l) => `<p>${l}</p>`).join('')}
+            ${identificacao ? `<p class="font-semibold">• ${identificacao}</p>` : ''}
             <p class="flex items-center gap-1.5 text-green-600 pt-1">✅ Li e concordo com as normas de ${tituloTipoReq(r.tipo).toLowerCase()}.</p>
 
             <div class="pt-1">
@@ -346,6 +366,9 @@ async function montarFormularioRequerimento(config) {
     const dadosEspecificos = {};
     if ((config.tiposComPatente || []).includes(tipo)) {
       dadosEspecificos.patente_destino_id = Number(document.getElementById('req-patente').value);
+    }
+    if (inputTagAutor.value.trim()) {
+      dadosEspecificos.tag_utilizada = inputTagAutor.value.trim().toUpperCase();
     }
 
     const body = {

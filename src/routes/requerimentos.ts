@@ -244,9 +244,11 @@ requerimentos.get('/alvo/:usuarioId', async (c) => {
 
   const { results } = await c.env.DB.prepare(
     `SELECT ra.id AS alvo_id, ra.status, ra.decidido_em, ra.motivo_recusa,
-            r.id AS requerimento_id, r.tipo, r.tag_requerimento, r.criado_em, r.tag_aplicada
+            r.id AS requerimento_id, r.tipo, r.tag_requerimento, r.criado_em, r.tag_aplicada,
+            au.nick AS autor_nick, au.tag AS autor_tag
      FROM requerimento_alvos ra
      JOIN requerimentos r ON r.id = ra.requerimento_id
+     LEFT JOIN usuarios au ON au.id = r.autor_id
      WHERE ra.usuario_id = ?
      ORDER BY r.criado_em DESC
      LIMIT 100`
