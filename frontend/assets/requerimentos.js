@@ -474,7 +474,9 @@ async function montarFormularioRequerimento(config) {
     const avatarAutor = r.autor_figure ? avatarUrl(r.autor_figure, 'mini', '2') : null;
     const prefixoId = PREFIXO_IDENTIFICACAO_REQ[r.tipo] ?? '';
     const tagUsada = dadosEspecificos.tag_utilizada || r.autor_tag || '—';
-    const identificacao = alvoPrincipal ? `${alvoPrincipal.nick} [${prefixoId}${tagUsada}] ${formatarDataCurtaReq(r.criado_em)}` : null;
+    const identificacao = r.tipo === 'exoneracao'
+      ? (alvoPrincipal ? `${alvoPrincipal.nick} [${alvoPrincipal.tag || '---'}] [${tagUsada}] {${r.crime_nome || r.fundamentacao || ''}} - ${formatarDataCurtaReq(r.criado_em)} até ${dadosEspecificos.exoneracao_ate ? formatarDataCurtaReq(dadosEspecificos.exoneracao_ate) : 'Indeterminado'}` : null)
+      : (alvoPrincipal ? `${alvoPrincipal.nick} [${prefixoId}${tagUsada}] ${formatarDataCurtaReq(r.criado_em)}` : null);
 
     const linhasExtras = [];
     linhasExtras.push(`<b>${ehInstrucaoInicial ? 'Nick e TAG do Instrutor' : 'Requerido por'}:</b> ${r.autor_nick || '—'}${r.autor_tag ? ` [${r.autor_tag}]` : ''}`);

@@ -210,6 +210,7 @@ requerimentos.get('/', async (c) => {
         SELECT json_group_array(json_object(
           'id', ra.id,
           'nick', COALESCE(ra.nick_alvo, ua.nick),
+          'tag', ua.tag,
           'status', ra.status,
           'decidido_em', ra.decidido_em,
           'decidido_por_nick', ud.nick,
