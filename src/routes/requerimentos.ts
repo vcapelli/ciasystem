@@ -38,7 +38,7 @@ requerimentos.post('/', async (c) => {
   // Ninguém pode ser alvo do próprio requerimento (promover a si mesmo,
   // contratar a si mesmo, etc.) — exceto 'tag' (criar/alterar a própria
   // TAG) e 'transferencia_conta' (trocar o próprio nick).
-  const TIPOS_PERMITEM_AUTO_ALVO = ['tag', 'transferencia_conta']
+  const TIPOS_PERMITEM_AUTO_ALVO = ['tag', 'transferencia_conta', 'desligamento_honroso']
   if (!TIPOS_PERMITEM_AUTO_ALVO.includes(body.tipo) && body.alvos.some((item) => item === autorId)) {
     return c.json({ erro: 'você não pode ser o alvo do próprio requerimento' }, 400)
   }
@@ -340,7 +340,7 @@ async function reverterEfeitoAlvo(db: D1Database, requerimentoId: string | numbe
 
   try {
     const { antes } = JSON.parse(registroHistorico.detalhes) as {
-      antes: { patente_atual_id: number; corpo: string; status: string; tag: string | null; nick: string } | null
+      antes: { patente_atual_id: number; corpo: string; status: string; tag: string | null; nick: string; grupos_ativos?: number[] } | null
     }
 
     if (antes === null) {
@@ -357,6 +357,13 @@ async function reverterEfeitoAlvo(db: D1Database, requerimentoId: string | numbe
       await db.prepare(
         `UPDATE usuarios SET patente_atual_id = ?, corpo = ?, status = ?, tag = ?, nick = ?, atualizado_em = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
       ).bind(antes.patente_atual_id, antes.corpo, antes.status, antes.tag, antes.nick, usuarioId).run()
+
+      if (Array.isArray(antes.grupos_ativos)) {
+        for (const grupoId of antes.grupos_ativos) {
+          await db.prepare(`UPDATE usuario_grupos SET ativo = 1 WHERE usuario_id = ? AND grupo_id = ?`)
+            .bind(usuarioId, grupoId).run()
+        }
+      }
     }
   } catch {
     // Se reverter falhar (ex: usuário alterado por outra coisa depois),

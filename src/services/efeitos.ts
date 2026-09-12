@@ -129,11 +129,27 @@ export async function aplicarEfeitoAprovacao(
       break
 
     case 'desligamento_honroso':
-      await db
-        .prepare(`UPDATE usuarios SET status = 'desligado_honroso', atualizado_em = ${AGORA} WHERE id = ?`)
+    case 'reforma': {
+      // "Volta a civil": sai de todos os grupos e perde a TAG (some das
+      // listagens), mas mantém patente/corpo como registro histórico —
+      // o schema não permite jogador sem patente/corpo. O histórico de
+      // requerimentos nunca é tocado aqui, continua todo visível.
+      const gruposAtivos = await db
+        .prepare(`SELECT grupo_id FROM usuario_grupos WHERE usuario_id = ? AND ativo = 1`)
         .bind(usuarioId)
+        .all<{ grupo_id: number }>()
+
+      await db.prepare(`UPDATE usuario_grupos SET ativo = 0 WHERE usuario_id = ?`).bind(usuarioId).run()
+      await db
+        .prepare(`UPDATE usuarios SET status = ?, tag = NULL, atualizado_em = ${AGORA} WHERE id = ?`)
+        .bind(tipo === 'reforma' ? 'reformado' : 'desligado_honroso', usuarioId)
         .run()
+
+      // Grava quais grupos ficaram inativos, junto do snapshot "antes"
+      // — sem isso, cancelar depois não saberia quais grupos devolver.
+      ;(antes as Record<string, unknown>).grupos_ativos = gruposAtivos.results.map((g) => g.grupo_id)
       break
+    }
 
     case 'desligamento_desonroso':
       await db
