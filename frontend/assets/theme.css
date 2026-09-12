@@ -84,7 +84,6 @@
    dentro de um card em vez de cobrir a tela inteira. */
 .perfil-banner {
   background-image: url(https://2img.net/i.imgur.com/Hd7TdDr.png);
-  background-repeat: no-repeat;
-  background-size: cover;
+  background-repeat: repeat;
   background-position: center;
 }
