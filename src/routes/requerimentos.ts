@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { gerarTagRequerimento, podeGerirRequerimento, acaoHierarquiaDoTipo } from '../services/requerimentos'
 import { podeAgirSobre, possuiCompetenciaDePromotor } from '../services/hierarquia'
-import { aplicarEfeitoAprovacao, recalcularStatusRequerimento } from '../services/efeitos'
+import { aplicarEfeitoAprovacao, recalcularStatusRequerimento, reverterEfeitoAlvo } from '../services/efeitos'
 import { notificar } from '../services/notificacoes'
 import { registrarEvento } from '../services/logs'
 import { buscarJogadorHabblet } from '../services/habblet'
@@ -65,11 +65,21 @@ requerimentos.post('/', async (c) => {
   const acao = acaoHierarquiaDoTipo(body.tipo)
   if (acao && !autor.administrador_sistema) {
     for (const item of body.alvos) {
-      if (typeof item !== 'number') {
+      let alvoId: number | null = typeof item === 'number' ? item : null
+
+      if (alvoId === null && body.tipo === 'exoneracao') {
+        // Exoneração aceita alvo por nick mesmo sem admin — só checa
+        // hierarquia se esse nick já for de um membro existente;
+        // quem nunca foi membro não tem patente pra proteger.
+        const existente = await c.env.DB.prepare(`SELECT id FROM usuarios WHERE nick = ?`).bind(item).first<{ id: number }>()
+        if (!existente) continue
+        alvoId = existente.id
+      } else if (alvoId === null) {
         return c.json({ erro: `tipo '${body.tipo}' não aceita alvo por nick — usuário precisa já existir` }, 400)
       }
+
       const alvo = await c.env.DB.prepare(`SELECT patente_atual_id FROM usuarios WHERE id = ?`)
-        .bind(item)
+        .bind(alvoId)
         .first<{ patente_atual_id: number }>()
 
       if (!alvo) return c.json({ erro: `alvo ${item} não encontrado` }, 404)
@@ -113,12 +123,27 @@ requerimentos.post('/', async (c) => {
 
   const idsAlvosInseridos: number[] = []
   for (const item of body.alvos) {
-    const insercao =
-      typeof item === 'number'
-        ? await c.env.DB.prepare(`INSERT INTO requerimento_alvos (requerimento_id, usuario_id) VALUES (?, ?)`)
-            .bind(requerimentoId, item).run()
-        : await c.env.DB.prepare(`INSERT INTO requerimento_alvos (requerimento_id, nick_alvo) VALUES (?, ?)`)
-            .bind(requerimentoId, item).run()
+    let usuarioIdResolvido: number | null = null
+    let nickResolvido: string | null = null
+
+    if (typeof item === 'number') {
+      usuarioIdResolvido = item
+    } else if (body.tipo === 'exoneracao') {
+      // Exoneração pode mirar qualquer jogador do Habblet, mesmo quem
+      // nunca teve conta no CIASystem — mas se já existir uma conta
+      // com esse nick, usa ela em vez de tentar criar duplicada.
+      const existente = await c.env.DB.prepare(`SELECT id FROM usuarios WHERE nick = ?`).bind(item).first<{ id: number }>()
+      if (existente) usuarioIdResolvido = existente.id
+      else nickResolvido = item
+    } else {
+      nickResolvido = item
+    }
+
+    const insercao = usuarioIdResolvido !== null
+      ? await c.env.DB.prepare(`INSERT INTO requerimento_alvos (requerimento_id, usuario_id) VALUES (?, ?)`)
+          .bind(requerimentoId, usuarioIdResolvido).run()
+      : await c.env.DB.prepare(`INSERT INTO requerimento_alvos (requerimento_id, nick_alvo) VALUES (?, ?)`)
+          .bind(requerimentoId, nickResolvido).run()
     idsAlvosInseridos.push(Number(insercao.meta.last_row_id))
   }
 
@@ -331,46 +356,9 @@ requerimentos.post('/:id/alvos/:alvoId/decidir', async (c) => {
 // Reverte o efeito aplicado a UM alvo, usando o snapshot "antes"
 // gravado no histórico no momento da aprovação. Usado tanto por
 // cancelar (um requerimento já aprovado) quanto por excluir.
-async function reverterEfeitoAlvo(db: D1Database, requerimentoId: string | number, alvoId: number, usuarioId: number | null) {
-  if (usuarioId === null) return
-  const registroHistorico = await db.prepare(
-    `SELECT detalhes FROM historico WHERE requerimento_id = ? AND requerimento_alvo_id = ?`
-  ).bind(requerimentoId, alvoId).first<{ detalhes: string | null }>()
-  if (!registroHistorico?.detalhes) return
-
-  try {
-    const { antes } = JSON.parse(registroHistorico.detalhes) as {
-      antes: { patente_atual_id: number; corpo: string; status: string; tag: string | null; nick: string; grupos_ativos?: number[] } | null
-    }
-
-    if (antes === null) {
-      // Era uma porta de entrada (o usuário não existia antes deste
-      // requerimento) — reverter significa desfazer a criação. Precisa
-      // limpar as referências que apontam pra esse usuário primeiro
-      // (historico.usuario_id e requerimento_alvos.usuario_id/
-      // decidido_por_id não têm CASCADE), senão o DELETE falha calado.
-      await db.prepare(`DELETE FROM historico WHERE usuario_id = ?`).bind(usuarioId).run()
-      await db.prepare(`UPDATE requerimento_alvos SET usuario_id = NULL WHERE usuario_id = ?`).bind(usuarioId).run()
-      await db.prepare(`UPDATE requerimento_alvos SET decidido_por_id = NULL WHERE decidido_por_id = ?`).bind(usuarioId).run()
-      await db.prepare(`DELETE FROM usuarios WHERE id = ?`).bind(usuarioId).run()
-    } else {
-      await db.prepare(
-        `UPDATE usuarios SET patente_atual_id = ?, corpo = ?, status = ?, tag = ?, nick = ?, atualizado_em = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
-      ).bind(antes.patente_atual_id, antes.corpo, antes.status, antes.tag, antes.nick, usuarioId).run()
-
-      if (Array.isArray(antes.grupos_ativos)) {
-        for (const grupoId of antes.grupos_ativos) {
-          await db.prepare(`UPDATE usuario_grupos SET ativo = 1 WHERE usuario_id = ? AND grupo_id = ?`)
-            .bind(usuarioId, grupoId).run()
-        }
-      }
-    }
-  } catch {
-    // Se reverter falhar (ex: usuário alterado por outra coisa depois),
-    // segue em frente sem travar a operação do admin.
-  }
-}
-
+// Reverte o efeito aplicado a UM alvo, usando o snapshot "antes"
+// gravado no histórico no momento da aprovação. Usado por cancelar,
+// excluir, e pela expiração automática de exoneração temporária.
 requerimentos.post('/:id/cancelar', async (c) => {
   const usuarioId = c.get('usuarioId')
   const id = c.req.param('id')

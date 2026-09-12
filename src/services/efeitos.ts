@@ -83,6 +83,22 @@ export async function aplicarEfeitoAprovacao(
       return { usuarioId, antes: null, depois }
     }
 
+    if (tipo === 'exoneracao') {
+      // Alvo nunca foi membro — cria com uma patente-base (Soldado) só
+      // pra existir no schema (jogador sempre precisa de patente/corpo)
+      // e já aplica a exoneração em seguida.
+      const soldado = await db
+        .prepare(`SELECT id FROM patentes WHERE corpo='militar' AND nome='Soldado'`)
+        .first<{ id: number }>()
+      if (!soldado) throw new Error('patente Soldado não encontrada — a Fase 1 foi aplicada?')
+      const usuarioId = await criarUsuarioDeEntrada(db, alvo.nickAlvo, soldado.id, 'militar')
+      const exoneracaoAte = (dadosEspecificos?.exoneracao_ate as string | undefined) ?? null
+      await db.prepare(`UPDATE usuarios SET status = 'exonerado', exoneracao_ate = ?, atualizado_em = ${AGORA} WHERE id = ?`)
+        .bind(exoneracaoAte, usuarioId).run()
+      const depois = await db.prepare(`SELECT patente_atual_id, corpo, status, tag, nick FROM usuarios WHERE id = ?`).bind(usuarioId).first()
+      return { usuarioId, antes: null, depois }
+    }
+
     throw new Error(`tipo '${tipo}' não suporta alvo por nick (usuário precisa já existir)`)
   }
 
@@ -247,4 +263,49 @@ export async function recalcularStatusRequerimento(db: D1Database, requerimentoI
     .run()
 
   return novoStatus
+}
+
+// Reverte o efeito aplicado a UM alvo, usando o snapshot "antes"
+// gravado no histórico no momento da aprovação. Usado por cancelar,
+// excluir, e pela expiração automática de exoneração temporária
+// (por isso mora aqui em services/, não em routes/ — o cron precisa
+// dela sem depender de um handler HTTP).
+export async function reverterEfeitoAlvo(db: D1Database, requerimentoId: string | number, alvoId: number, usuarioId: number | null) {
+  if (usuarioId === null) return
+  const registroHistorico = await db.prepare(
+    `SELECT detalhes FROM historico WHERE requerimento_id = ? AND requerimento_alvo_id = ?`
+  ).bind(requerimentoId, alvoId).first<{ detalhes: string | null }>()
+  if (!registroHistorico?.detalhes) return
+
+  try {
+    const { antes } = JSON.parse(registroHistorico.detalhes) as {
+      antes: { patente_atual_id: number; corpo: string; status: string; tag: string | null; nick: string; grupos_ativos?: number[] } | null
+    }
+
+    if (antes === null) {
+      // Era uma porta de entrada (o usuário não existia antes deste
+      // requerimento) — reverter significa desfazer a criação. Precisa
+      // limpar as referências que apontam pra esse usuário primeiro
+      // (historico.usuario_id e requerimento_alvos.usuario_id/
+      // decidido_por_id não têm CASCADE), senão o DELETE falha calado.
+      await db.prepare(`DELETE FROM historico WHERE usuario_id = ?`).bind(usuarioId).run()
+      await db.prepare(`UPDATE requerimento_alvos SET usuario_id = NULL WHERE usuario_id = ?`).bind(usuarioId).run()
+      await db.prepare(`UPDATE requerimento_alvos SET decidido_por_id = NULL WHERE decidido_por_id = ?`).bind(usuarioId).run()
+      await db.prepare(`DELETE FROM usuarios WHERE id = ?`).bind(usuarioId).run()
+    } else {
+      await db.prepare(
+        `UPDATE usuarios SET patente_atual_id = ?, corpo = ?, status = ?, tag = ?, nick = ?, atualizado_em = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
+      ).bind(antes.patente_atual_id, antes.corpo, antes.status, antes.tag, antes.nick, usuarioId).run()
+
+      if (Array.isArray(antes.grupos_ativos)) {
+        for (const grupoId of antes.grupos_ativos) {
+          await db.prepare(`UPDATE usuario_grupos SET ativo = 1 WHERE usuario_id = ? AND grupo_id = ?`)
+            .bind(usuarioId, grupoId).run()
+        }
+      }
+    }
+  } catch {
+    // Se reverter falhar (ex: usuário alterado por outra coisa depois),
+    // segue em frente sem travar a operação do admin.
+  }
 }

@@ -56,6 +56,7 @@ function formatarDataHoraReq(iso) {
  *   tipoVoltaLicencaCondicional: bool, // só habilita 'volta_licenca' se o alvo estiver de licença
  *   usaNovoNick: bool,                 // transferência de conta
  *   permiteAutoAlvo: bool,             // se true, ignora o bloqueio de "não pode ser o próprio alvo" (ex: TAGs)
+ *   verificarExistente: bool,          // com alvoLivre, tenta achar um membro já existente antes de cair no preview genérico do Habblet
  * }
  */
 async function montarFormularioRequerimento(config) {
@@ -339,6 +340,9 @@ async function montarFormularioRequerimento(config) {
     });
   } else {
     // Nick livre (porta de entrada) — busca direto na API do Habblet.
+    // Se a página permitir (ex: exoneração), tenta antes achar um
+    // membro já existente com esse nick, pra mostrar o perfil de
+    // verdade em vez do preview genérico do Habblet.
     let debounce;
     inputAlvo.addEventListener('input', () => {
       clearTimeout(debounce);
@@ -351,6 +355,18 @@ async function montarFormularioRequerimento(config) {
           renderPreviewVazio('Você não pode ser o alvo do próprio requerimento.');
           return;
         }
+
+        if (config.verificarExistente) {
+          const perfilResp = await apiFetch(`/usuarios/nick/${encodeURIComponent(nick)}`);
+          if (perfilResp.ok) {
+            const perfil = await perfilResp.json();
+            const historicoResp = await apiFetch(`/requerimentos/alvo/${perfil.id}`);
+            const historico = historicoResp.ok ? await historicoResp.json() : [];
+            renderPreviewUsuario(perfil, historico[0]?.criado_em);
+            return;
+          }
+        }
+
         const resp = await apiFetch(`/habblet/perfil/${encodeURIComponent(nick)}`);
         if (!resp.ok) { renderPreviewVazio('Jogador não encontrado no Habblet.'); return; }
         renderPreviewHabblet(await resp.json());

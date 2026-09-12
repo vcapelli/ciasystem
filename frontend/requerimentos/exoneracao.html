@@ -31,7 +31,8 @@
   montarLayout('/requerimentos/exoneracao.html').then((me) => {
     if (me) montarFormularioRequerimento({
     tipos: [{ value: 'exoneracao', label: 'Exoneração' }],
-    alvoLivre: false,
+    alvoLivre: true,
+    verificarExistente: true,
     tiposComCrime: ['exoneracao'],
     tiposComPermissao: ['exoneracao'],
     tiposComExoneracao: ['exoneracao'],

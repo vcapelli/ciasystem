@@ -5,25 +5,31 @@ compatibility_date = "2026-01-01"
 # --- Ambiente de desenvolvimento ---
 # wrangler deploy --env dev
 [env.dev]
-name = "ciasystem-worker"
+name = "ciasystem-dev"
 routes = [
   { pattern = "api-rpg-dev.vitorcape.com.br/*", zone_name = "vitorcape.com.br" }
 ]
 
+[env.dev.triggers]
+crons = ["0 3 * * *"]  # todo dia às 03:00 UTC — expira exonerações temporárias vencidas
+
 [[env.dev.d1_databases]]
 binding = "DB"
 database_name = "ciasystem-db-dev"
-database_id = "9a41e38c-c3ea-49b7-bec1-209ed45552d3"
+database_id = "<preencher-com-o-uuid-do-banco-dev>"
 
 # --- Ambiente de produção ---
 # wrangler deploy --env production
 [env.production]
-name = "ciasystem-worker-production"
+name = "ciasystem"
 routes = [
   { pattern = "api-rpg.vitorcape.com.br/*", zone_name = "vitorcape.com.br" }
 ]
 
+[env.production.triggers]
+crons = ["0 3 * * *"]  # todo dia às 03:00 UTC — expira exonerações temporárias vencidas
+
 [[env.production.d1_databases]]
 binding = "DB"
 database_name = "ciasystem-db"
-database_id = "80d9eef0-b4ed-4a65-b068-90ecfd0b5803"
+database_id = "<preencher-com-o-uuid-do-banco-producao>"
