@@ -16,7 +16,7 @@ crons = ["0 3 * * *"]  # todo dia às 03:00 UTC — expira exonerações tempor�
 [[env.dev.d1_databases]]
 binding = "DB"
 database_name = "ciasystem-db-dev"
-database_id = "<preencher-com-o-uuid-do-banco-dev>"
+database_id = "9a41e38c-c3ea-49b7-bec1-209ed45552d3"
 
 # --- Ambiente de produção ---
 # wrangler deploy --env production
@@ -32,4 +32,4 @@ crons = ["0 3 * * *"]  # todo dia às 03:00 UTC — expira exonerações tempor�
 [[env.production.d1_databases]]
 binding = "DB"
 database_name = "ciasystem-db"
-database_id = "<preencher-com-o-uuid-do-banco-producao>"
+database_id = "80d9eef0-b4ed-4a65-b068-90ecfd0b5803"

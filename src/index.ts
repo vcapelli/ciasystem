@@ -41,6 +41,15 @@ type Variables = {
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
+// Handler global de erro — sem isso, uma exceção não tratada em
+// qualquer rota vira um 500 genérico e o stack trace real some do
+// `wrangler tail` (só aparece a mensagem curta). Com isso, o stack
+// completo vai pro log, mesmo que o cliente só veja um erro limpo.
+app.onError((err, c) => {
+  console.error('Erro não tratado:', err instanceof Error ? err.stack : err)
+  return c.json({ erro: 'erro interno do servidor' }, 500)
+})
+
 // CORS: o frontend (ciasystem.vitorcape.com.br) fica em domínio
 // diferente da API (api-rpg[-dev].vitorcape.com.br) — precisa liberar
 // explicitamente. Os endereços locais cobrem o desenvolvimento do
