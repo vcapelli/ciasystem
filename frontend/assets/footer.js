@@ -7,9 +7,11 @@ async function montarFooter() {
   const raiz = document.getElementById('layout-footer');
   if (!raiz) return;
 
-  // Heartbeat: marca "online agora" — uma vez ao carregar a página, e
-  // depois a cada 2 minutos enquanto a aba ficar aberta.
-  apiFetch('/usuarios/heartbeat', { method: 'POST' }).catch(() => {});
+  // Heartbeat: marca "online agora" — uma vez ao carregar a página
+  // (aguardado, pra já aparecer na lista de quem carrega o footer
+  // logo em seguida), e depois a cada 2 minutos enquanto a aba ficar
+  // aberta (esse aí não precisa esperar).
+  await apiFetch('/usuarios/heartbeat', { method: 'POST' }).catch(() => {});
   setInterval(() => apiFetch('/usuarios/heartbeat', { method: 'POST' }).catch(() => {}), 120000);
 
   const [config, linksResp, redesResp, onlineResp] = await Promise.all([
@@ -65,7 +67,7 @@ async function montarFooter() {
   if (config.footer_estilo === 'estilo2') {
     const alinhamento = { esquerda: 'justify-start', centro: 'justify-center', direita: 'justify-end' }[config.footer_estilo2_imagem_alinhamento] || 'justify-center';
     raiz.innerHTML = `
-      <footer class="mt-12 bg-basebg border-t border-border pt-8 pb-6 space-y-6">
+      <footer class="mt-12 bg-basebg border-t border-border px-6 pt-8 pb-6 space-y-6">
         ${config.footer_estilo2_imagem_url ? `
           <div class="flex ${alinhamento}">
             <img src="${config.footer_estilo2_imagem_url}" class="max-h-16 object-contain" alt="">
@@ -97,7 +99,7 @@ async function montarFooter() {
 
   // Estilo 1 (padrão)
   raiz.innerHTML = `
-    <footer class="mt-12 bg-basebg border-t border-border pt-8 pb-6 space-y-6">
+    <footer class="mt-12 bg-basebg border-t border-border px-6 pt-8 pb-6 space-y-6">
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
         <div class="flex items-center gap-2.5">
           <div class="h-9 w-9 rounded-lg bg-accent/25 flex items-center justify-center text-accent font-black text-sm overflow-hidden shrink-0">
@@ -110,9 +112,9 @@ async function montarFooter() {
           ${renderLinksUteis()}
         </div>
         <div>
-          <h3 class="text-xs font-semibold uppercase tracking-wide text-muted mb-2">Online agora (${usuariosOnline.length})</h3>
+          <h3 class="text-xs font-semibold uppercase tracking-wide text-muted mb-2">Online agora</h3>
           <div class="flex flex-wrap gap-2">
-            ${usuariosOnline.length ? usuariosOnline.map(renderAvatarOnline).join('') : '<p class="text-xs text-muted">Ninguém além de você.</p>'}
+            ${usuariosOnline.length ? usuariosOnline.map(renderAvatarOnline).join('') : '<p class="text-xs text-muted">Ninguém online no momento.</p>'}
           </div>
         </div>
       </div>
