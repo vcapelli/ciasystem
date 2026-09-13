@@ -42,23 +42,39 @@ const Auth = {
   },
 
   async renovarSessao() {
-    const refreshToken = this.getRefreshToken();
-    if (!refreshToken) return false;
+    // Compartilha a MESMA renovação entre chamadas simultâneas: se
+    // várias requisições pegam 401 ao mesmo tempo (comum agora que o
+    // footer soma mais chamadas em toda página), cada uma tentando
+    // renovar por conta própria faria a segunda usar um refresh_token
+    // já consumido pela primeira — perdendo a sessão à toa. Com isso,
+    // todas esperam a mesma promessa em andamento.
+    if (this._renovacaoEmAndamento) return this._renovacaoEmAndamento;
 
-    const resposta = await fetch(`${API_BASE}/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    });
+    this._renovacaoEmAndamento = (async () => {
+      const refreshToken = this.getRefreshToken();
+      if (!refreshToken) return false;
 
-    if (!resposta.ok) {
-      this.limparSessao();
-      return false;
+      const resposta = await fetch(`${API_BASE}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+
+      if (!resposta.ok) {
+        this.limparSessao();
+        return false;
+      }
+
+      const dados = await resposta.json();
+      this.salvarSessao(dados);
+      return true;
+    })();
+
+    try {
+      return await this._renovacaoEmAndamento;
+    } finally {
+      this._renovacaoEmAndamento = null;
     }
-
-    const dados = await resposta.json();
-    this.salvarSessao(dados);
-    return true;
   },
 };
 
