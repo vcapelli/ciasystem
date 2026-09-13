@@ -17,7 +17,7 @@
 
   <aside id="layout-sidebar" class="w-60 fixed left-0 top-[72px] bottom-0 border-r border-border bg-basebg p-4 overflow-y-auto"></aside>
 
-  <main class="ml-60 max-w-3xl px-6 py-8">
+  <main class="ml-60 px-6 py-8">
     <a href="/documentos.html" class="text-xs text-muted hover:text-dark transition-colors">← Voltar pros documentos</a>
     <div id="conteudo" class="mt-2">
       <p class="text-sm text-muted">Carregando…</p>
@@ -26,9 +26,11 @@
 
 <script src="/assets/api.js"></script>
 <script src="/assets/layout.js"></script>
+<script src="/assets/editor-html.js"></script>
 <script>
-  const params = new URLSearchParams(window.location.search);
-  const documentoId = params.get('id');
+  const partesUrl = window.location.pathname.split('/').filter(Boolean); // ['documentos', slug, numero?]
+  const slugDocumento = partesUrl[1];
+  const numeroVersaoAntiga = partesUrl[2] || null;
 
   const BADGE_STATUS_DOC = {
     vigente: 'bg-green-500/15 text-green-600', em_revisao: 'bg-accent/15 text-accent', arquivado: 'bg-white/10 text-muted',
@@ -41,10 +43,49 @@
     guia_defesa_batalhao: 'Guia de Defesa do Batalhão', outro: 'Outro',
   };
   const LABEL_PAPEL = { autor: 'Autor', revisor: 'Revisor', administrador_forum: 'Administrador do Fórum' };
+  const ORDEM_PAPEIS = ['autor', 'revisor', 'administrador_forum'];
 
   function formatarData(iso) {
     if (!iso) return '—';
     return new Date(iso).toLocaleString('pt-BR');
+  }
+
+  async function buscarFigure(nick) {
+    if (!nick) return null;
+    try {
+      const r = await apiFetch(`/usuarios/nick/${encodeURIComponent(nick)}`);
+      return r.ok ? (await r.json()).figure : null;
+    } catch { return null; }
+  }
+
+  async function renderRodapeRevisao(info) {
+    if (!info) return '';
+    const comAvatar = await Promise.all(ORDEM_PAPEIS.map(async (papel) => {
+      const a = info.aprovadores.find((x) => x.papel === papel);
+      const figure = await buscarFigure(a?.usuario_nick);
+      return { papel, a, figure };
+    }));
+
+    return `
+      <hr class="my-4 border-border">
+      <div class="grid grid-cols-3 gap-4 text-xs mb-4">
+        <div><p class="uppercase text-muted font-semibold mb-0.5">Revisão</p><p>nº ${info.numero_revisao}</p></div>
+        <div><p class="uppercase text-muted font-semibold mb-0.5">Data da revisão</p><p>${formatarData(info.criado_em)}</p></div>
+        <div><p class="uppercase text-muted font-semibold mb-0.5">Implementado em</p><p>${formatarData(info.implementado_em)}</p></div>
+      </div>
+      <div class="flex flex-wrap gap-6">
+        ${comAvatar.map(({ papel, a, figure }) => `
+          <div class="text-center">
+            <span class="h-12 w-12 mx-auto rounded-full bg-basebg border border-border overflow-hidden inline-block">
+              ${figure ? `<img src="${avatarUrl(figure, 'mini', '2')}" class="w-full h-[190%] object-cover object-top -mt-3 transition-transform duration-300 hover:-translate-y-[10px]" alt="">` : `<span class="w-full h-full flex items-center justify-center text-xs font-bold">${(a?.usuario_nick || '?').slice(0,2).toUpperCase()}</span>`}
+            </span>
+            <p class="text-xs font-semibold mt-1">${LABEL_PAPEL[papel]}</p>
+            <p class="text-xs text-muted">${a?.usuario_nick || '—'}</p>
+            ${a?.comentario ? `<p class="text-xs text-muted italic mt-0.5">"${a.comentario}"</p>` : ''}
+          </div>
+        `).join('')}
+      </div>
+    `;
   }
 
   async function buscarUsuarios(termo) {
@@ -77,31 +118,54 @@
     });
   }
 
+  // ---------- Visão de uma versão antiga (somente leitura) ----------
+  async function montarVersaoAntiga() {
+    const container = document.getElementById('conteudo');
+    const resp = await apiFetch(`/documentos/slug/${slugDocumento}/versao/${Number(numeroVersaoAntiga)}`);
+    if (!resp.ok) { container.innerHTML = '<p class="text-sm text-red-500 mt-2">Versão não encontrada.</p>'; return; }
+    const { documento, revisao } = await resp.json();
+
+    container.innerHTML = `
+      <div class="flex items-center justify-between mt-2 mb-1">
+        <h1 class="text-xl font-display font-bold">${documento.titulo}</h1>
+        <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-white/10 text-muted">Versão arquivada nº ${revisao.numero_revisao}</span>
+      </div>
+      <p class="text-xs text-muted mb-4">
+        Esta é uma versão anterior, não é mais a vigente.
+        <a href="/documentos/${slugDocumento}" class="text-accent hover:underline">Ver versão atual →</a>
+      </p>
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5">
+        <div class="text-sm">${revisao.conteudo_proposto}</div>
+        <div id="rodape-versao-antiga"></div>
+      </div>
+    `;
+    document.getElementById('rodape-versao-antiga').innerHTML = await renderRodapeRevisao(revisao);
+  }
+
   // ---------- Vista principal do documento (vigente + lista de revisões) ----------
   async function montarDocumento(me) {
     const container = document.getElementById('conteudo');
     container.innerHTML = '<p class="text-sm text-muted mt-2">Carregando…</p>';
 
-    const [docResp, revisoesResp] = await Promise.all([
-      apiFetch(`/documentos/${documentoId}`),
-      apiFetch(`/documentos/${documentoId}/revisoes`),
-    ]);
+    const docResp = await apiFetch(`/documentos/slug/${slugDocumento}`);
     if (!docResp.ok) { container.innerHTML = '<p class="text-sm text-red-500 mt-2">Documento não encontrado.</p>'; return; }
     const doc = await docResp.json();
-    const revisoes = revisoesResp.ok ? await revisoesResp.json() : [];
 
+    const revisoesResp = await apiFetch(`/documentos/${doc.id}/revisoes`);
+    const revisoes = revisoesResp.ok ? await revisoesResp.json() : [];
     const revisaoEmCurso = revisoes.find((r) => !['implementado', 'cancelado', 'reprovado'].includes(r.status));
+    const versoesImplementadas = revisoes.filter((r) => r.status === 'implementado');
 
     container.innerHTML = `
       <div class="flex items-center justify-between mt-2 mb-1">
         <h1 class="text-xl font-display font-bold">${doc.titulo}</h1>
         <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full capitalize ${BADGE_STATUS_DOC[doc.status] || ''}">${doc.status.replace(/_/g, ' ')}</span>
       </div>
-      <p class="text-xs text-muted mb-4">${TIPOS_DOC[doc.tipo] || doc.tipo} · revisão vigente nº ${doc.numero_revisao_atual} · atualizado em ${formatarData(doc.atualizado_em)}</p>
+      <p class="text-xs text-muted mb-4">${TIPOS_DOC[doc.tipo] || doc.tipo} · /documentos/${slugDocumento}</p>
 
       <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-5">
-        <h2 class="text-xs font-semibold uppercase tracking-wide text-muted mb-2">Conteúdo vigente</h2>
-        <div class="text-sm whitespace-pre-wrap">${doc.conteudo_atual}</div>
+        <div class="text-sm">${doc.conteudo_atual}</div>
+        <div id="rodape-atual"></div>
       </div>
 
       ${!revisaoEmCurso ? `
@@ -114,6 +178,17 @@
           <p class="text-sm font-semibold text-accent">Já existe uma revisão em andamento (nº ${revisaoEmCurso.numero_revisao}) — clique pra ver</p>
         </a>
       `}
+
+      ${versoesImplementadas.length ? `
+        <h2 class="text-sm font-bold uppercase tracking-wide text-muted mb-3">Versões anteriores</h2>
+        <div class="flex flex-wrap gap-2 mb-6">
+          ${versoesImplementadas.map((r) => `
+            <a href="/documentos/${slugDocumento}/${String(r.numero_revisao).padStart(2, '0')}" class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-card border border-border hover:bg-basebg transition-colors">
+              Versão ${String(r.numero_revisao).padStart(2, '0')}
+            </a>
+          `).join('')}
+        </div>
+      ` : ''}
 
       <h2 class="text-sm font-bold uppercase tracking-wide text-muted mb-3">Histórico de revisões</h2>
       <div class="space-y-2">
@@ -129,8 +204,12 @@
       </div>
     `;
 
+    if (doc.ultima_revisao_implementada) {
+      document.getElementById('rodape-atual').innerHTML = await renderRodapeRevisao(doc.ultima_revisao_implementada);
+    }
+
     container.querySelectorAll('[data-ver-revisao]').forEach((a) => {
-      a.addEventListener('click', (e) => { e.preventDefault(); montarRevisao(me, a.dataset.verRevisao); });
+      a.addEventListener('click', (e) => { e.preventDefault(); montarRevisao(me, doc, a.dataset.verRevisao); });
     });
 
     const btnAbrir = document.getElementById('btn-abrir-revisao');
@@ -143,9 +222,8 @@
         form.classList.remove('hidden');
         form.innerHTML = `
           <form class="space-y-3">
-            <label class="text-xs text-muted">Conteúdo proposto
-              <textarea data-campo="conteudo_proposto" rows="8" class="w-full mt-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">${doc.conteudo_atual}</textarea>
-            </label>
+            <label class="block text-xs text-muted mb-1">Conteúdo proposto</label>
+            ${htmlEditorHtml('editor-nova-revisao', doc.conteudo_atual)}
             <label class="text-xs text-muted">O que pretende alterar? (descrição inicial)
               <textarea data-campo="descricao_inicial" rows="2" required class="w-full mt-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></textarea>
             </label>
@@ -167,6 +245,7 @@
             <p data-erro class="hidden text-xs text-red-500"></p>
           </form>
         `;
+        ligarEditorHtml('editor-nova-revisao');
 
         let revisorId = null, administradorForumId = null;
         ligarAutocompleteUsuario(
@@ -186,10 +265,10 @@
             erroEl.classList.remove('hidden');
             return;
           }
-          const resp = await apiFetch(`/documentos/${documentoId}/revisoes`, {
+          const resp = await apiFetch(`/documentos/${doc.id}/revisoes`, {
             method: 'POST',
             body: JSON.stringify({
-              conteudo_proposto: form.querySelector('[data-campo="conteudo_proposto"]').value,
+              conteudo_proposto: document.getElementById('editor-nova-revisao-textarea').value,
               descricao_inicial: form.querySelector('[data-campo="descricao_inicial"]').value.trim(),
               revisor_id: revisorId,
               administrador_forum_id: administradorForumId,
@@ -207,16 +286,15 @@
     }
   }
 
-  // ---------- Vista de uma revisão específica ----------
-  async function montarRevisao(me, revisaoId) {
+  // ---------- Vista de uma revisão específica (em andamento) ----------
+  async function montarRevisao(me, doc, revisaoId) {
     const container = document.getElementById('conteudo');
     container.innerHTML = '<p class="text-sm text-muted mt-2">Carregando…</p>';
 
-    const resp = await apiFetch(`/documentos/${documentoId}/revisoes/${revisaoId}`);
+    const resp = await apiFetch(`/documentos/${doc.id}/revisoes/${revisaoId}`);
     if (!resp.ok) { container.innerHTML = '<p class="text-sm text-red-500 mt-2">Revisão não encontrada.</p>'; return; }
     const r = await resp.json();
 
-    const meuPapel = r.aprovadores.find((a) => a.usuario_id === me.id);
     const administradorForum = r.aprovadores.find((a) => a.papel === 'administrador_forum');
     const souAdministradorForumDesta = administradorForum?.usuario_id === me.id;
 
@@ -233,7 +311,7 @@
           <h2 class="text-xs font-semibold uppercase tracking-wide text-muted">Conteúdo proposto</h2>
           ${r.status !== 'implementado' && r.status !== 'cancelado' && r.autor_id === me.id ? '<button id="btn-editar-conteudo" class="text-xs text-accent hover:underline">Editar</button>' : ''}
         </div>
-        <div id="conteudo-proposto-view" class="text-sm whitespace-pre-wrap">${r.conteudo_proposto}</div>
+        <div id="conteudo-proposto-view" class="text-sm">${r.conteudo_proposto}</div>
         <div id="conteudo-proposto-edit" class="hidden"></div>
       </div>
 
@@ -302,19 +380,21 @@
     if (btnEditar) {
       btnEditar.addEventListener('click', () => {
         document.getElementById('conteudo-proposto-view').classList.add('hidden');
+        btnEditar.classList.add('hidden');
         const editArea = document.getElementById('conteudo-proposto-edit');
         editArea.classList.remove('hidden');
         editArea.innerHTML = `
-          <textarea rows="8" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">${r.conteudo_proposto}</textarea>
+          ${htmlEditorHtml('editor-editar-conteudo', r.conteudo_proposto)}
           <button id="btn-salvar-conteudo" class="mt-2 text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Salvar</button>
         `;
+        ligarEditorHtml('editor-editar-conteudo');
         editArea.querySelector('#btn-salvar-conteudo').addEventListener('click', async () => {
-          const novoConteudo = editArea.querySelector('textarea').value;
-          await apiFetch(`/documentos/${documentoId}/revisoes/${revisaoId}/historico`, {
+          const novoConteudo = document.getElementById('editor-editar-conteudo-textarea').value;
+          await apiFetch(`/documentos/${doc.id}/revisoes/${revisaoId}/historico`, {
             method: 'POST',
             body: JSON.stringify({ descricao: 'Conteúdo proposto editado.', conteudo_proposto: novoConteudo }),
           });
-          montarRevisao(me, revisaoId);
+          montarRevisao(me, doc, revisaoId);
         });
       });
     }
@@ -322,11 +402,11 @@
     container.querySelectorAll('[data-decidir-papel]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const comentario = btn.dataset.status === 'reprovado' ? (prompt('Motivo da reprovação (opcional):') || undefined) : undefined;
-        await apiFetch(`/documentos/${documentoId}/revisoes/${revisaoId}/aprovadores/${btn.dataset.decidirPapel}/decidir`, {
+        await apiFetch(`/documentos/${doc.id}/revisoes/${revisaoId}/aprovadores/${btn.dataset.decidirPapel}/decidir`, {
           method: 'POST',
           body: JSON.stringify({ status: btn.dataset.status, comentario }),
         });
-        montarRevisao(me, revisaoId);
+        montarRevisao(me, doc, revisaoId);
       });
     });
 
@@ -335,11 +415,11 @@
       btnAgendar.addEventListener('click', async () => {
         const valor = document.getElementById('input-agendar').value;
         if (!valor) return;
-        await apiFetch(`/documentos/${documentoId}/revisoes/${revisaoId}/agendar`, {
+        await apiFetch(`/documentos/${doc.id}/revisoes/${revisaoId}/agendar`, {
           method: 'POST',
           body: JSON.stringify({ agendado_para: new Date(valor).toISOString() }),
         });
-        montarRevisao(me, revisaoId);
+        montarRevisao(me, doc, revisaoId);
       });
     }
 
@@ -347,7 +427,7 @@
     if (btnImplementar) {
       btnImplementar.addEventListener('click', async () => {
         if (!confirm('Implementar essa revisão agora? Isso substitui o conteúdo vigente do documento.')) return;
-        await apiFetch(`/documentos/${documentoId}/revisoes/${revisaoId}/implementar`, { method: 'POST' });
+        await apiFetch(`/documentos/${doc.id}/revisoes/${revisaoId}/implementar`, { method: 'POST' });
         montarDocumento(me);
       });
     }
@@ -357,19 +437,20 @@
       formHistorico.addEventListener('submit', async (e) => {
         e.preventDefault();
         const input = formHistorico.querySelector('input');
-        await apiFetch(`/documentos/${documentoId}/revisoes/${revisaoId}/historico`, {
+        await apiFetch(`/documentos/${doc.id}/revisoes/${revisaoId}/historico`, {
           method: 'POST',
           body: JSON.stringify({ descricao: input.value.trim() }),
         });
-        montarRevisao(me, revisaoId);
+        montarRevisao(me, doc, revisaoId);
       });
     }
   }
 
   montarLayout('/documentos.html').then((me) => {
     if (!me) return;
-    if (!documentoId) { document.getElementById('conteudo').innerHTML = '<p class="text-sm text-red-500 mt-2">Nenhum documento especificado.</p>'; return; }
-    montarDocumento(me);
+    if (!slugDocumento) { document.getElementById('conteudo').innerHTML = '<p class="text-sm text-red-500 mt-2">Nenhum documento especificado.</p>'; return; }
+    if (numeroVersaoAntiga) montarVersaoAntiga();
+    else montarDocumento(me);
   });
 </script>
 </body>

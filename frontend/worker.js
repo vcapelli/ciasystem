@@ -12,8 +12,7 @@
 const REESCRITAS = [
   { prefixo: '/perfil/', arquivo: '/perfil-dashboard' },
   { prefixo: '/grupos/', arquivo: '/grupos-dashboard' },
-  // outras entram aqui conforme construímos os próximos lotes:
-  // { prefixo: '/documentos/', arquivo: '/documento-ver' },
+  { prefixo: '/documentos/', arquivo: '/documento-dashboard' },
 ];
 
 export default {

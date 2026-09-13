@@ -17,7 +17,7 @@
 
   <aside id="layout-sidebar" class="w-60 fixed left-0 top-[72px] bottom-0 border-r border-border bg-basebg p-4 overflow-y-auto"></aside>
 
-  <main class="ml-60 max-w-3xl px-6 py-8">
+  <main class="ml-60 px-6 py-8">
     <div class="flex items-center justify-between mb-4">
       <h1 class="text-xl font-display font-bold">Documentos</h1>
       <button id="btn-novo-documento" class="hidden text-xs font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">
@@ -34,6 +34,7 @@
 
 <script src="/assets/api.js"></script>
 <script src="/assets/layout.js"></script>
+<script src="/assets/editor-html.js"></script>
 <script>
   const BADGE_STATUS_DOC = {
     vigente: 'bg-green-500/15 text-green-600',
@@ -51,7 +52,7 @@
 
     const lista = document.getElementById('lista-documentos');
     lista.innerHTML = documentos.length ? documentos.map((d) => `
-      <a href="/documento-dashboard.html?id=${d.id}" class="flex items-center justify-between bg-card border border-border rounded-2xl shadow-sm px-5 py-4 hover:bg-basebg transition-colors">
+      <a href="/documentos/${d.slug}" class="flex items-center justify-between bg-card border border-border rounded-2xl shadow-sm px-5 py-4 hover:bg-basebg transition-colors">
         <div>
           <p class="text-sm font-semibold">${d.titulo}</p>
           <p class="text-xs text-muted mt-0.5">${TIPOS_DOC[d.tipo] || d.tipo} · revisão nº ${d.numero_revisao_atual}</p>
@@ -71,22 +72,31 @@
       container.innerHTML = `
         <form class="space-y-3">
           <input data-campo="titulo" placeholder="Título" required class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <label class="block text-xs text-muted">URL do documento
+            <div class="flex items-center mt-1">
+              <span class="text-sm text-muted bg-basebg border border-r-0 border-border rounded-l-lg px-3 py-2">/documentos/</span>
+              <input data-campo="slug" placeholder="constituicao-militar" required pattern="[a-z0-9]+(-[a-z0-9]+)*" class="flex-1 bg-basebg border border-border rounded-r-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            </div>
+          </label>
           <select data-campo="tipo" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
             ${Object.entries(TIPOS_DOC).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}
           </select>
-          <textarea data-campo="conteudo_atual" rows="8" placeholder="Conteúdo inicial do documento" required class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></textarea>
+          <label class="block text-xs text-muted mb-1">Conteúdo inicial</label>
+          ${htmlEditorHtml('editor-novo-doc', '')}
           <button type="submit" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Criar</button>
           <p data-erro class="hidden text-xs text-red-500"></p>
         </form>
       `;
+      ligarEditorHtml('editor-novo-doc');
       container.querySelector('form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const resp = await apiFetch('/documentos', {
           method: 'POST',
           body: JSON.stringify({
             titulo: container.querySelector('[data-campo="titulo"]').value.trim(),
+            slug: container.querySelector('[data-campo="slug"]').value.trim(),
             tipo: container.querySelector('[data-campo="tipo"]').value,
-            conteudo_atual: container.querySelector('[data-campo="conteudo_atual"]').value,
+            conteudo_atual: document.getElementById('editor-novo-doc-textarea').value,
           }),
         });
         if (!resp.ok) {
@@ -96,8 +106,8 @@
           erroEl.classList.remove('hidden');
           return;
         }
-        const { id } = await resp.json();
-        window.location.href = `/documento-dashboard.html?id=${id}`;
+        const { slug } = await resp.json();
+        window.location.href = `/documentos/${slug}`;
       });
     });
   }

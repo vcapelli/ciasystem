@@ -43,6 +43,7 @@
     const abas = [
       { id: 'hierarquia', label: 'Hierarquia' },
       { id: 'permissoes', label: 'Permissões' },
+      { id: 'documentos', label: 'Documentos' },
       { id: 'sugestoes', label: 'Sugestões' },
       { id: 'banners', label: 'Banners' },
       { id: 'infracoes', label: 'Infrações' },
@@ -747,6 +748,139 @@
     `;
   }
 
+  // ---------- Documentos: quem pode criar/editar/deletar ----------
+  async function carregarPermissoesDocumentos() {
+    const raiz = document.getElementById('conteudo-aba');
+    raiz.innerHTML = '<p class="text-sm text-muted">Carregando…</p>';
+
+    const [permResp, gruposResp] = await Promise.all([apiFetch('/documentos-permissoes'), apiFetch('/grupos')]);
+    const permissoesLista = permResp.ok ? await permResp.json() : [];
+    const grupos = gruposResp.ok ? await gruposResp.json() : [];
+
+    raiz.innerHTML = `
+      <div class="bg-card border border-border rounded-2xl shadow-sm divide-y divide-border overflow-hidden mb-5">
+        ${permissoesLista.length ? permissoesLista.map((p) => `
+          <div class="flex items-center justify-between px-4 py-3">
+            <div>
+              <p class="text-sm font-semibold">${p.usuario_nick ? `Usuário: ${p.usuario_nick}` : `Grupo: ${p.grupo_nome}`}</p>
+              <p class="text-xs text-muted mt-0.5">
+                ${[p.pode_criar && 'Criar', p.pode_editar && 'Editar', p.pode_deletar && 'Deletar'].filter(Boolean).join(' + ')}
+                · definido por ${p.definido_por_nick || '—'}
+              </p>
+            </div>
+            <button data-remover-permissao-doc="${p.id}" class="text-muted hover:text-red-600 transition-colors px-2">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
+        `).join('') : '<p class="text-sm text-muted p-4">Nenhuma permissão concedida ainda — só administradores do sistema mexem em documentos por enquanto.</p>'}
+      </div>
+
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Conceder nova permissão</h2>
+        <form id="form-permissao-doc" class="space-y-3">
+          <div class="flex gap-2">
+            <button type="button" data-alvo-modo-doc="usuario" class="btn-alvo-modo-doc flex-1 text-xs font-semibold px-3 py-2 rounded-lg bg-accent text-white">Usuário</button>
+            <button type="button" data-alvo-modo-doc="grupo" class="btn-alvo-modo-doc flex-1 text-xs font-semibold px-3 py-2 rounded-lg bg-basebg text-muted">Grupo</button>
+          </div>
+
+          <div id="campo-alvo-usuario-doc" class="relative">
+            <input id="perm-doc-usuario-nick" placeholder="Buscar por nick…" autocomplete="off" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            <div id="perm-doc-usuario-sugestoes" class="hidden absolute z-10 mt-1 w-full bg-card border border-border rounded-lg shadow-md max-h-48 overflow-y-auto"></div>
+          </div>
+          <div id="campo-alvo-grupo-doc" class="hidden">
+            <select id="perm-doc-grupo-id" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+              ${grupos.map((g) => `<option value="${g.id}">${g.nome}</option>`).join('')}
+            </select>
+          </div>
+
+          <div class="flex gap-4">
+            <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="perm-doc-criar"> Pode criar</label>
+            <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="perm-doc-editar"> Pode editar</label>
+            <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="perm-doc-deletar"> Pode deletar</label>
+          </div>
+
+          <button type="submit" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Conceder</button>
+          <p id="perm-doc-erro" class="hidden text-xs text-red-500"></p>
+        </form>
+      </div>
+    `;
+
+    let alvoModo = 'usuario';
+    let usuarioSelecionadoId = null;
+
+    raiz.querySelectorAll('.btn-alvo-modo-doc').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        alvoModo = btn.dataset.alvoModoDoc;
+        raiz.querySelectorAll('.btn-alvo-modo-doc').forEach((b) => b.className = 'btn-alvo-modo-doc flex-1 text-xs font-semibold px-3 py-2 rounded-lg bg-basebg text-muted');
+        btn.className = 'btn-alvo-modo-doc flex-1 text-xs font-semibold px-3 py-2 rounded-lg bg-accent text-white';
+        document.getElementById('campo-alvo-usuario-doc').classList.toggle('hidden', alvoModo !== 'usuario');
+        document.getElementById('campo-alvo-grupo-doc').classList.toggle('hidden', alvoModo !== 'grupo');
+      });
+    });
+
+    let debounce;
+    const inputNick = document.getElementById('perm-doc-usuario-nick');
+    const sugestoes = document.getElementById('perm-doc-usuario-sugestoes');
+    inputNick.addEventListener('input', () => {
+      usuarioSelecionadoId = null;
+      clearTimeout(debounce);
+      const termo = inputNick.value.trim();
+      if (termo.length < 2) { sugestoes.classList.add('hidden'); return; }
+      debounce = setTimeout(async () => {
+        const r = await apiFetch(`/usuarios?busca=${encodeURIComponent(termo)}`);
+        const lista = r.ok ? await r.json() : [];
+        sugestoes.innerHTML = lista.length
+          ? lista.map((u) => `<button type="button" data-id="${u.id}" data-nick="${u.nick}" class="w-full text-left px-3 py-2 text-sm hover:bg-basebg transition-colors">${u.nick}</button>`).join('')
+          : '<p class="px-3 py-2 text-sm text-muted">Nenhum usuário encontrado.</p>';
+        sugestoes.classList.remove('hidden');
+      }, 250);
+    });
+    sugestoes.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-id]');
+      if (!btn) return;
+      usuarioSelecionadoId = Number(btn.dataset.id);
+      inputNick.value = btn.dataset.nick;
+      sugestoes.classList.add('hidden');
+    });
+
+    raiz.querySelectorAll('[data-remover-permissao-doc]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Remover essa permissão?')) return;
+        await apiFetch(`/documentos-permissoes/${btn.dataset.removerPermissaoDoc}`, { method: 'DELETE' });
+        carregarPermissoesDocumentos();
+      });
+    });
+
+    document.getElementById('form-permissao-doc').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const erroEl = document.getElementById('perm-doc-erro');
+      erroEl.classList.add('hidden');
+
+      if (alvoModo === 'usuario' && !usuarioSelecionadoId) {
+        erroEl.textContent = 'Selecione um usuário na busca.'; erroEl.classList.remove('hidden'); return;
+      }
+
+      const resp = await apiFetch('/documentos-permissoes', {
+        method: 'POST',
+        body: JSON.stringify({
+          usuario_id: alvoModo === 'usuario' ? usuarioSelecionadoId : undefined,
+          grupo_id: alvoModo === 'grupo' ? Number(document.getElementById('perm-doc-grupo-id').value) : undefined,
+          pode_criar: document.getElementById('perm-doc-criar').checked,
+          pode_editar: document.getElementById('perm-doc-editar').checked,
+          pode_deletar: document.getElementById('perm-doc-deletar').checked,
+        }),
+      });
+
+      if (!resp.ok) {
+        const d = await resp.json().catch(() => ({}));
+        erroEl.textContent = d.erro || 'Não foi possível conceder.';
+        erroEl.classList.remove('hidden');
+        return;
+      }
+      carregarPermissoesDocumentos();
+    });
+  }
+
   // ---------- Sugestões ----------
   async function carregarSugestoes() {
     const raiz = document.getElementById('conteudo-aba');
@@ -950,6 +1084,7 @@
   const CARREGADORES_ABA = {
     hierarquia: carregarHierarquia,
     permissoes: carregarPermissoes,
+    documentos: carregarPermissoesDocumentos,
     sugestoes: carregarSugestoes,
     banners: carregarBanners,
     infracoes: carregarInfracoes,

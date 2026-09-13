@@ -10,22 +10,83 @@ const documentos = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
 documentos.post('/', async (c) => {
   const usuarioId = c.get('usuarioId')
-  const body = await c.req.json<{ titulo: string; tipo: string; conteudo_atual: string }>()
+  const body = await c.req.json<{ titulo: string; tipo: string; conteudo_atual: string; slug: string }>()
 
   if (!(await podeGerirDocumento(c.env.DB, usuarioId, 'criar'))) {
     return c.json({ erro: 'sem permissão para criar documentos' }, 403)
   }
 
-  const { meta } = await c.env.DB.prepare(
-    `INSERT INTO documentos (titulo, tipo, conteudo_atual) VALUES (?, ?, ?)`
-  ).bind(body.titulo, body.tipo, body.conteudo_atual).run()
+  if (!body.slug || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(body.slug)) {
+    return c.json({ erro: 'slug precisa ser minúsculo, só letras/números/hífen (ex: constituicao-militar)' }, 400)
+  }
 
-  return c.json({ id: meta.last_row_id }, 201)
+  try {
+    const { meta } = await c.env.DB.prepare(
+      `INSERT INTO documentos (titulo, tipo, conteudo_atual, slug) VALUES (?, ?, ?, ?)`
+    ).bind(body.titulo, body.tipo, body.conteudo_atual, body.slug).run()
+    return c.json({ id: meta.last_row_id, slug: body.slug }, 201)
+  } catch {
+    return c.json({ erro: 'já existe um documento com esse slug' }, 409)
+  }
 })
 
 documentos.get('/', async (c) => {
   const { results } = await c.env.DB.prepare(`SELECT * FROM documentos ORDER BY titulo`).all()
   return c.json(results)
+})
+
+// Monta o resumo da última revisão IMPLEMENTADA de um documento — usado
+// no rodapé da tela (número/data da revisão, data de implementação,
+// comentários e os 3 aprovadores). `null` se o documento nunca foi revisado.
+async function buscarUltimaRevisaoImplementada(db: D1Database, documentoId: number) {
+  const revisao = await db.prepare(
+    `SELECT id, numero_revisao, criado_em, implementado_em, autor_id
+     FROM documento_revisoes
+     WHERE documento_id = ? AND status = 'implementado'
+     ORDER BY numero_revisao DESC LIMIT 1`
+  ).bind(documentoId).first<{ id: number; numero_revisao: number; criado_em: string; implementado_em: string; autor_id: number }>()
+
+  if (!revisao) return null
+
+  const { results: aprovadores } = await db.prepare(
+    `SELECT dra.papel, dra.usuario_id, dra.comentario, u.nick AS usuario_nick
+     FROM documento_revisao_aprovadores dra LEFT JOIN usuarios u ON u.id = dra.usuario_id
+     WHERE dra.revisao_id = ?`
+  ).bind(revisao.id).all()
+
+  return { ...revisao, aprovadores }
+}
+
+documentos.get('/slug/:slug', async (c) => {
+  const doc = await c.env.DB.prepare(`SELECT * FROM documentos WHERE slug = ?`).bind(c.req.param('slug')).first<{ id: number }>()
+  if (!doc) return c.json({ erro: 'não encontrado' }, 404)
+
+  const ultimaRevisaoImplementada = await buscarUltimaRevisaoImplementada(c.env.DB, doc.id)
+  return c.json({ ...doc, ultima_revisao_implementada: ultimaRevisaoImplementada })
+})
+
+// GET /documentos/slug/:slug/versao/:numero — visão somente-leitura de
+// uma versão antiga JÁ IMPLEMENTADA (não confundir com uma revisão em
+// andamento, que se acessa por id normalmente).
+documentos.get('/slug/:slug/versao/:numero', async (c) => {
+  const doc = await c.env.DB.prepare(`SELECT id, titulo, tipo FROM documentos WHERE slug = ?`)
+    .bind(c.req.param('slug')).first<{ id: number; titulo: string; tipo: string }>()
+  if (!doc) return c.json({ erro: 'documento não encontrado' }, 404)
+
+  const revisao = await c.env.DB.prepare(
+    `SELECT dr.*, au.nick AS autor_nick
+     FROM documento_revisoes dr LEFT JOIN usuarios au ON au.id = dr.autor_id
+     WHERE dr.documento_id = ? AND dr.numero_revisao = ? AND dr.status = 'implementado'`
+  ).bind(doc.id, c.req.param('numero')).first()
+  if (!revisao) return c.json({ erro: 'versão não encontrada' }, 404)
+
+  const { results: aprovadores } = await c.env.DB.prepare(
+    `SELECT dra.papel, dra.usuario_id, dra.comentario, u.nick AS usuario_nick
+     FROM documento_revisao_aprovadores dra LEFT JOIN usuarios u ON u.id = dra.usuario_id
+     WHERE dra.revisao_id = ?`
+  ).bind((revisao as { id: number }).id).all()
+
+  return c.json({ documento: doc, revisao: { ...revisao, aprovadores } })
 })
 
 documentos.get('/:id', async (c) => {
