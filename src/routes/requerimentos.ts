@@ -97,6 +97,13 @@ requerimentos.post('/', async (c) => {
 
       if (!alvo) return c.json({ erro: `alvo ${item} não encontrado` }, 404)
 
+      // Auto-alvo nos tipos que permitem isso (tag, transferência de
+      // conta, desligamento honroso): a checagem de hierarquia não faz
+      // sentido aqui — a pessoa e o alvo são a mesma patente por
+      // definição, então "precisa ser hierarquicamente superior ao
+      // alvo" nunca passaria.
+      if (alvoId === autorId && TIPOS_PERMITEM_AUTO_ALVO.includes(body.tipo)) continue
+
       const { permitido, requerCfoOuPro } = await podeAgirSobre(c.env.DB, acao, autor.patente_atual_id, alvo.patente_atual_id)
 
       if (!permitido) {
