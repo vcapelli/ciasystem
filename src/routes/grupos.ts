@@ -310,7 +310,10 @@ grupos.post('/:slug/registros', async (c) => {
 grupos.post('/:slug/aulas', async (c) => {
   const usuarioId = c.get('usuarioId')
   const slug = c.req.param('slug')
-  const body = await c.req.json<{ titulo: string; descricao?: string; conteudo: string; nivel_minimo_id?: number; ordem?: number }>()
+  const body = await c.req.json<{
+    titulo: string; descricao?: string; conteudo: string; abreviacao?: string; slug: string
+    categoria_id?: number; nivel_minimo_id?: number; ordem?: number
+  }>()
 
   const grupo = await c.env.DB.prepare(`SELECT id, permite_aulas FROM grupos WHERE slug = ?`)
     .bind(slug).first<{ id: number; permite_aulas: number }>()
@@ -320,13 +323,131 @@ grupos.post('/:slug/aulas', async (c) => {
   if (!(await ehAdminDoGrupo(c.env.DB, usuarioId, grupo.id))) {
     return c.json({ erro: 'sem permissão de administrador neste grupo' }, 403)
   }
+  if (!body.slug || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(body.slug)) {
+    return c.json({ erro: 'slug precisa ser minúsculo, só letras/números/hífen' }, 400)
+  }
 
-  const { meta } = await c.env.DB.prepare(
-    `INSERT INTO grupo_aulas (grupo_id, titulo, descricao, conteudo, nivel_minimo_id, ordem, criado_por_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
-  ).bind(grupo.id, body.titulo, body.descricao ?? null, body.conteudo, body.nivel_minimo_id ?? null, body.ordem ?? 0, usuarioId).run()
+  try {
+    const { meta } = await c.env.DB.prepare(
+      `INSERT INTO grupo_aulas (grupo_id, titulo, descricao, conteudo, abreviacao, slug, categoria_id, nivel_minimo_id, ordem, criado_por_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(
+      grupo.id, body.titulo, body.descricao ?? null, body.conteudo, body.abreviacao ?? null, body.slug,
+      body.categoria_id ?? null, body.nivel_minimo_id ?? null, body.ordem ?? 0, usuarioId
+    ).run()
+    return c.json({ id: meta.last_row_id }, 201)
+  } catch {
+    return c.json({ erro: 'já existe uma aula com esse slug neste grupo' }, 409)
+  }
+})
 
+grupos.patch('/:slug/aulas/:aulaId', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  const { slug, aulaId } = c.req.param()
+  const body = await c.req.json<{
+    titulo?: string; descricao?: string; conteudo?: string; abreviacao?: string; slug?: string
+    categoria_id?: number | null; nivel_minimo_id?: number | null; ordem?: number
+  }>()
+
+  const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
+  if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
+  if (!(await ehAdminDoGrupo(c.env.DB, usuarioId, grupo.id))) {
+    return c.json({ erro: 'sem permissão de administrador neste grupo' }, 403)
+  }
+
+  const campos: string[] = []
+  const valores: unknown[] = []
+  if (body.titulo !== undefined) { campos.push('titulo = ?'); valores.push(body.titulo) }
+  if (body.descricao !== undefined) { campos.push('descricao = ?'); valores.push(body.descricao) }
+  if (body.conteudo !== undefined) { campos.push('conteudo = ?'); valores.push(body.conteudo) }
+  if (body.abreviacao !== undefined) { campos.push('abreviacao = ?'); valores.push(body.abreviacao) }
+  if (body.slug !== undefined) { campos.push('slug = ?'); valores.push(body.slug) }
+  if (body.categoria_id !== undefined) { campos.push('categoria_id = ?'); valores.push(body.categoria_id) }
+  if (body.nivel_minimo_id !== undefined) { campos.push('nivel_minimo_id = ?'); valores.push(body.nivel_minimo_id) }
+  if (body.ordem !== undefined) { campos.push('ordem = ?'); valores.push(body.ordem) }
+  if (!campos.length) return c.json({ ok: true })
+
+  try {
+    await c.env.DB.prepare(
+      `UPDATE grupo_aulas SET ${campos.join(', ')}, atualizado_em = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ? AND grupo_id = ?`
+    ).bind(...valores, aulaId, grupo.id).run()
+    return c.json({ ok: true })
+  } catch {
+    return c.json({ erro: 'já existe uma aula com esse slug neste grupo' }, 409)
+  }
+})
+
+grupos.delete('/:slug/aulas/:aulaId', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  const { slug, aulaId } = c.req.param()
+
+  const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
+  if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
+  if (!(await ehAdminDoGrupo(c.env.DB, usuarioId, grupo.id))) {
+    return c.json({ erro: 'sem permissão de administrador neste grupo' }, 403)
+  }
+
+  await c.env.DB.prepare(`UPDATE grupo_aulas SET ativo = 0 WHERE id = ? AND grupo_id = ?`).bind(aulaId, grupo.id).run()
+  return c.json({ ok: true })
+})
+
+// --- Categorias de aula ---
+
+grupos.get('/:slug/aulas-categorias', async (c) => {
+  const slug = c.req.param('slug')
+  const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
+  if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
+
+  const { results } = await c.env.DB.prepare(`SELECT * FROM grupo_aulas_categorias WHERE grupo_id = ? ORDER BY ordem, nome`)
+    .bind(grupo.id).all()
+  return c.json(results)
+})
+
+grupos.post('/:slug/aulas-categorias', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  const slug = c.req.param('slug')
+  const body = await c.req.json<{ nome: string; ordem?: number }>()
+
+  const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
+  if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
+  if (!(await ehAdminDoGrupo(c.env.DB, usuarioId, grupo.id))) {
+    return c.json({ erro: 'sem permissão de administrador neste grupo' }, 403)
+  }
+
+  const { meta } = await c.env.DB.prepare(`INSERT INTO grupo_aulas_categorias (grupo_id, nome, ordem) VALUES (?, ?, ?)`)
+    .bind(grupo.id, body.nome, body.ordem ?? 0).run()
   return c.json({ id: meta.last_row_id }, 201)
+})
+
+grupos.patch('/:slug/aulas-categorias/:catId', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  const { slug, catId } = c.req.param()
+  const body = await c.req.json<{ nome?: string; ordem?: number }>()
+
+  const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
+  if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
+  if (!(await ehAdminDoGrupo(c.env.DB, usuarioId, grupo.id))) {
+    return c.json({ erro: 'sem permissão de administrador neste grupo' }, 403)
+  }
+
+  await c.env.DB.prepare(`UPDATE grupo_aulas_categorias SET nome = COALESCE(?, nome), ordem = COALESCE(?, ordem) WHERE id = ? AND grupo_id = ?`)
+    .bind(body.nome ?? null, body.ordem ?? null, catId, grupo.id).run()
+  return c.json({ ok: true })
+})
+
+grupos.delete('/:slug/aulas-categorias/:catId', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  const { slug, catId } = c.req.param()
+
+  const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
+  if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
+  if (!(await ehAdminDoGrupo(c.env.DB, usuarioId, grupo.id))) {
+    return c.json({ erro: 'sem permissão de administrador neste grupo' }, 403)
+  }
+
+  await c.env.DB.prepare(`UPDATE grupo_aulas SET categoria_id = NULL WHERE categoria_id = ?`).bind(catId).run()
+  await c.env.DB.prepare(`DELETE FROM grupo_aulas_categorias WHERE id = ? AND grupo_id = ?`).bind(catId, grupo.id).run()
+  return c.json({ ok: true })
 })
 
 grupos.get('/:slug/aulas', async (c) => {
@@ -353,6 +474,33 @@ grupos.get('/:slug/aulas', async (c) => {
   }
 
   return c.json(visiveis)
+})
+
+// GET /:slug/aulas/:aulaSlug — uma aula específica (mesma checagem de
+// nível mínimo da listagem), pra página individual.
+grupos.get('/:slug/aulas/:aulaSlug', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  const { slug, aulaSlug } = c.req.param()
+
+  const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
+  if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
+
+  const aula = await c.env.DB.prepare(`SELECT * FROM grupo_aulas WHERE grupo_id = ? AND slug = ? AND ativo = 1`)
+    .bind(grupo.id, aulaSlug).first<{ nivel_minimo_id: number | null }>()
+  if (!aula) return c.json({ erro: 'aula não encontrada' }, 404)
+
+  if (aula.nivel_minimo_id !== null) {
+    const membro = await c.env.DB.prepare(
+      `SELECT gn.ordem FROM usuario_grupos ug JOIN grupo_niveis gn ON gn.id = ug.nivel_id
+       WHERE ug.usuario_id = ? AND ug.grupo_id = ? AND ug.ativo = 1`
+    ).bind(usuarioId, grupo.id).first<{ ordem: number }>()
+    const minimo = await c.env.DB.prepare(`SELECT ordem FROM grupo_niveis WHERE id = ?`).bind(aula.nivel_minimo_id).first<{ ordem: number }>()
+    if (!membro || !minimo || membro.ordem < minimo.ordem) {
+      return c.json({ erro: 'você não tem acesso a esta aula' }, 403)
+    }
+  }
+
+  return c.json(aula)
 })
 
 // --- Páginas do hub ---

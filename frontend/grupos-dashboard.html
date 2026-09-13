@@ -32,27 +32,44 @@
 <script src="/assets/api.js"></script>
 <script src="/assets/footer.js"></script>
 <script src="/assets/layout.js"></script>
+<script src="/assets/editor-html.js"></script>
+<script src="/assets/seletor-usuarios.js"></script>
 <script>
-  const partes = location.pathname.split('/').filter(Boolean); // ['grupos', slug, aba?]
+  // Formatos de URL:
+  //   /grupos/{slug}                → membros
+  //   /grupos/{slug}/noticias
+  //   /grupos/{slug}/registros
+  //   /grupos/{slug}/aulas           → lista de aulas (categorizada)
+  //   /grupos/{slug}/aulas/{aulaSlug} → aula individual
+  //   /grupos/{slug}/configuracoes
+  const partes = location.pathname.split('/').filter(Boolean);
   const slug = decodeURIComponent(partes[1] || '');
   const aba = partes[2] || 'membros';
+  const subPagina = partes[3] || null; // slug da aula, quando aba === 'aulas'
 
   const TIPO_LABEL = {
     companhia: 'Companhia', subcompanhia: 'Subcompanhia',
     orgao_topo: 'Órgão de Topo', setor_inteligencia: 'Setor de Inteligência',
   };
-
   const TIPO_REGISTRO_LABEL = {
     admissao: 'Admissão', promocao: 'Promoção', rebaixamento: 'Rebaixamento', saida: 'Saída',
   };
 
-  function renderAbas(ehAdmin) {
+  function formatarDataCurtaGrupo(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    return `${String(d.getDate()).padStart(2,'0')} ${MESES[d.getMonth()]} ${d.getFullYear()}`;
+  }
+
+  function renderAbas(grupo, souAdminDoGrupo) {
     const abas = [
       { id: 'membros', label: 'Membros', href: `/grupos/${slug}` },
       { id: 'noticias', label: 'Notícias', href: `/grupos/${slug}/noticias` },
       { id: 'registros', label: 'Requerimentos internos', href: `/grupos/${slug}/registros` },
     ];
-    if (ehAdmin) abas.push({ id: 'configuracoes', label: 'Configurações', href: `/grupos/${slug}/configuracoes` });
+    if (grupo.permite_aulas) abas.push({ id: 'aulas', label: 'Aulas', href: `/grupos/${slug}/aulas` });
+    if (souAdminDoGrupo) abas.push({ id: 'configuracoes', label: 'Configurações', href: `/grupos/${slug}/configuracoes` });
 
     return `
       <div class="bg-card border border-border rounded-2xl shadow-sm px-5 pt-3 mb-4">
@@ -67,18 +84,45 @@
     `;
   }
 
-  function renderMembro(m) {
-    const avatar = m.figure ? avatarUrl(m.figure, 'mini') : null;
+  // ---------- Membros (igual às listagens: agrupado por nível, com avatar) ----------
+  async function renderMembrosAgrupados(membros, niveis) {
+    await Promise.all(membros.map(async (m) => {
+      if (m.figure !== undefined) return;
+      try {
+        const r = await apiFetch(`/usuarios/nick/${encodeURIComponent(m.nick)}`);
+        m.figure = r.ok ? (await r.json()).figure : null;
+      } catch { m.figure = null; }
+    }));
+
+    const gruposPorNivel = [...niveis].sort((a, b) => b.ordem - a.ordem).map((nv) => ({
+      nivel: nv,
+      membros: membros.filter((m) => m.nivel_id === nv.id),
+    }));
+
     return `
-      <a href="/perfil/${m.nick}" class="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-basebg transition-colors">
-        <div class="flex items-center gap-3">
-          <span class="h-9 w-9 rounded-full bg-border overflow-hidden inline-block shrink-0">
-            ${avatar ? `<img src="${avatar}" class="w-full h-[190%] object-cover object-top" alt="">` : `<span class="w-full h-full flex items-center justify-center text-xs font-semibold">${m.nick.slice(0,2).toUpperCase()}</span>`}
-          </span>
-          <span class="text-sm font-medium">${m.nick}${m.tag ? ` <span class="text-muted font-normal">[${m.tag}]</span>` : ''}</span>
-        </div>
-        <span class="text-xs text-muted">${m.nivel}${m.administrador_grupo ? ' · Admin' : ''}</span>
-      </a>
+      <div class="space-y-4">
+        ${gruposPorNivel.map(({ nivel, membros: lista }) => `
+          <div class="bg-card border border-border rounded-2xl shadow-sm overflow-hidden">
+            <div class="flex items-center gap-3 px-4 py-3 bg-basebg border-b border-border">
+              <p class="text-sm font-bold uppercase tracking-wide">${nivel.nome}</p>
+              <span class="text-xs text-muted ml-auto">${lista.length}</span>
+            </div>
+            <div class="divide-y divide-border">
+              ${lista.length ? lista.map((m) => `
+                <a href="/perfil/${m.nick}" class="flex items-center justify-between px-4 py-2.5 hover:bg-basebg transition-colors">
+                  <div class="flex items-center gap-3">
+                    <span class="h-9 w-9 rounded-full bg-basebg border border-border overflow-hidden inline-block shrink-0">
+                      ${m.figure ? `<img src="${avatarUrl(m.figure, 'mini', '2')}" class="w-full h-[190%] object-cover object-top -mt-2 transition-transform duration-300 hover:-translate-y-[8px]" alt="">` : `<span class="w-full h-full flex items-center justify-center text-xs font-bold">${m.nick.slice(0,2).toUpperCase()}</span>`}
+                    </span>
+                    <span class="text-sm font-medium">${m.nick}${m.tag ? ` <span class="text-muted font-normal">[${m.tag}]</span>` : ''}${m.administrador_grupo ? ' <span class="text-accent text-xs font-semibold">· Admin</span>' : ''}</span>
+                  </div>
+                  <span class="text-xs text-muted">desde ${formatarDataCurtaGrupo(m.data_ingresso)}</span>
+                </a>
+              `).join('') : '<p class="text-sm text-muted px-4 py-3">Ninguém nesse cargo no momento.</p>'}
+            </div>
+          </div>
+        `).join('')}
+      </div>
     `;
   }
 
@@ -116,7 +160,211 @@
     `;
   }
 
-  function renderConfiguracoes(grupo) {
+  // ---------- Aulas: lista categorizada + página individual ----------
+  async function montarAulas(grupo, souAdminDoGrupo) {
+    const container = document.getElementById('conteudo-principal');
+
+    if (subPagina) { await montarAulaIndividual(grupo, souAdminDoGrupo, container); return; }
+
+    const [aulasResp, categoriasResp] = await Promise.all([
+      apiFetch(`/grupos/${slug}/aulas`), apiFetch(`/grupos/${slug}/aulas-categorias`),
+    ]);
+    const aulas = aulasResp.ok ? await aulasResp.json() : [];
+    const categorias = categoriasResp.ok ? await categoriasResp.json() : [];
+
+    const semCategoria = aulas.filter((a) => !a.categoria_id);
+    const grupos = [
+      ...categorias.map((cat) => ({ categoria: cat, itens: aulas.filter((a) => a.categoria_id === cat.id) })),
+      ...(semCategoria.length ? [{ categoria: { id: null, nome: 'Sem categoria' }, itens: semCategoria }] : []),
+    ];
+
+    container.innerHTML = `
+      ${souAdminDoGrupo ? `
+        <div class="flex gap-2 mb-4">
+          <button id="btn-nova-aula" class="text-xs font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-3 py-2 transition-colors"><i class="fa-solid fa-plus"></i> Nova aula</button>
+          <button id="btn-nova-categoria-aula" class="text-xs font-semibold bg-card border border-border hover:bg-basebg rounded-lg px-3 py-2 transition-colors"><i class="fa-solid fa-plus"></i> Nova categoria</button>
+        </div>
+        <div id="form-nova-aula" class="hidden mb-4"></div>
+        <div id="form-nova-categoria-aula" class="hidden mb-4"></div>
+      ` : ''}
+      ${grupos.length ? grupos.map(({ categoria, itens }) => `
+        <div class="bg-card border border-border rounded-2xl shadow-sm overflow-hidden mb-3">
+          <div class="flex items-center gap-3 px-4 py-3 bg-basebg border-b border-border">
+            <p class="text-sm font-bold uppercase tracking-wide">${categoria.nome}</p>
+            ${souAdminDoGrupo && categoria.id ? `<button data-excluir-categoria-aula="${categoria.id}" class="text-muted hover:text-red-600 transition-colors ml-auto px-1"><i class="fa-solid fa-trash text-xs"></i></button>` : ''}
+          </div>
+          <div class="divide-y divide-border">
+            ${itens.length ? itens.map((a) => `
+              <a href="/grupos/${slug}/aulas/${a.slug}" class="flex items-center justify-between px-4 py-2.5 hover:bg-basebg transition-colors">
+                <div>
+                  <p class="text-sm font-semibold">${a.titulo}${a.abreviacao ? ` <span class="text-muted font-normal">(${a.abreviacao})</span>` : ''}</p>
+                  ${a.descricao ? `<p class="text-xs text-muted mt-0.5">${a.descricao}</p>` : ''}
+                </div>
+                <i class="fa-solid fa-chevron-right text-muted text-xs"></i>
+              </a>
+            `).join('') : '<p class="text-sm text-muted px-4 py-3">Nenhuma aula nessa categoria ainda.</p>'}
+          </div>
+        </div>
+      `).join('') : '<p class="text-sm text-muted">Nenhuma aula cadastrada ainda.</p>'}
+    `;
+
+    if (!souAdminDoGrupo) return;
+
+    document.getElementById('btn-nova-categoria-aula').addEventListener('click', () => {
+      const form = document.getElementById('form-nova-categoria-aula');
+      const abrindo = form.classList.contains('hidden');
+      form.classList.add('hidden');
+      if (!abrindo) return;
+      form.classList.remove('hidden');
+      form.innerHTML = `
+        <form class="bg-card border border-border rounded-2xl shadow-sm p-4 flex gap-2">
+          <input id="nome-nova-categoria-aula" placeholder="Nome da categoria" required class="flex-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <button type="submit" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Criar</button>
+        </form>
+      `;
+      form.querySelector('form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        await apiFetch(`/grupos/${slug}/aulas-categorias`, {
+          method: 'POST', body: JSON.stringify({ nome: document.getElementById('nome-nova-categoria-aula').value.trim() }),
+        });
+        montarAulas(grupo, souAdminDoGrupo);
+      });
+    });
+
+    container.querySelectorAll('[data-excluir-categoria-aula]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Excluir essa categoria? As aulas dela ficam sem categoria.')) return;
+        await apiFetch(`/grupos/${slug}/aulas-categorias/${btn.dataset.excluirCategoriaAula}`, { method: 'DELETE' });
+        montarAulas(grupo, souAdminDoGrupo);
+      });
+    });
+
+    document.getElementById('btn-nova-aula').addEventListener('click', async () => {
+      const form = document.getElementById('form-nova-aula');
+      const abrindo = form.classList.contains('hidden');
+      form.classList.add('hidden');
+      if (!abrindo) return;
+      form.classList.remove('hidden');
+
+      const niveisResp = await apiFetch(`/grupos/${slug}/niveis`);
+      const niveis = niveisResp.ok ? await niveisResp.json() : [];
+
+      form.innerHTML = `
+        <form class="bg-card border border-border rounded-2xl shadow-sm p-4 space-y-2">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <input id="na-titulo" placeholder="Título" required class="bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            <input id="na-abreviacao" placeholder="Abreviação (ex: CFO)" class="bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div class="flex items-center">
+              <span class="text-xs text-muted bg-basebg border border-r-0 border-border rounded-l-lg px-3 py-2">/aulas/</span>
+              <input id="na-slug" placeholder="slug-da-aula" required pattern="[a-z0-9]+(-[a-z0-9]+)*" class="flex-1 bg-basebg border border-border rounded-r-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            </div>
+            <select id="na-categoria" class="bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+              <option value="">Sem categoria</option>
+              ${categorias.map((c) => `<option value="${c.id}">${c.nome}</option>`).join('')}
+            </select>
+          </div>
+          <input id="na-descricao" placeholder="Descrição curta (opcional)" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <select id="na-nivel-minimo" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            <option value="">Qualquer membro do grupo pode ver</option>
+            ${[...niveis].sort((a,b) => b.ordem - a.ordem).map((n) => `<option value="${n.id}">A partir de ${n.nome}</option>`).join('')}
+          </select>
+          <label class="block text-xs text-muted mb-1">Conteúdo</label>
+          ${htmlEditorHtml('editor-nova-aula', '')}
+          <button type="submit" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Criar aula</button>
+          <p id="erro-nova-aula" class="hidden text-xs text-red-500"></p>
+        </form>
+      `;
+      ligarEditorHtml('editor-nova-aula');
+
+      form.querySelector('form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const resp = await apiFetch(`/grupos/${slug}/aulas`, {
+          method: 'POST',
+          body: JSON.stringify({
+            titulo: document.getElementById('na-titulo').value.trim(),
+            abreviacao: document.getElementById('na-abreviacao').value.trim() || undefined,
+            slug: document.getElementById('na-slug').value.trim(),
+            categoria_id: document.getElementById('na-categoria').value ? Number(document.getElementById('na-categoria').value) : undefined,
+            descricao: document.getElementById('na-descricao').value.trim() || undefined,
+            nivel_minimo_id: document.getElementById('na-nivel-minimo').value ? Number(document.getElementById('na-nivel-minimo').value) : undefined,
+            conteudo: document.getElementById('editor-nova-aula-textarea').value,
+          }),
+        });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          const erroEl = document.getElementById('erro-nova-aula');
+          erroEl.textContent = d.erro || 'Não foi possível criar.';
+          erroEl.classList.remove('hidden');
+          return;
+        }
+        montarAulas(grupo, souAdminDoGrupo);
+      });
+    });
+  }
+
+  async function montarAulaIndividual(grupo, souAdminDoGrupo, container) {
+    const resp = await apiFetch(`/grupos/${slug}/aulas/${subPagina}`);
+    if (!resp.ok) {
+      const d = await resp.json().catch(() => ({}));
+      container.innerHTML = `<p class="text-sm text-red-500">${d.erro || 'Aula não encontrada.'}</p>`;
+      return;
+    }
+    const aula = await resp.json();
+
+    container.innerHTML = `
+      <a href="/grupos/${slug}/aulas" class="text-xs text-muted hover:text-dark transition-colors">← Voltar pras aulas</a>
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mt-2">
+        <div class="flex items-center justify-between mb-1">
+          <h1 class="text-lg font-display font-bold">${aula.titulo}${aula.abreviacao ? ` <span class="text-muted font-normal text-sm">(${aula.abreviacao})</span>` : ''}</h1>
+          ${souAdminDoGrupo ? '<button id="btn-editar-aula" class="text-xs font-semibold text-accent hover:underline">Editar</button>' : ''}
+        </div>
+        ${aula.descricao ? `<p class="text-sm text-muted mb-3">${aula.descricao}</p>` : ''}
+        <div id="conteudo-aula-view" class="text-sm">${aula.conteudo}</div>
+        <div id="conteudo-aula-edit" class="hidden"></div>
+      </div>
+    `;
+
+    const btnEditar = document.getElementById('btn-editar-aula');
+    if (!btnEditar) return;
+
+    btnEditar.addEventListener('click', async () => {
+      document.getElementById('conteudo-aula-view').classList.add('hidden');
+      btnEditar.classList.add('hidden');
+      const editArea = document.getElementById('conteudo-aula-edit');
+      editArea.classList.remove('hidden');
+      editArea.innerHTML = `
+        ${htmlEditorHtml('editor-editar-aula', aula.conteudo)}
+        <button id="btn-salvar-aula" class="mt-2 text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Salvar</button>
+      `;
+      ligarEditorHtml('editor-editar-aula');
+      editArea.querySelector('#btn-salvar-aula').addEventListener('click', async () => {
+        await apiFetch(`/grupos/${slug}/aulas/${aula.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ conteudo: document.getElementById('editor-editar-aula-textarea').value }),
+        });
+        montarAulaIndividual(grupo, souAdminDoGrupo, container);
+      });
+    });
+  }
+
+  // ---------- Configurações: Básico + Hierarquia ----------
+  let subAbaConfig = 'basico';
+
+  function renderConfigTabs() {
+    const subAbas = [{ id: 'basico', label: 'Básico' }, { id: 'hierarquia', label: 'Hierarquia' }];
+    return `
+      <div class="flex gap-2 mb-4">
+        ${subAbas.map((s) => `
+          <button data-subaba-config="${s.id}" class="text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${subAbaConfig === s.id ? 'bg-accent text-white' : 'bg-card border border-border text-muted'}">${s.label}</button>
+        `).join('')}
+      </div>
+      <div id="config-conteudo"></div>
+    `;
+  }
+
+  function renderConfigBasico(grupo) {
     return `
       <form id="form-config" class="bg-card border border-border rounded-2xl p-5 space-y-3 max-w-lg shadow-sm">
         <div>
@@ -149,6 +397,131 @@
     `;
   }
 
+  async function montarConfigHierarquia(grupo) {
+    const config = document.getElementById('config-conteudo');
+    const [niveisResp, membrosResp] = await Promise.all([
+      apiFetch(`/grupos/${slug}/niveis`), apiFetch(`/grupos/${slug}/membros`),
+    ]);
+    const niveis = niveisResp.ok ? await niveisResp.json() : [];
+    const membros = membrosResp.ok ? await membrosResp.json() : [];
+
+    config.innerHTML = `
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-4 max-w-2xl">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Cargos internos (do maior pro menor)</h2>
+        <div class="space-y-1.5 mb-3">
+          ${[...niveis].sort((a,b) => b.ordem - a.ordem).map((n) => `
+            <div class="flex items-center gap-2 bg-basebg border border-border rounded-lg p-2">
+              <input data-nivel-nome="${n.id}" value="${n.nome}" class="flex-1 bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">
+              <input data-nivel-ordem="${n.id}" type="number" value="${n.ordem}" class="w-16 bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">
+              <button data-salvar-nivel="${n.id}" class="text-xs font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-2.5 py-1.5">Salvar</button>
+              <button data-excluir-nivel="${n.id}" class="text-muted hover:text-red-600 px-1"><i class="fa-solid fa-trash"></i></button>
+            </div>
+          `).join('') || '<p class="text-sm text-muted">Nenhum cargo cadastrado ainda.</p>'}
+        </div>
+        <form id="form-novo-nivel" class="flex gap-2">
+          <input id="novo-nivel-nome" placeholder="Nome do cargo" required class="flex-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <input id="novo-nivel-ordem" type="number" placeholder="Ordem" required class="w-24 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <button type="submit" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Adicionar</button>
+        </form>
+      </div>
+
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5 max-w-2xl">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Administradores do grupo</h2>
+        <p class="text-xs text-muted mb-3">Quem tem essa marcação pode editar o grupo, a hierarquia e as aulas.</p>
+        <div class="space-y-1.5">
+          ${membros.map((m) => `
+            <label class="flex items-center justify-between bg-basebg border border-border rounded-lg px-3 py-2">
+              <span class="text-sm">${m.nick} <span class="text-muted text-xs">· ${m.nivel}</span></span>
+              <input type="checkbox" data-toggle-admin-grupo="${m.id}" ${m.administrador_grupo ? 'checked' : ''}>
+            </label>
+          `).join('') || '<p class="text-sm text-muted">Nenhum membro ainda.</p>'}
+        </div>
+      </div>
+    `;
+
+    config.querySelectorAll('[data-salvar-nivel]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.salvarNivel;
+        await apiFetch(`/grupos/${slug}/niveis/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            nome: config.querySelector(`[data-nivel-nome="${id}"]`).value.trim(),
+            ordem: Number(config.querySelector(`[data-nivel-ordem="${id}"]`).value),
+          }),
+        });
+        montarConfigHierarquia(grupo);
+      });
+    });
+    config.querySelectorAll('[data-excluir-nivel]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Excluir esse cargo? Só funciona se ninguém estiver nele.')) return;
+        const resp = await apiFetch(`/grupos/${slug}/niveis/${btn.dataset.excluirNivel}`, { method: 'DELETE' });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível excluir.');
+          return;
+        }
+        montarConfigHierarquia(grupo);
+      });
+    });
+    document.getElementById('form-novo-nivel').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await apiFetch(`/grupos/${slug}/niveis`, {
+        method: 'POST',
+        body: JSON.stringify({
+          nome: document.getElementById('novo-nivel-nome').value.trim(),
+          ordem: Number(document.getElementById('novo-nivel-ordem').value),
+        }),
+      });
+      montarConfigHierarquia(grupo);
+    });
+    config.querySelectorAll('[data-toggle-admin-grupo]').forEach((chk) => {
+      chk.addEventListener('change', async () => {
+        const resp = await apiFetch(`/grupos/${slug}/membros/${chk.dataset.toggleAdminGrupo}`, {
+          method: 'PATCH', body: JSON.stringify({ administrador_grupo: chk.checked }),
+        });
+        if (!resp.ok) chk.checked = !chk.checked;
+      });
+    });
+  }
+
+  function ligarConfigTabs(grupo) {
+    document.querySelectorAll('[data-subaba-config]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        subAbaConfig = btn.dataset.subabaConfig;
+        document.getElementById('conteudo-principal').innerHTML = renderConfigTabs();
+        ligarConfigTabs(grupo);
+        if (subAbaConfig === 'basico') { document.getElementById('config-conteudo').innerHTML = renderConfigBasico(grupo); ligarFormBasico(grupo); }
+        else montarConfigHierarquia(grupo);
+      });
+    });
+  }
+
+  function ligarFormBasico(grupo) {
+    document.getElementById('form-config').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const erroEl = document.getElementById('form-config-erro');
+      erroEl.classList.add('hidden');
+      const resposta = await apiFetch(`/grupos/${slug}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          nome: document.getElementById('gc-nome').value.trim(),
+          tipo: document.getElementById('gc-tipo').value,
+          imagem_url: document.getElementById('gc-imagem').value.trim() || undefined,
+          cor: document.getElementById('gc-cor').value,
+          permite_aulas: document.getElementById('gc-aulas').checked,
+        }),
+      });
+      if (!resposta.ok) {
+        const dados = await resposta.json().catch(() => ({}));
+        erroEl.textContent = dados.erro || 'Não foi possível salvar.';
+        erroEl.classList.remove('hidden');
+        return;
+      }
+      grupo.permite_aulas = document.getElementById('gc-aulas').checked;
+    });
+  }
+
   async function carregar(me) {
     const container = document.getElementById('conteudo');
 
@@ -158,23 +531,10 @@
       return;
     }
     const grupo = await grupoResp.json();
-    const souAdmin = Boolean(me.administrador_sistema);
 
-    let conteudoAba = '<p class="text-sm text-muted">Carregando…</p>';
-    if (aba === 'membros') {
-      const r = await apiFetch(`/grupos/${slug}/membros`);
-      conteudoAba = r.ok ? (await r.json()).map(renderMembro).join('') || '<p class="text-sm text-muted">Nenhum membro ainda.</p>' : '<p class="text-sm text-red-400">Erro ao carregar membros.</p>';
-      conteudoAba = `<div class="bg-card border border-border rounded-2xl divide-y divide-border overflow-hidden shadow-sm">${conteudoAba}</div>`;
-    } else if (aba === 'noticias') {
-      const r = await apiFetch(`/grupos/${slug}/noticias`);
-      const noticias = r.ok ? (await r.json()).filter((n) => n.status === 'publicada') : [];
-      conteudoAba = renderNoticias(noticias);
-    } else if (aba === 'registros') {
-      const r = await apiFetch(`/grupos/${slug}/registros`);
-      conteudoAba = renderRegistros(r.ok ? await r.json() : []);
-    } else if (aba === 'configuracoes' && souAdmin) {
-      conteudoAba = renderConfiguracoes(grupo);
-    }
+    const membrosResp = await apiFetch(`/grupos/${slug}/membros`);
+    const membros = membrosResp.ok ? await membrosResp.json() : [];
+    const souAdminDoGrupo = Boolean(me.administrador_sistema) || Boolean(membros.find((m) => m.id === me.id)?.administrador_grupo);
 
     container.innerHTML = `
       <div class="relative mb-10">
@@ -191,36 +551,33 @@
         <p class="text-xs text-muted">${TIPO_LABEL[grupo.tipo] || grupo.tipo}</p>
       </div>
 
-      ${renderAbas(souAdmin)}
+      ${renderAbas(grupo, souAdminDoGrupo)}
 
-      <div>${conteudoAba}</div>
+      <div id="conteudo-principal"><p class="text-sm text-muted">Carregando…</p></div>
     `;
 
-    if (aba === 'configuracoes' && souAdmin) {
-      document.getElementById('form-config').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const erroEl = document.getElementById('form-config-erro');
-        erroEl.classList.add('hidden');
+    const conteudoPrincipal = document.getElementById('conteudo-principal');
 
-        const resposta = await apiFetch(`/grupos/${slug}`, {
-          method: 'PATCH',
-          body: JSON.stringify({
-            nome: document.getElementById('gc-nome').value.trim(),
-            tipo: document.getElementById('gc-tipo').value,
-            imagem_url: document.getElementById('gc-imagem').value.trim() || undefined,
-            cor: document.getElementById('gc-cor').value,
-            permite_aulas: document.getElementById('gc-aulas').checked,
-          }),
-        });
-
-        if (!resposta.ok) {
-          const dados = await resposta.json().catch(() => ({}));
-          erroEl.textContent = dados.erro || 'Não foi possível salvar.';
-          erroEl.classList.remove('hidden');
-          return;
-        }
-        carregar(me);
-      });
+    if (aba === 'membros') {
+      const niveisResp = await apiFetch(`/grupos/${slug}/niveis`);
+      const niveis = niveisResp.ok ? await niveisResp.json() : [];
+      conteudoPrincipal.innerHTML = await renderMembrosAgrupados(membros, niveis);
+    } else if (aba === 'noticias') {
+      const r = await apiFetch(`/grupos/${slug}/noticias`);
+      const noticias = r.ok ? (await r.json()).filter((n) => n.status === 'publicada') : [];
+      conteudoPrincipal.innerHTML = renderNoticias(noticias);
+    } else if (aba === 'registros') {
+      const r = await apiFetch(`/grupos/${slug}/registros`);
+      conteudoPrincipal.innerHTML = renderRegistros(r.ok ? await r.json() : []);
+    } else if (aba === 'aulas' && grupo.permite_aulas) {
+      await montarAulas(grupo, souAdminDoGrupo);
+    } else if (aba === 'configuracoes' && souAdminDoGrupo) {
+      conteudoPrincipal.innerHTML = renderConfigTabs();
+      ligarConfigTabs(grupo);
+      if (subAbaConfig === 'basico') { document.getElementById('config-conteudo').innerHTML = renderConfigBasico(grupo); ligarFormBasico(grupo); }
+      else montarConfigHierarquia(grupo);
+    } else {
+      conteudoPrincipal.innerHTML = '<p class="text-sm text-muted">Você não tem acesso a essa aba.</p>';
     }
   }
 
