@@ -50,6 +50,17 @@
     cancelamento: 'fa-solid fa-xmark',
   };
 
+  // Monta a URL do avatar do perfil com a pose escolhida pelo próprio
+  // usuário (direção do corpo, da cabeça, expressão) — cai nos padrões
+  // de sempre quando ele nunca personalizou.
+  function montarUrlAvatarPerfil(dados) {
+    const params = new URLSearchParams({ figure: dados.figure, img_format: 'png' });
+    params.set('direction', dados.avatar_direction || '2');
+    params.set('head_direction', dados.avatar_head_direction || dados.avatar_direction || '2');
+    params.set('gesture', dados.avatar_gesture || 'std');
+    return `https://imaging.habblet.city/avatarimage?${params.toString()}`;
+  }
+
   function formatarDataCurta(iso) {
     if (!iso) return '—';
     const d = new Date(iso);
@@ -159,6 +170,28 @@
     let corSelecionada = dados.cor_avatar_fundo || null;
     let imagemSelecionada = dados.avatar_fundo_imagem_url || null;
     let modoFundoAvatar = imagemSelecionada ? 'imagem' : 'cor';
+    let direcaoCorpo = dados.avatar_direction || '2';
+    let direcaoCabeca = dados.avatar_head_direction || dados.avatar_direction || '2';
+    let gestoSelecionado = dados.avatar_gesture || 'std';
+
+    const DIRECOES_AVATAR = [
+      { valor: '0', rotulo: 'Direita' }, { valor: '1', rotulo: 'Frente-Direita' },
+      { valor: '2', rotulo: 'Frente' }, { valor: '3', rotulo: 'Frente-Esquerda' },
+      { valor: '4', rotulo: 'Esquerda' }, { valor: '5', rotulo: 'Trás-Esquerda' },
+      { valor: '6', rotulo: 'Trás' }, { valor: '7', rotulo: 'Trás-Direita' },
+    ];
+    const GESTOS_AVATAR = [
+      { valor: 'std', rotulo: 'Normal' }, { valor: 'sml', rotulo: 'Sorriso' },
+      { valor: 'sad', rotulo: 'Triste' }, { valor: 'ang', rotulo: 'Bravo' },
+      { valor: 'eyb', rotulo: 'Olhos fechados' },
+    ];
+
+    function atualizarPreviewPose() {
+      const el = document.getElementById('preview-pose-avatar');
+      if (!el || !dados.figure) return;
+      const url = montarUrlAvatarPerfil({ figure: dados.figure, avatar_direction: direcaoCorpo, avatar_head_direction: direcaoCabeca, avatar_gesture: gestoSelecionado });
+      el.innerHTML = `<img src="${url.replace('img_format=png', 'img_format=png&size=l')}" class="w-full h-[190%] object-cover object-top -mt-6" alt="">`;
+    }
 
     setTimeout(() => {
       const raiz = document.getElementById('config-perfil-raiz');
@@ -196,6 +229,42 @@
             `}
           </div>
 
+          <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-4">
+            <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Pose do avatar</h2>
+            <div class="flex flex-col sm:flex-row gap-5">
+              <div class="shrink-0 text-center">
+                <span id="preview-pose-avatar" class="h-28 w-28 mx-auto rounded-full bg-basebg border border-border overflow-hidden inline-block"></span>
+                <p class="text-xs text-muted mt-1.5">Pré-visualização</p>
+              </div>
+              <div class="flex-1 space-y-3">
+                <div>
+                  <p class="text-xs text-muted mb-1.5">Direção do corpo</p>
+                  <div class="flex flex-wrap gap-1.5">
+                    ${DIRECOES_AVATAR.map((d) => `
+                      <button type="button" data-corpo="${d.valor}" title="${d.rotulo}" class="btn-direcao-corpo h-8 w-8 rounded-lg text-xs font-semibold transition-colors ${direcaoCorpo === d.valor ? 'bg-accent text-white' : 'bg-basebg text-muted hover:bg-border/60'}">${d.valor}</button>
+                    `).join('')}
+                  </div>
+                </div>
+                <div>
+                  <p class="text-xs text-muted mb-1.5">Direção da cabeça</p>
+                  <div class="flex flex-wrap gap-1.5">
+                    ${DIRECOES_AVATAR.map((d) => `
+                      <button type="button" data-cabeca="${d.valor}" title="${d.rotulo}" class="btn-direcao-cabeca h-8 w-8 rounded-lg text-xs font-semibold transition-colors ${direcaoCabeca === d.valor ? 'bg-accent text-white' : 'bg-basebg text-muted hover:bg-border/60'}">${d.valor}</button>
+                    `).join('')}
+                  </div>
+                </div>
+                <div>
+                  <p class="text-xs text-muted mb-1.5">Expressão</p>
+                  <div class="flex flex-wrap gap-1.5">
+                    ${GESTOS_AVATAR.map((g) => `
+                      <button type="button" data-gesto="${g.valor}" class="btn-gesto-avatar text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors ${gestoSelecionado === g.valor ? 'bg-accent text-white' : 'bg-basebg text-muted hover:bg-border/60'}">${g.rotulo}</button>
+                    `).join('')}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <button id="btn-salvar-config" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-5 py-2.5 text-sm transition-colors">
             Salvar
           </button>
@@ -224,11 +293,23 @@
           ` : ''}
         `;
 
+        atualizarPreviewPose();
+
         raiz.querySelectorAll('.thumb-banner').forEach((btn) => {
           btn.addEventListener('click', () => {
             bannerSelecionadoId = btn.dataset.bannerId ? Number(btn.dataset.bannerId) : null;
             repintar();
           });
+        });
+
+        raiz.querySelectorAll('.btn-direcao-corpo').forEach((btn) => {
+          btn.addEventListener('click', () => { direcaoCorpo = btn.dataset.corpo; repintar(); });
+        });
+        raiz.querySelectorAll('.btn-direcao-cabeca').forEach((btn) => {
+          btn.addEventListener('click', () => { direcaoCabeca = btn.dataset.cabeca; repintar(); });
+        });
+        raiz.querySelectorAll('.btn-gesto-avatar').forEach((btn) => {
+          btn.addEventListener('click', () => { gestoSelecionado = btn.dataset.gesto; repintar(); });
         });
 
         raiz.querySelectorAll('.btn-modo-fundo').forEach((btn) => {
@@ -253,6 +334,9 @@
               banner_perfil_id: bannerSelecionadoId,
               cor_avatar_fundo: modoFundoAvatar === 'cor' ? corSelecionada : null,
               avatar_fundo_imagem_url: modoFundoAvatar === 'imagem' ? imagemSelecionada : null,
+              avatar_direction: direcaoCorpo,
+              avatar_head_direction: direcaoCabeca,
+              avatar_gesture: gestoSelecionado,
             }),
           });
           msg.classList.remove('hidden');
@@ -341,7 +425,7 @@
     const meCompleto = meCompletoResp?.ok ? await meCompletoResp.json() : me;
 
     const ultimoRequerimento = requerimentos[0]?.criado_em;
-    const avatarCirculo = perfil.figure ? avatarUrl(perfil.figure, 'mini', '2') : null;
+    const avatarCirculo = perfil.figure ? montarUrlAvatarPerfil(perfil) : null;
     const avatarGrande = perfil.figure ? avatarUrl(perfil.figure, 'grande', '2') : null;
 
     container.innerHTML = `

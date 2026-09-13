@@ -32,7 +32,8 @@ usuarios.get('/me', async (c) => {
 
   const usuario = await c.env.DB.prepare(
     `SELECT u.id, u.nick, u.tag, u.corpo, u.status, u.administrador_sistema, u.biografia,
-            u.cor_avatar_fundo, u.avatar_fundo_imagem_url, u.banner_perfil_id, b.imagem_url AS banner_imagem_url,
+            u.cor_avatar_fundo, u.avatar_fundo_imagem_url, u.avatar_direction, u.avatar_head_direction, u.avatar_gesture,
+            u.banner_perfil_id, b.imagem_url AS banner_imagem_url,
             p.nome AS patente_nome, p.ordem AS patente_ordem
      FROM usuarios u
      LEFT JOIN patentes p ON p.id = u.patente_atual_id
@@ -56,6 +57,9 @@ usuarios.patch('/me', async (c) => {
     banner_perfil_id?: number | null
     cor_avatar_fundo?: string | null
     avatar_fundo_imagem_url?: string | null
+    avatar_direction?: string | null
+    avatar_head_direction?: string | null
+    avatar_gesture?: string | null
   }>()
 
   const campos: string[] = []
@@ -86,6 +90,28 @@ usuarios.patch('/me', async (c) => {
       return c.json({ erro: 'avatar_fundo_imagem_url precisa ser uma URL http(s) válida' }, 400)
     }
     campos.push('avatar_fundo_imagem_url = ?'); valores.push(body.avatar_fundo_imagem_url ?? null)
+  }
+
+  const DIRECOES_VALIDAS = ['0', '1', '2', '3', '4', '5', '6', '7']
+  const GESTOS_VALIDOS = ['std', 'sml', 'sad', 'ang', 'eyb']
+
+  if ('avatar_direction' in body) {
+    if (body.avatar_direction != null && !DIRECOES_VALIDAS.includes(body.avatar_direction)) {
+      return c.json({ erro: 'avatar_direction inválido' }, 400)
+    }
+    campos.push('avatar_direction = ?'); valores.push(body.avatar_direction ?? null)
+  }
+  if ('avatar_head_direction' in body) {
+    if (body.avatar_head_direction != null && !DIRECOES_VALIDAS.includes(body.avatar_head_direction)) {
+      return c.json({ erro: 'avatar_head_direction inválido' }, 400)
+    }
+    campos.push('avatar_head_direction = ?'); valores.push(body.avatar_head_direction ?? null)
+  }
+  if ('avatar_gesture' in body) {
+    if (body.avatar_gesture != null && !GESTOS_VALIDOS.includes(body.avatar_gesture)) {
+      return c.json({ erro: 'avatar_gesture inválido' }, 400)
+    }
+    campos.push('avatar_gesture = ?'); valores.push(body.avatar_gesture ?? null)
   }
 
   if (!campos.length) return c.json({ ok: true })
@@ -231,7 +257,8 @@ usuarios.get('/nick/:nick', async (c) => {
 
   const usuario = await c.env.DB.prepare(
     `SELECT u.id, u.nick, u.tag, u.corpo, u.status, u.biografia, u.data_ingresso, u.data_ultimo_ato_funcional,
-            u.cor_avatar_fundo, u.avatar_fundo_imagem_url, u.banner_perfil_id, b.imagem_url AS banner_imagem_url,
+            u.cor_avatar_fundo, u.avatar_fundo_imagem_url, u.avatar_direction, u.avatar_head_direction, u.avatar_gesture,
+            u.banner_perfil_id, b.imagem_url AS banner_imagem_url,
             p.nome AS patente_nome, p.ordem AS patente_ordem
      FROM usuarios u
      LEFT JOIN patentes p ON p.id = u.patente_atual_id
