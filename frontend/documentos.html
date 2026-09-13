@@ -17,7 +17,8 @@
 
   <aside id="layout-sidebar" class="w-60 fixed left-0 top-[72px] bottom-0 border-r border-border bg-basebg p-4 overflow-y-auto"></aside>
 
-  <main class="ml-60 px-6 py-8">
+  <main class="ml-60 px-6 py-8 min-h-screen flex flex-col">
+    <div class="flex-1 min-w-0">
     <div class="flex items-center justify-between mb-4">
       <h1 class="text-xl font-display font-bold">Documentos</h1>
       <button id="btn-novo-documento" class="hidden text-xs font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">
@@ -29,6 +30,7 @@
 
     <div id="lista-categorias" class="space-y-6">
       <p class="text-sm text-muted">Carregando…</p>
+    </div>
     </div>
     <div id="layout-footer"></div>
   </main>
