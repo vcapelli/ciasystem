@@ -95,6 +95,21 @@ documentos.get('/:id', async (c) => {
   return c.json(doc)
 })
 
+// DELETE /documentos/:id — apaga o documento e, em cascata (FK ON
+// DELETE CASCADE), todas as suas revisões/aprovadores/histórico.
+documentos.delete('/:id', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  if (!(await podeGerirDocumento(c.env.DB, usuarioId, 'deletar'))) {
+    return c.json({ erro: 'sem permissão para deletar documentos' }, 403)
+  }
+
+  const doc = await c.env.DB.prepare(`SELECT id FROM documentos WHERE id = ?`).bind(c.req.param('id')).first()
+  if (!doc) return c.json({ erro: 'não encontrado' }, 404)
+
+  await c.env.DB.prepare(`DELETE FROM documentos WHERE id = ?`).bind(c.req.param('id')).run()
+  return c.json({ ok: true })
+})
+
 documentos.post('/:id/revisoes', async (c) => {
   const autorId = c.get('usuarioId')
   const documentoId = c.req.param('id')

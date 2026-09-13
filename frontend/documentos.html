@@ -52,14 +52,33 @@
 
     const lista = document.getElementById('lista-documentos');
     lista.innerHTML = documentos.length ? documentos.map((d) => `
-      <a href="/documentos/${d.slug}" class="flex items-center justify-between bg-card border border-border rounded-2xl shadow-sm px-5 py-4 hover:bg-basebg transition-colors">
-        <div>
+      <div class="flex items-center justify-between bg-card border border-border rounded-2xl shadow-sm px-5 py-4 hover:bg-basebg transition-colors">
+        <a href="/documentos/${d.slug}" class="flex-1">
           <p class="text-sm font-semibold">${d.titulo}</p>
           <p class="text-xs text-muted mt-0.5">${TIPOS_DOC[d.tipo] || d.tipo} · revisão nº ${d.numero_revisao_atual}</p>
+        </a>
+        <div class="flex items-center gap-3">
+          <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full capitalize ${BADGE_STATUS_DOC[d.status] || ''}">${d.status.replace(/_/g, ' ')}</span>
+          <button data-excluir-documento="${d.id}" data-titulo="${d.titulo}" class="text-muted hover:text-red-600 transition-colors px-1">
+            <i class="fa-solid fa-trash"></i>
+          </button>
         </div>
-        <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full capitalize ${BADGE_STATUS_DOC[d.status] || ''}">${d.status.replace(/_/g, ' ')}</span>
-      </a>
+      </div>
     `).join('') : '<p class="text-sm text-muted">Nenhum documento cadastrado ainda.</p>';
+
+    lista.querySelectorAll('[data-excluir-documento]').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        if (!confirm(`Excluir "${btn.dataset.titulo}" definitivamente? Isso apaga todas as revisões e o histórico dele também. Essa ação não pode ser desfeita.`)) return;
+        const resp = await apiFetch(`/documentos/${btn.dataset.excluirDocumento}`, { method: 'DELETE' });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível excluir.');
+          return;
+        }
+        carregar(me);
+      });
+    });
 
     document.getElementById('btn-novo-documento').classList.remove('hidden');
 
