@@ -20,7 +20,7 @@
   <main class="ml-60 px-6 py-8">
     <div class="flex items-center justify-between mb-4">
       <h1 class="text-xl font-display font-bold">Documentos</h1>
-      <button id="btn-novo-documento" class="text-xs font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">
+      <button id="btn-novo-documento" class="hidden text-xs font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">
         <i class="fa-solid fa-plus"></i> Novo documento
       </button>
     </div>
@@ -41,9 +41,14 @@
   };
 
   async function carregar(me) {
-    const [docsResp, categoriasResp] = await Promise.all([apiFetch('/documentos'), apiFetch('/documentos-categorias')]);
+    const [docsResp, categoriasResp, minhasPermResp] = await Promise.all([
+      apiFetch('/documentos'), apiFetch('/documentos-categorias'), apiFetch('/documentos-permissoes/minhas'),
+    ]);
     const documentosLista = docsResp.ok ? await docsResp.json() : [];
     const categorias = categoriasResp.ok ? await categoriasResp.json() : [];
+    const minhasPermissoes = minhasPermResp.ok ? await minhasPermResp.json() : { pode_criar: false, pode_editar: false, pode_deletar: false };
+
+    document.getElementById('btn-novo-documento').classList.toggle('hidden', !minhasPermissoes.pode_criar);
 
     const listaCategorias = document.getElementById('lista-categorias');
     listaCategorias.innerHTML = categorias.map((cat) => {
@@ -62,9 +67,11 @@
                 </a>
                 <div class="flex items-center gap-3">
                   <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full capitalize ${BADGE_STATUS_DOC[d.status] || ''}">${d.status.replace(/_/g, ' ')}</span>
-                  <button data-excluir-documento="${d.id}" data-titulo="${d.titulo}" class="text-muted hover:text-red-600 transition-colors px-1">
-                    <i class="fa-solid fa-trash"></i>
-                  </button>
+                  ${minhasPermissoes.pode_deletar ? `
+                    <button data-excluir-documento="${d.id}" data-titulo="${d.titulo}" class="text-muted hover:text-red-600 transition-colors px-1">
+                      <i class="fa-solid fa-trash"></i>
+                    </button>
+                  ` : ''}
                 </div>
               </div>
             `).join('') : '<p class="text-sm text-muted px-5 py-3">Nenhum documento nessa categoria ainda.</p>'}

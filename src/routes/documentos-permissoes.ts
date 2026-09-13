@@ -11,6 +11,30 @@ async function ehAdmin(db: D1Database, usuarioId: number): Promise<boolean> {
   return Boolean(u?.administrador_sistema)
 }
 
+// GET /documentos-permissoes/minhas — devolve o que EU (usuário
+// autenticado) posso fazer, pro frontend decidir o que mostrar. Não é
+// a fonte de verdade (o backend sempre recheca em cada ação), só evita
+// mostrar botões que vão falhar.
+documentosPermissoes.get('/minhas', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  if (await ehAdmin(c.env.DB, usuarioId)) {
+    return c.json({ pode_criar: true, pode_editar: true, pode_deletar: true })
+  }
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT dp.pode_criar, dp.pode_editar, dp.pode_deletar
+     FROM documentos_permissoes dp
+     LEFT JOIN usuario_grupos ug ON ug.grupo_id = dp.grupo_id AND ug.usuario_id = ? AND ug.ativo = 1
+     WHERE dp.usuario_id = ? OR ug.usuario_id IS NOT NULL`
+  ).bind(usuarioId, usuarioId).all<{ pode_criar: number; pode_editar: number; pode_deletar: number }>()
+
+  return c.json({
+    pode_criar: results.some((r) => r.pode_criar),
+    pode_editar: results.some((r) => r.pode_editar),
+    pode_deletar: results.some((r) => r.pode_deletar),
+  })
+})
+
 // GET /documentos-permissoes — todas as concessões (usuário ou grupo)
 // de criar/editar/deletar documentos. Só admin.
 documentosPermissoes.get('/', async (c) => {

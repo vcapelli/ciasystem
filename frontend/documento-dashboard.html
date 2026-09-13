@@ -135,6 +135,9 @@
     const revisoes = revisoesResp.ok ? await revisoesResp.json() : [];
     const versoesImplementadas = revisoes.filter((r) => r.status === 'implementado');
 
+    const minhasPermResp = await apiFetch('/documentos-permissoes/minhas');
+    const minhasPermissoes = minhasPermResp.ok ? await minhasPermResp.json() : { pode_editar: false };
+
     container.innerHTML = `
       <div class="flex items-center justify-between mt-2 mb-1">
         <h1 class="text-xl font-display font-bold">${doc.titulo}</h1>
@@ -147,7 +150,7 @@
         <div id="rodape-atual"></div>
       </div>
 
-      <button id="btn-abrir-solicitacao" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors mb-6">
+      <button id="btn-abrir-solicitacao" class="hidden text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors mb-6">
         <i class="fa-solid fa-pen"></i> Abrir solicitação de alteração
       </button>
       <div id="form-abrir-solicitacao" class="hidden bg-card border border-border rounded-2xl shadow-sm p-5 mb-6"></div>
@@ -183,6 +186,8 @@
     if (doc.ultima_revisao_implementada) {
       document.getElementById('rodape-atual').innerHTML = await renderRodapeRevisao(doc.ultima_revisao_implementada);
     }
+
+    document.getElementById('btn-abrir-solicitacao').classList.toggle('hidden', !minhasPermissoes.pode_editar);
 
     document.getElementById('btn-ver-todas-solicitacoes').addEventListener('click', () => {
       const lista = document.getElementById('lista-todas-solicitacoes');
