@@ -128,7 +128,18 @@ twitter.get('/', async (c) => {
   return c.json({ tweets: results, total: totalRow?.n ?? 0, pagina, por_pagina: porPagina })
 })
 
-// GET /tweets/:id/curtidas — quem curtiu (pro tooltip no hover).
+// GET /tweets/:id/respostas — comentários desse tweet, mais antigos primeiro.
+twitter.get('/:id/respostas', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT r.id, r.conteudo, r.criado_em, u.nick AS autor_nick, p.nome AS autor_patente_nome
+     FROM tweets r
+     JOIN usuarios u ON u.id = r.autor_id
+     LEFT JOIN patentes p ON p.id = u.patente_atual_id
+     WHERE r.resposta_a_id = ? AND r.apagado = 0
+     ORDER BY r.criado_em ASC`
+  ).bind(c.req.param('id')).all()
+  return c.json(results)
+})
 twitter.get('/:id/curtidas', async (c) => {
   const { results } = await c.env.DB.prepare(
     `SELECT u.id, u.nick, p.nome AS patente_nome
@@ -153,16 +164,23 @@ twitter.get('/:id/retweets', async (c) => {
 })
 
 twitter.get('/:id', async (c) => {
+  const usuarioId = c.get('usuarioId')
   const id = c.req.param('id')
 
-  const tweet = await c.env.DB.prepare(`SELECT * FROM tweets WHERE id = ? AND apagado = 0`).bind(id).first()
+  const tweet = await c.env.DB.prepare(
+    `SELECT t.*, u.nick AS autor_nick, p.nome AS autor_patente_nome,
+      (SELECT COUNT(*) FROM tweet_curtidas WHERE tweet_id = t.id) AS curtidas,
+      (SELECT COUNT(*) FROM tweets r WHERE r.resposta_a_id = t.id AND r.apagado = 0) AS respostas,
+      (SELECT COUNT(*) FROM tweets r WHERE r.tweet_original_id = t.id AND r.apagado = 0) AS retweets,
+      EXISTS(SELECT 1 FROM tweet_curtidas WHERE tweet_id = t.id AND usuario_id = ?) AS curtido_por_mim
+     FROM tweets t
+     JOIN usuarios u ON u.id = t.autor_id
+     LEFT JOIN patentes p ON p.id = u.patente_atual_id
+     WHERE t.id = ? AND t.apagado = 0`
+  ).bind(usuarioId, id).first()
   if (!tweet) return c.json({ erro: 'não encontrado' }, 404)
 
   const { results: midias } = await c.env.DB.prepare(`SELECT * FROM tweet_midias WHERE tweet_id = ? ORDER BY ordem`).bind(id).all()
-
-  const curtidas = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM tweet_curtidas WHERE tweet_id = ?`).bind(id).first<{ n: number }>()
-  const respostas = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM tweets WHERE resposta_a_id = ? AND apagado = 0`).bind(id).first<{ n: number }>()
-  const retweets = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM tweets WHERE tweet_original_id = ? AND apagado = 0`).bind(id).first<{ n: number }>()
 
   const enquete = await c.env.DB.prepare(`SELECT * FROM tweet_enquetes WHERE tweet_id = ?`).bind(id).first<{ id: number; expira_em: string }>()
   let enqueteDetalhe = null
@@ -175,11 +193,7 @@ twitter.get('/:id', async (c) => {
     enqueteDetalhe = { expira_em: enquete.expira_em, opcoes }
   }
 
-  return c.json({
-    ...tweet, midias,
-    contagens: { curtidas: curtidas?.n ?? 0, respostas: respostas?.n ?? 0, retweets: retweets?.n ?? 0 },
-    enquete: enqueteDetalhe,
-  })
+  return c.json({ ...tweet, midias, enquete: enqueteDetalhe })
 })
 
 twitter.delete('/:id', async (c) => {

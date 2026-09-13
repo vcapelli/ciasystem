@@ -27,6 +27,7 @@
   </main>
 
 <script src="/assets/api.js"></script>
+<script src="/assets/tweets.js"></script>
 <script src="/assets/footer.js"></script>
 <script src="/assets/layout.js"></script>
 <script src="/assets/requerimentos.js"></script>
@@ -182,7 +183,7 @@
   function renderAbas(nick, ehMeuPerfil) {
     const abas = [
       { id: 'linha-do-tempo', label: 'Linha do tempo', href: `/perfil/${nick}` },
-      { id: 'postagens', label: 'Postagens', href: `/perfil/${nick}/postagens` },
+      { id: 'postagens', label: 'Feed', href: `/perfil/${nick}/postagens` },
     ];
     if (ehMeuPerfil) abas.push({ id: 'configuracoes', label: 'Configurações', href: `/perfil/${nick}/configuracoes` });
     return `
@@ -221,18 +222,29 @@
     `;
   }
 
-  function renderPostagens(tweets) {
-    if (!tweets.length) return '<p class="text-sm text-muted">Nenhuma publicação ainda.</p>';
-    return `
-      <div class="space-y-3">
-        ${tweets.map((t) => `
-          <div class="bg-card border border-border rounded-2xl p-4 shadow-sm">
-            <p class="text-sm whitespace-pre-wrap">${t.conteudo || ''}</p>
-            <p class="text-xs text-muted mt-2">${new Date(t.criado_em).toLocaleString('pt-BR')}</p>
-          </div>
-        `).join('')}
-      </div>
-    `;
+  function renderPostagens(tweets, me) {
+    setTimeout(() => montarPostagensAsync(tweets, me), 0);
+    return '<div id="postagens-raiz"><p class="text-sm text-muted">Carregando…</p></div>';
+  }
+
+  async function montarPostagensAsync(tweets, me) {
+    const raiz = document.getElementById('postagens-raiz');
+    if (!raiz) return;
+    if (!tweets.length) { raiz.innerHTML = '<p class="text-sm text-muted">Nenhuma publicação ainda.</p>'; return; }
+
+    // Repostagens: busca o post original (com o mesmo formato dos
+    // demais) e guarda quem repostou pra desenhar o aviso em cima.
+    const itens = await Promise.all(tweets.map(async (t) => {
+      if (!t.tweet_original_id) return { tweetParaExibir: t, repostadoPor: null };
+      const r = await apiFetch(`/tweets/${t.tweet_original_id}`);
+      if (!r.ok) return { tweetParaExibir: t, repostadoPor: t.autor_nick };
+      return { tweetParaExibir: await r.json(), repostadoPor: t.autor_nick };
+    }));
+
+    await preencherFigurasTweets(itens.map((i) => i.tweetParaExibir));
+
+    raiz.innerHTML = `<div class="space-y-3">${itens.map((i) => renderCardTweet(i.tweetParaExibir, i.repostadoPor)).join('')}</div>`;
+    ligarAcoesTweet(raiz, me);
   }
 
   function renderThumbBanner(banner, selecionado) {
@@ -582,7 +594,7 @@
 
         <div>
           ${renderAbas(perfil.nick, ehMeuPerfil)}
-          ${aba === 'postagens' ? renderPostagens(tweets) : aba === 'configuracoes' && ehMeuPerfil ? renderConfiguracoes(meCompleto, banners, me) : renderTimeline(requerimentos, patentesMapa, me)}
+          ${aba === 'postagens' ? renderPostagens(tweets, me) : aba === 'configuracoes' && ehMeuPerfil ? renderConfiguracoes(meCompleto, banners, me) : renderTimeline(requerimentos, patentesMapa, me)}
         </div>
       </div>
     `;

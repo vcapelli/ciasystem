@@ -37,6 +37,7 @@
 <script src="/assets/api.js"></script>
 <script src="/assets/footer.js"></script>
 <script src="/assets/layout.js"></script>
+<script src="/assets/tweets.js"></script>
 <script>
   const PLACEHOLDERS_TWEET = [
     'O que está pensando?',
@@ -47,35 +48,14 @@
 
   let paginaAtual = 1;
   const POR_PAGINA = 5;
-
-  function tempoRelativo(iso) {
-    const diffMs = Date.now() - new Date(iso).getTime();
-    const min = Math.floor(diffMs / 60000);
-    if (min < 1) return 'agora mesmo';
-    if (min < 60) return `há ${min} min`;
-    const h = Math.floor(min / 60);
-    if (h < 24) return `há ${h} hora${h === 1 ? '' : 's'}`;
-    const d = Math.floor(h / 24);
-    return `há ${d} dia${d === 1 ? '' : 's'}`;
-  }
-
-  function renderAvatarGrande(nick, figure) {
-    const avatar = figure ? avatarUrl(figure, 'mini', '2') : null;
-    return `
-      <span class="h-11 w-11 rounded-full bg-basebg border border-border overflow-hidden inline-block shrink-0">
-        ${avatar
-          ? `<img src="${avatar}" class="w-full h-[190%] object-cover object-top -mt-3 transition-transform duration-300 hover:-translate-y-[10px]" alt="">`
-          : `<span class="w-full h-full flex items-center justify-center text-xs font-bold">${nick.slice(0,2).toUpperCase()}</span>`}
-      </span>
-    `;
-  }
+  let meAtual = null;
 
   // ---------- Card de escrever ----------
   async function montarCardEscrever(me) {
     const card = document.getElementById('card-escrever');
     card.innerHTML = `
       <div class="flex items-center gap-2.5 mb-3">
-        ${renderAvatarGrande(me.nick, me.figure)}
+        ${renderAvatarTweet(me.nick, me.figure, 'grande')}
         <span class="font-semibold text-sm">${me.nick}</span>
       </div>
       <form id="form-tweet">
@@ -110,77 +90,6 @@
     });
   }
 
-  // ---------- Tooltip de "quem curtiu/retuitou" ----------
-  const cacheListaPessoas = {};
-  async function buscarListaPessoas(tweetId, tipo) {
-    const chave = `${tipo}-${tweetId}`;
-    if (cacheListaPessoas[chave]) return cacheListaPessoas[chave];
-    const resp = await apiFetch(`/tweets/${tweetId}/${tipo}`);
-    const lista = resp.ok ? await resp.json() : [];
-    cacheListaPessoas[chave] = lista;
-    return lista;
-  }
-
-  function ligarTooltipPessoas(botao, tweetId, tipo, tituloVazio) {
-    let tooltip = null;
-    let carregado = false;
-
-    botao.addEventListener('mouseenter', async () => {
-      if (!tooltip) {
-        tooltip = document.createElement('div');
-        tooltip.className = 'absolute z-20 bottom-full left-0 mb-2 w-56 bg-card border border-border rounded-xl shadow-lg overflow-hidden';
-        botao.style.position = 'relative';
-        botao.appendChild(tooltip);
-      }
-      tooltip.classList.remove('hidden');
-      if (carregado) return;
-      tooltip.innerHTML = '<p class="text-xs text-muted p-3">Carregando…</p>';
-      const lista = await buscarListaPessoas(tweetId, tipo);
-      carregado = true;
-      tooltip.innerHTML = `
-        <p class="text-xs font-semibold px-3 py-2 border-b border-border">${tipo === 'curtidas' ? 'Curtiram' : 'Retuitaram'} (${lista.length})</p>
-        <div class="max-h-48 overflow-y-auto">
-          ${lista.length ? lista.map((p) => `
-            <a href="/perfil/${p.nick}" class="flex items-center gap-2 px-3 py-2 hover:bg-basebg transition-colors">
-              <span class="h-7 w-7 rounded-full bg-basebg border border-border flex items-center justify-center text-[0.6rem] font-bold shrink-0">${p.nick.slice(0,2).toUpperCase()}</span>
-              <span class="min-w-0">
-                <p class="text-xs font-semibold truncate">${p.nick}</p>
-                <p class="text-[0.65rem] text-muted truncate">${p.patente_nome || '—'}</p>
-              </span>
-            </a>
-          `).join('') : `<p class="text-xs text-muted p-3">${tituloVazio}</p>`}
-        </div>
-      `;
-    });
-    botao.addEventListener('mouseleave', () => { if (tooltip) tooltip.classList.add('hidden'); });
-  }
-
-  // ---------- Card de tweet ----------
-  function renderTweet(t) {
-    return `
-      <div class="bg-card border border-border rounded-2xl p-4" data-tweet-id="${t.id}">
-        <div class="flex items-center gap-2.5 mb-1">
-          ${renderAvatarGrande(t.autor_nick, t.autor_figure)}
-          <div>
-            <p class="font-semibold text-sm">${t.autor_nick}${t.autor_patente_nome ? ` <span class="text-muted font-normal">· ${t.autor_patente_nome}</span>` : ''}</p>
-          </div>
-        </div>
-        <p class="text-xs text-muted flex items-center gap-1 mb-2"><i class="fa-regular fa-clock"></i> ${tempoRelativo(t.criado_em)}</p>
-        ${t.conteudo ? `<p class="text-sm whitespace-pre-wrap">${t.conteudo}</p>` : ''}
-        <hr class="border-border my-3">
-        <div class="flex items-center gap-6 text-xs text-muted">
-          <button class="btn-curtir relative flex items-center gap-1.5 transition-colors ${t.curtido_por_mim ? 'text-accent' : 'hover:text-dark'}" data-id="${t.id}" data-tooltip="curtidas">
-            <i class="${t.curtido_por_mim ? 'fa-solid' : 'fa-regular'} fa-thumbs-up"></i> <span class="contador-curtidas">${t.curtidas}</span>
-          </button>
-          <span class="flex items-center gap-1.5"><i class="fa-regular fa-comment"></i> ${t.respostas}</span>
-          <span class="relative flex items-center gap-1.5 hover:text-dark transition-colors" data-tooltip="retweets">
-            <i class="fa-solid fa-retweet"></i> ${t.retweets}
-          </span>
-        </div>
-      </div>
-    `;
-  }
-
   function renderPaginacao(total) {
     const totalPaginas = Math.max(1, Math.ceil(total / POR_PAGINA));
     const paginacao = document.getElementById('paginacao');
@@ -212,47 +121,19 @@
       return;
     }
     const { tweets, total } = await resposta.json();
-
-    // Busca a figure de cada autor distinto, em paralelo.
-    const nicksUnicos = [...new Set(tweets.map((t) => t.autor_nick))];
-    const figurasPorNick = {};
-    await Promise.all(nicksUnicos.map(async (nick) => {
-      try {
-        const r = await apiFetch(`/usuarios/nick/${encodeURIComponent(nick)}`);
-        figurasPorNick[nick] = r.ok ? (await r.json()).figure : null;
-      } catch { figurasPorNick[nick] = null; }
-    }));
-    tweets.forEach((t) => { t.autor_figure = figurasPorNick[t.autor_nick]; });
+    await preencherFigurasTweets(tweets);
 
     lista.innerHTML = tweets.length
-      ? tweets.map(renderTweet).join('')
+      ? tweets.map((t) => renderCardTweet(t)).join('')
       : '<p class="text-sm text-muted">Ainda não há publicações.</p>';
 
     renderPaginacao(total);
-
-    document.querySelectorAll('.btn-curtir').forEach((btn) => {
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const resp = await apiFetch(`/tweets/${btn.dataset.id}/curtir`, { method: 'POST' });
-        if (!resp.ok) return;
-        const { curtido } = await resp.json();
-        const contador = btn.querySelector('.contador-curtidas');
-        contador.textContent = Number(contador.textContent) + (curtido ? 1 : -1);
-        btn.classList.toggle('text-accent', curtido);
-        btn.querySelector('i').className = curtido ? 'fa-solid fa-thumbs-up' : 'fa-regular fa-thumbs-up';
-      });
-    });
-
-    document.querySelectorAll('[data-tooltip="curtidas"]').forEach((el) => {
-      ligarTooltipPessoas(el, el.closest('[data-tweet-id]').dataset.tweetId, 'curtidas', 'Ninguém curtiu ainda.');
-    });
-    document.querySelectorAll('[data-tooltip="retweets"]').forEach((el) => {
-      ligarTooltipPessoas(el, el.closest('[data-tweet-id]').dataset.tweetId, 'retweets', 'Ninguém retuitou ainda.');
-    });
+    ligarAcoesTweet(lista, meAtual);
   }
 
   montarLayout('/feed.html').then((me) => {
     if (!me) return;
+    meAtual = me;
     montarCardEscrever(me);
     carregarFeed();
   });
