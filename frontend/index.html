@@ -82,6 +82,18 @@
           </div>
         </div>
       </div>
+
+      ${!me.tem_senha ? `
+        <div class="bg-card border border-accent/30 rounded-2xl p-5 mt-4 flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <p class="text-sm font-semibold flex items-center gap-2"><i class="fa-solid fa-key text-accent"></i> Você ainda não tem uma senha definida</p>
+            <p class="text-xs text-muted mt-1">Hoje a única forma de entrar é pelo código na missão do Habblet. Defina uma senha pra poder entrar direto.</p>
+          </div>
+          <a href="/perfil/${me.nick}/configuracoes" class="text-xs font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors shrink-0">
+            Definir senha
+          </a>
+        </div>
+      ` : ''}
     `;
 
     atualizarRelogio();
