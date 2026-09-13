@@ -118,12 +118,12 @@ twitter.get('/', async (c) => {
     FROM tweets t
     JOIN usuarios u ON u.id = t.autor_id
     LEFT JOIN patentes p ON p.id = u.patente_atual_id
-    WHERE t.apagado = 0 ${filtroAutor}
+    WHERE t.apagado = 0 AND t.resposta_a_id IS NULL ${filtroAutor}
     ORDER BY t.criado_em DESC LIMIT ? OFFSET ?
   `).bind(usuarioId, usuarioId, ...paramsFiltro, porPagina, offset).all()
 
   const totalRow = await c.env.DB.prepare(
-    `SELECT COUNT(*) AS n FROM tweets t WHERE t.apagado = 0 ${filtroAutor}`
+    `SELECT COUNT(*) AS n FROM tweets t WHERE t.apagado = 0 AND t.resposta_a_id IS NULL ${filtroAutor}`
   ).bind(...paramsFiltro).first<{ n: number }>()
 
   return c.json({ tweets: results, total: totalRow?.n ?? 0, pagina, por_pagina: porPagina })
