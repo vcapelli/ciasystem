@@ -101,22 +101,54 @@ twitter.post('/', async (c) => {
 twitter.get('/', async (c) => {
   const usuarioId = c.get('usuarioId')
   const autorId = c.req.query('autor_id')
+  const pagina = Math.max(1, Number(c.req.query('pagina')) || 1)
+  const porPagina = 5
+  const offset = (pagina - 1) * porPagina
 
-  const base = `
-    SELECT t.*, u.nick AS autor_nick,
+  const filtroAutor = autorId ? `AND t.autor_id = ?` : ``
+  const paramsFiltro = autorId ? [autorId] : []
+
+  const { results } = await c.env.DB.prepare(`
+    SELECT t.*, u.nick AS autor_nick, p.nome AS autor_patente_nome,
       (SELECT COUNT(*) FROM tweet_curtidas WHERE tweet_id = t.id) AS curtidas,
       (SELECT COUNT(*) FROM tweets r WHERE r.resposta_a_id = t.id AND r.apagado = 0) AS respostas,
       (SELECT COUNT(*) FROM tweets r WHERE r.tweet_original_id = t.id AND r.apagado = 0) AS retweets,
       EXISTS(SELECT 1 FROM tweet_curtidas WHERE tweet_id = t.id AND usuario_id = ?) AS curtido_por_mim
-    FROM tweets t JOIN usuarios u ON u.id = t.autor_id
-    WHERE t.apagado = 0 ${autorId ? 'AND t.autor_id = ?' : ''}
-    ORDER BY t.criado_em DESC LIMIT 50
-  `
-  const stmt = autorId
-    ? c.env.DB.prepare(base).bind(usuarioId, autorId)
-    : c.env.DB.prepare(base).bind(usuarioId)
+    FROM tweets t
+    JOIN usuarios u ON u.id = t.autor_id
+    LEFT JOIN patentes p ON p.id = u.patente_atual_id
+    WHERE t.apagado = 0 ${filtroAutor}
+    ORDER BY t.criado_em DESC LIMIT ? OFFSET ?
+  `).bind(usuarioId, ...paramsFiltro, porPagina, offset).all()
 
-  const { results } = await stmt.all()
+  const totalRow = await c.env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM tweets t WHERE t.apagado = 0 ${filtroAutor}`
+  ).bind(...paramsFiltro).first<{ n: number }>()
+
+  return c.json({ tweets: results, total: totalRow?.n ?? 0, pagina, por_pagina: porPagina })
+})
+
+// GET /tweets/:id/curtidas — quem curtiu (pro tooltip no hover).
+twitter.get('/:id/curtidas', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT u.id, u.nick, p.nome AS patente_nome
+     FROM tweet_curtidas tc
+     JOIN usuarios u ON u.id = tc.usuario_id
+     LEFT JOIN patentes p ON p.id = u.patente_atual_id
+     WHERE tc.tweet_id = ? ORDER BY tc.id DESC`
+  ).bind(c.req.param('id')).all()
+  return c.json(results)
+})
+
+// GET /tweets/:id/retweets — quem retuitou.
+twitter.get('/:id/retweets', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT u.id, u.nick, p.nome AS patente_nome
+     FROM tweets t
+     JOIN usuarios u ON u.id = t.autor_id
+     LEFT JOIN patentes p ON p.id = u.patente_atual_id
+     WHERE t.tweet_original_id = ? AND t.apagado = 0 ORDER BY t.id DESC`
+  ).bind(c.req.param('id')).all()
   return c.json(results)
 })
 

@@ -510,7 +510,8 @@
     const conquistas = conquistasResp.ok ? await conquistasResp.json() : [];
     const grupos = gruposResp.ok ? await gruposResp.json() : [];
     const requerimentos = requerimentosResp.ok ? await requerimentosResp.json() : [];
-    const tweets = tweetsResp.ok ? await tweetsResp.json() : [];
+    const tweetsResposta = tweetsResp.ok ? await tweetsResp.json() : { tweets: [] };
+    const tweets = tweetsResposta.tweets ?? [];
     const patentesMapa = {};
     if (patentesResp.ok) {
       for (const p of await patentesResp.json()) patentesMapa[p.id] = p.nome;
