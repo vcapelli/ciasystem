@@ -50,6 +50,7 @@
     guia_defesa_batalhao: 'Guia de Defesa do Batalhão', outro: 'Outro',
   };
   const LABEL_PAPEL = { autor: 'Autores', aprovador: 'Aprovadores', administrador_forum: 'Administradores do Fórum' };
+  const LABEL_PAPEL_SINGULAR = { autor: 'Autor', aprovador: 'Aprovador', administrador_forum: 'Administrador' };
   const ORDEM_PAPEIS = ['autor', 'aprovador', 'administrador_forum'];
 
   function formatarData(iso) {
@@ -88,7 +89,7 @@
             <span class="h-12 w-12 mx-auto rounded-full bg-basebg border border-border overflow-hidden inline-block">
               ${a.figure ? `<img src="${avatarUrl(a.figure, 'mini', '2')}" class="w-full h-[190%] object-cover object-top -mt-3 transition-transform duration-300 hover:-translate-y-[10px]" alt="">` : `<span class="w-full h-full flex items-center justify-center text-xs font-bold">${(a.usuario_nick || '?').slice(0,2).toUpperCase()}</span>`}
             </span>
-            <p class="text-xs font-semibold mt-1">${LABEL_PAPEL[papel].replace(/s$/, '')}</p>
+            <p class="text-xs font-semibold mt-1">${LABEL_PAPEL_SINGULAR[papel]}</p>
             <p class="text-xs text-muted">${a.usuario_nick || '—'}</p>
             ${a.comentario ? `<p class="text-xs text-muted italic mt-0.5">"${a.comentario}"</p>` : ''}
           </div>
@@ -139,7 +140,7 @@
         <h1 class="text-xl font-display font-bold">${doc.titulo}</h1>
         <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full capitalize ${BADGE_STATUS_DOC[doc.status] || ''}">${doc.status.replace(/_/g, ' ')}</span>
       </div>
-      <p class="text-xs text-muted mb-4">${TIPOS_DOC[doc.tipo] || doc.tipo} · /documentos/${slugDocumento}</p>
+      <p class="text-xs text-muted mb-4">${doc.categoria_nome || '—'} · /documentos/${slugDocumento}</p>
 
       <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-5">
         <div class="text-sm">${doc.conteudo_atual}</div>
@@ -172,11 +173,33 @@
           `).join('')}
         </div>
       ` : ''}
+
+      <button id="btn-ver-todas-solicitacoes" class="text-xs font-semibold text-accent hover:underline mb-3">
+        Ver todas as solicitações (concluídas e arquivadas)
+      </button>
+      <div id="lista-todas-solicitacoes" class="hidden space-y-2 mb-6"></div>
     `;
 
     if (doc.ultima_revisao_implementada) {
       document.getElementById('rodape-atual').innerHTML = await renderRodapeRevisao(doc.ultima_revisao_implementada);
     }
+
+    document.getElementById('btn-ver-todas-solicitacoes').addEventListener('click', () => {
+      const lista = document.getElementById('lista-todas-solicitacoes');
+      const abrindo = lista.classList.contains('hidden');
+      lista.classList.toggle('hidden');
+      if (!abrindo || lista.dataset.carregado) return;
+      lista.dataset.carregado = '1';
+      lista.innerHTML = revisoes.length ? revisoes.map((r) => `
+        <a href="/documentos/${slugDocumento}/revisao/${r.numero_revisao}" class="flex items-center justify-between bg-card border border-border rounded-xl px-4 py-3 hover:bg-basebg transition-colors">
+          <div>
+            <p class="text-sm font-semibold">Solicitação nº ${r.numero_revisao}</p>
+            <p class="text-xs text-muted">por ${r.autor_nick || '—'} · ${formatarData(r.criado_em)}</p>
+          </div>
+          <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full capitalize ${BADGE_STATUS_DOC[r.status] || ''}">${r.status.replace(/_/g, ' ')}</span>
+        </a>
+      `).join('') : '<p class="text-sm text-muted">Nenhuma solicitação ainda.</p>';
+    });
 
     document.getElementById('btn-abrir-solicitacao').addEventListener('click', () => {
       const form = document.getElementById('form-abrir-solicitacao');
@@ -265,26 +288,7 @@
       ${r.status !== 'rascunho' ? `
         <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-5">
           <h2 class="text-xs font-semibold uppercase tracking-wide text-muted mb-3">Etapas de assinatura</h2>
-          <div class="space-y-4">
-            ${ORDEM_PAPEIS.map((papel, i) => {
-              const pessoas = r.aprovadores.filter((a) => a.papel === papel);
-              const etapaNum = i + 1;
-              const ativa = r.etapa_atual === etapaNum;
-              return `
-                <div>
-                  <p class="text-xs font-semibold uppercase tracking-wide mb-1.5 ${ativa ? 'text-accent' : 'text-muted'}">${LABEL_PAPEL[papel]}${ativa ? ' — vez atual' : ''}</p>
-                  <div class="space-y-1.5">
-                    ${pessoas.map((a) => `
-                      <div class="flex items-center justify-between px-3 py-2 bg-basebg border border-border rounded-lg">
-                        <p class="text-sm">${a.usuario_nick || '—'}${a.comentario ? ` — <span class="text-muted italic">"${a.comentario}"</span>` : ''}</p>
-                        <span class="text-xs font-semibold px-2 py-0.5 rounded-full capitalize ${BADGE_STATUS_DOC[a.status] || ''}">${a.status}</span>
-                      </div>
-                    `).join('')}
-                  </div>
-                </div>
-              `;
-            }).join('')}
-          </div>
+          <div id="etapas-assinatura-corpo" class="space-y-4"></div>
           ${minhaLinhaEtapaAtual && minhaLinhaEtapaAtual.status === 'pendente' ? `
             <div class="flex gap-2 mt-4">
               <button id="btn-assinar-aprovar" class="text-sm font-semibold px-4 py-2 rounded-lg bg-green-500/15 text-green-600 hover:bg-green-500/25 transition-colors"><i class="fa-solid fa-check"></i> Aprovar</button>
@@ -331,6 +335,39 @@
         ` : ''}
       </div>
     `;
+
+    // --- Etapas de assinatura: preenche com avatar (efeito de saltar) ---
+    const etapasCorpo = document.getElementById('etapas-assinatura-corpo');
+    if (etapasCorpo) {
+      const secoes = await Promise.all(ORDEM_PAPEIS.map(async (papel, i) => {
+        const pessoas = await Promise.all(
+          r.aprovadores.filter((a) => a.papel === papel).map(async (a) => ({ ...a, figure: await buscarFigure(a.usuario_nick) }))
+        );
+        return { papel, etapaNum: i + 1, pessoas };
+      }));
+
+      etapasCorpo.innerHTML = secoes.map(({ papel, etapaNum, pessoas }) => {
+        const ativa = r.etapa_atual === etapaNum;
+        return `
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-wide mb-1.5 ${ativa ? 'text-accent' : 'text-muted'}">${LABEL_PAPEL[papel]}${ativa ? ' — vez atual' : ''}</p>
+            <div class="space-y-1.5">
+              ${pessoas.map((a) => `
+                <div class="flex items-center justify-between px-3 py-2 bg-basebg border border-border rounded-lg">
+                  <div class="flex items-center gap-2.5">
+                    <span class="h-7 w-7 rounded-full bg-card border border-border overflow-hidden inline-block shrink-0">
+                      ${a.figure ? `<img src="${avatarUrl(a.figure, 'mini', '2')}" class="w-full h-[190%] object-cover object-top -mt-1.5 transition-transform duration-300 hover:-translate-y-[6px]" alt="">` : `<span class="w-full h-full flex items-center justify-center text-[0.6rem] font-bold">${(a.usuario_nick || '?').slice(0,2).toUpperCase()}</span>`}
+                    </span>
+                    <p class="text-sm">${a.usuario_nick || '—'}${a.comentario ? ` — <span class="text-muted italic">"${a.comentario}"</span>` : ''}</p>
+                  </div>
+                  <span class="text-xs font-semibold px-2 py-0.5 rounded-full capitalize ${BADGE_STATUS_DOC[a.status] || ''}">${a.status}</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
 
     // --- Conteúdo: editável se rascunho + sou autor, senão só exibe ---
     const areaConteudo = document.getElementById('area-conteudo');

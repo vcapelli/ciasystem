@@ -20,6 +20,11 @@ async function ehAdmin(db: D1Database, usuarioId: number): Promise<boolean> {
   return Boolean(u?.administrador_sistema)
 }
 
+async function caminhoSolicitacao(db: D1Database, documentoId: number, numeroRevisao: number): Promise<string> {
+  const doc = await db.prepare(`SELECT slug FROM documentos WHERE id = ?`).bind(documentoId).first<{ slug: string }>()
+  return `/documentos/${doc?.slug}/revisao/${numeroRevisao}`
+}
+
 // Quem pode VER uma revisão/solicitação em aberto: qualquer um dos
 // assinantes dela (qualquer etapa), administrador do sistema, ou
 // membro do grupo de visualização configurado no documento.
@@ -43,7 +48,7 @@ async function podeVerRevisao(db: D1Database, usuarioId: number, documentoId: nu
 
 documentos.post('/', async (c) => {
   const usuarioId = c.get('usuarioId')
-  const body = await c.req.json<{ titulo: string; tipo: string; conteudo_atual: string; slug: string }>()
+  const body = await c.req.json<{ titulo: string; categoria_id: number; conteudo_atual: string; slug: string }>()
 
   if (!(await podeGerirDocumento(c.env.DB, usuarioId, 'criar'))) {
     return c.json({ erro: 'sem permissão para criar documentos' }, 403)
@@ -55,8 +60,8 @@ documentos.post('/', async (c) => {
 
   try {
     const { meta } = await c.env.DB.prepare(
-      `INSERT INTO documentos (titulo, tipo, conteudo_atual, slug) VALUES (?, ?, ?, ?)`
-    ).bind(body.titulo, body.tipo, body.conteudo_atual, body.slug).run()
+      `INSERT INTO documentos (titulo, categoria_id, conteudo_atual, slug) VALUES (?, ?, ?, ?)`
+    ).bind(body.titulo, body.categoria_id, body.conteudo_atual, body.slug).run()
     return c.json({ id: meta.last_row_id, slug: body.slug }, 201)
   } catch {
     return c.json({ erro: 'já existe um documento com esse slug' }, 409)
@@ -64,7 +69,11 @@ documentos.post('/', async (c) => {
 })
 
 documentos.get('/', async (c) => {
-  const { results } = await c.env.DB.prepare(`SELECT * FROM documentos ORDER BY titulo`).all()
+  const { results } = await c.env.DB.prepare(
+    `SELECT d.*, dc.nome AS categoria_nome
+     FROM documentos d LEFT JOIN documentos_categorias dc ON dc.id = d.categoria_id
+     ORDER BY dc.ordem, d.titulo`
+  ).all()
   return c.json(results)
 })
 
@@ -89,7 +98,9 @@ async function buscarUltimaRevisaoImplementada(db: D1Database, documentoId: numb
 
 documentos.get('/slug/:slug', async (c) => {
   const usuarioId = c.get('usuarioId')
-  const doc = await c.env.DB.prepare(`SELECT * FROM documentos WHERE slug = ?`).bind(c.req.param('slug')).first<{ id: number }>()
+  const doc = await c.env.DB.prepare(
+    `SELECT d.*, dc.nome AS categoria_nome FROM documentos d LEFT JOIN documentos_categorias dc ON dc.id = d.categoria_id WHERE d.slug = ?`
+  ).bind(c.req.param('slug')).first<{ id: number }>()
   if (!doc) return c.json({ erro: 'não encontrado' }, 404)
 
   const ultimaRevisaoImplementada = await buscarUltimaRevisaoImplementada(c.env.DB, doc.id)
@@ -112,8 +123,8 @@ documentos.get('/slug/:slug', async (c) => {
 })
 
 documentos.get('/slug/:slug/versao/:numero', async (c) => {
-  const doc = await c.env.DB.prepare(`SELECT id, titulo, tipo FROM documentos WHERE slug = ?`)
-    .bind(c.req.param('slug')).first<{ id: number; titulo: string; tipo: string }>()
+  const doc = await c.env.DB.prepare(`SELECT id, titulo, categoria_id FROM documentos WHERE slug = ?`)
+    .bind(c.req.param('slug')).first<{ id: number; titulo: string; categoria_id: number }>()
   if (!doc) return c.json({ erro: 'documento não encontrado' }, 404)
 
   const revisao = await c.env.DB.prepare(
@@ -137,8 +148,8 @@ documentos.get('/slug/:slug/versao/:numero', async (c) => {
 // sequencial do documento (o que aparece na URL).
 documentos.get('/slug/:slug/revisao/:numero', async (c) => {
   const usuarioId = c.get('usuarioId')
-  const doc = await c.env.DB.prepare(`SELECT id, titulo, tipo, slug FROM documentos WHERE slug = ?`)
-    .bind(c.req.param('slug')).first<{ id: number; titulo: string; tipo: string; slug: string }>()
+  const doc = await c.env.DB.prepare(`SELECT id, titulo, categoria_id, slug FROM documentos WHERE slug = ?`)
+    .bind(c.req.param('slug')).first<{ id: number; titulo: string; categoria_id: number; slug: string }>()
   if (!doc) return c.json({ erro: 'documento não encontrado' }, 404)
 
   const revisao = await c.env.DB.prepare(
@@ -240,6 +251,10 @@ documentos.post('/:id/revisoes', async (c) => {
     await c.env.DB.prepare(
       `INSERT INTO documento_revisao_aprovadores (revisao_id, papel, usuario_id) VALUES (?, 'autor', ?)`
     ).bind(revisaoId, coautorId).run()
+    await notificar(c.env.DB, coautorId, 'documento_revisao_pendente', 'Você foi convidado como coautor de uma revisão de documento', {
+      corpo: await caminhoSolicitacao(c.env.DB, Number(documentoId), proximoNumero?.proximo ?? 1),
+      referenciaTipo: 'documento_revisao', referenciaId: Number(revisaoId),
+    })
   }
 
   await c.env.DB.prepare(
@@ -372,6 +387,19 @@ documentos.post('/:id/revisoes/:revisaoId/enviar-para-aprovacao', async (c) => {
     `UPDATE documento_revisoes SET status = 'em_aprovacao', etapa_atual = ? WHERE id = ?`
   ).bind(etapaInicial, revisaoId).run()
 
+  if (etapaInicial === 2) {
+    const revisaoInfo = await c.env.DB.prepare(`SELECT documento_id, numero_revisao FROM documento_revisoes WHERE id = ?`)
+      .bind(revisaoId).first<{ documento_id: number; numero_revisao: number }>()
+    if (revisaoInfo) {
+      const caminho = await caminhoSolicitacao(c.env.DB, revisaoInfo.documento_id, revisaoInfo.numero_revisao)
+      for (const id of body.aprovadores_ids) {
+        await notificar(c.env.DB, id, 'documento_revisao_pendente', 'Uma revisão de documento aguarda sua aprovação', {
+          corpo: caminho, referenciaTipo: 'documento_revisao', referenciaId: Number(revisaoId),
+        })
+      }
+    }
+  }
+
   return c.json({ ok: true })
 })
 
@@ -404,6 +432,8 @@ documentos.post('/:id/revisoes/:revisaoId/assinar', async (c) => {
       `UPDATE documento_revisao_aprovadores SET status = 'pendente', comentario = NULL, decidido_em = NULL WHERE revisao_id = ?`
     ).bind(revisaoId).run()
     // O autor original continua auto-aprovado (senão a revisão nunca teria dono ativo pra reenviar).
+    const revisaoInfo = await c.env.DB.prepare(`SELECT autor_id, documento_id, numero_revisao FROM documento_revisoes WHERE id = ?`)
+      .bind(revisaoId).first<{ autor_id: number; documento_id: number; numero_revisao: number }>()
     await c.env.DB.prepare(
       `UPDATE documento_revisao_aprovadores SET status = 'aprovado', decidido_em = strftime('%Y-%m-%dT%H:%M:%SZ','now')
        WHERE revisao_id = ? AND papel = 'autor' AND usuario_id = (SELECT autor_id FROM documento_revisoes WHERE id = ?)`
@@ -414,6 +444,13 @@ documentos.post('/:id/revisoes/:revisaoId/assinar', async (c) => {
     await c.env.DB.prepare(
       `INSERT INTO documento_revisao_historico (revisao_id, descricao, criado_por_id) VALUES (?, ?, ?)`
     ).bind(revisaoId, `Reprovado na etapa "${papelDaEtapa}"${body.comentario ? ` — motivo: ${body.comentario}` : ''}. Todas as assinaturas foram reiniciadas.`, usuarioId).run()
+
+    if (revisaoInfo && revisaoInfo.autor_id !== usuarioId) {
+      await notificar(c.env.DB, revisaoInfo.autor_id, 'documento_revisao_pendente', 'Sua revisão de documento foi reprovada e voltou pro rascunho', {
+        corpo: await caminhoSolicitacao(c.env.DB, revisaoInfo.documento_id, revisaoInfo.numero_revisao),
+        referenciaTipo: 'documento_revisao', referenciaId: Number(revisaoId),
+      })
+    }
 
     return c.json({ ok: true, status_revisao: 'rascunho' })
   }
@@ -430,7 +467,23 @@ documentos.post('/:id/revisoes/:revisaoId/assinar', async (c) => {
   if (!etapaCompleta) return c.json({ ok: true, status_revisao: 'em_aprovacao' })
 
   if (revisao.etapa_atual < 3) {
-    await c.env.DB.prepare(`UPDATE documento_revisoes SET etapa_atual = ? WHERE id = ?`).bind(revisao.etapa_atual + 1, revisaoId).run()
+    const novaEtapa = revisao.etapa_atual + 1
+    await c.env.DB.prepare(`UPDATE documento_revisoes SET etapa_atual = ? WHERE id = ?`).bind(novaEtapa, revisaoId).run()
+
+    const revisaoInfo = await c.env.DB.prepare(`SELECT documento_id, numero_revisao FROM documento_revisoes WHERE id = ?`)
+      .bind(revisaoId).first<{ documento_id: number; numero_revisao: number }>()
+    if (revisaoInfo) {
+      const { results: proximosSignatarios } = await c.env.DB.prepare(
+        `SELECT usuario_id FROM documento_revisao_aprovadores WHERE revisao_id = ? AND papel = ?`
+      ).bind(revisaoId, PAPEL_DA_ETAPA[novaEtapa]).all<{ usuario_id: number }>()
+      const caminho = await caminhoSolicitacao(c.env.DB, revisaoInfo.documento_id, revisaoInfo.numero_revisao)
+      for (const s of proximosSignatarios) {
+        await notificar(c.env.DB, s.usuario_id, 'documento_revisao_pendente', 'É sua vez de assinar uma revisão de documento', {
+          corpo: caminho, referenciaTipo: 'documento_revisao', referenciaId: Number(revisaoId),
+        })
+      }
+    }
+
     return c.json({ ok: true, status_revisao: 'em_aprovacao' })
   }
 

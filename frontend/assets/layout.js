@@ -55,9 +55,18 @@ function renderNavbar(me, logoUrl) {
         </div>
         <span class="font-display font-bold uppercase tracking-wide text-sm">CIASystem</span>
       </a>
-      <a href="/perfil/${me.nick}" class="text-sm text-white/80 hover:text-accent transition-colors z-10">
-        ${me.nick}
-      </a>
+      <div class="flex items-center gap-4 z-10">
+        <div class="relative">
+          <button id="btn-notificacoes" class="relative text-white/80 hover:text-accent transition-colors">
+            <i class="fa-solid fa-bell text-lg"></i>
+            <span id="badge-notificacoes" class="hidden absolute -top-1.5 -right-2 h-4 min-w-[16px] px-1 rounded-full bg-red-500 text-white text-[0.6rem] font-bold flex items-center justify-center leading-none">0</span>
+          </button>
+          <div id="painel-notificacoes" class="hidden absolute top-full right-0 mt-3 w-80 bg-card text-dark border border-border rounded-2xl shadow-lg overflow-hidden"></div>
+        </div>
+        <a href="/perfil/${me.nick}" class="text-sm text-white/80 hover:text-accent transition-colors">
+          ${me.nick}
+        </a>
+      </div>
       ${me.figure ? `
       <div class="absolute top-0 right-6 h-full w-20 overflow-hidden">
         <img src="${avatarUrl(me.figure, 'mini')}" class="absolute inset-0 w-full h-full object-cover object-center" alt="">
@@ -65,6 +74,79 @@ function renderNavbar(me, logoUrl) {
       ` : ''}
     </nav>
   `;
+}
+
+const ICONE_NOTIFICACAO = {
+  mensagem: 'fa-solid fa-envelope', noticia: 'fa-solid fa-newspaper', noticia_grupo: 'fa-solid fa-newspaper',
+  tweet_resposta: 'fa-solid fa-reply', tweet_curtida: 'fa-solid fa-heart', tweet_retweet: 'fa-solid fa-retweet',
+  tweet_mencao: 'fa-solid fa-at', seguidor_novo: 'fa-solid fa-user-plus', requerimento_status: 'fa-solid fa-file-lines',
+  documento_revisao: 'fa-solid fa-file-circle-check', documento_revisao_pendente: 'fa-solid fa-signature',
+  emblema_recebido: 'fa-solid fa-medal', conquista_alcancada: 'fa-solid fa-trophy', sistema: 'fa-solid fa-gear',
+};
+
+async function montarNotificacoes(me) {
+  const btn = document.getElementById('btn-notificacoes');
+  const badge = document.getElementById('badge-notificacoes');
+  const painel = document.getElementById('painel-notificacoes');
+  if (!btn) return;
+
+  async function atualizarBadge() {
+    const r = await apiFetch(`/notificacoes/usuario/${me.id}?lidas=false`);
+    const naoLidas = r.ok ? await r.json() : [];
+    if (naoLidas.length) {
+      badge.textContent = naoLidas.length > 9 ? '9+' : String(naoLidas.length);
+      badge.classList.remove('hidden');
+    } else {
+      badge.classList.add('hidden');
+    }
+  }
+
+  async function renderPainel() {
+    const r = await apiFetch(`/notificacoes/usuario/${me.id}`);
+    const lista = r.ok ? await r.json() : [];
+    const recentes = lista.slice(0, 15);
+
+    painel.innerHTML = `
+      <div class="px-4 py-3 border-b border-border">
+        <p class="text-sm font-bold">Notificações</p>
+      </div>
+      <div class="max-h-96 overflow-y-auto divide-y divide-border">
+        ${recentes.length ? recentes.map((n) => `
+          <div data-notif-id="${n.id}" data-caminho="${(n.corpo || '').startsWith('/') ? n.corpo : ''}"
+            class="flex items-start gap-3 px-4 py-3 hover:bg-basebg transition-colors cursor-pointer ${!n.lido_em ? 'bg-accent/5' : ''}">
+            <span class="h-8 w-8 rounded-full bg-basebg border border-border flex items-center justify-center text-accent shrink-0">
+              <i class="${ICONE_NOTIFICACAO[n.tipo] || 'fa-solid fa-bell'} text-sm"></i>
+            </span>
+            <div class="min-w-0">
+              <p class="text-sm ${!n.lido_em ? 'font-semibold' : ''}">${n.titulo}</p>
+              ${n.corpo && !n.corpo.startsWith('/') ? `<p class="text-xs text-muted mt-0.5">${n.corpo}</p>` : ''}
+              <p class="text-xs text-muted mt-0.5">${new Date(n.criado_em).toLocaleString('pt-BR')}</p>
+            </div>
+          </div>
+        `).join('') : '<p class="text-sm text-muted px-4 py-6 text-center">Nenhuma notificação ainda.</p>'}
+      </div>
+    `;
+
+    painel.querySelectorAll('[data-notif-id]').forEach((item) => {
+      item.addEventListener('click', async () => {
+        await apiFetch(`/notificacoes/${item.dataset.notifId}/lida`, { method: 'PATCH' });
+        if (item.dataset.caminho) window.location.href = item.dataset.caminho;
+        else { await atualizarBadge(); await renderPainel(); }
+      });
+    });
+  }
+
+  btn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const abrindo = painel.classList.contains('hidden');
+    painel.classList.toggle('hidden');
+    if (abrindo) { await renderPainel(); await atualizarBadge(); }
+  });
+  document.addEventListener('click', (e) => {
+    if (!painel.contains(e.target) && e.target !== btn) painel.classList.add('hidden');
+  });
+
+  atualizarBadge();
 }
 
 function linkAtivo(url, paginaAtiva) {
@@ -149,6 +231,7 @@ async function montarLayout(paginaAtiva) {
   if (sidebarHost) sidebarHost.innerHTML = renderSidebar(itensExtras, paginaAtiva, me.administrador_sistema);
 
   document.getElementById('btn-logout')?.addEventListener('click', () => Auth.logout());
+  montarNotificacoes(me);
 
   return me;
 }
