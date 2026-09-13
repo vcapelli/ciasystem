@@ -225,6 +225,25 @@ usuarios.patch('/:id', async (c) => {
   }
 })
 
+// POST /usuarios/heartbeat — marca o usuário como "online agora".
+// Chamado periodicamente pelo frontend, não em toda requisição.
+usuarios.post('/heartbeat', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  await c.env.DB.prepare(`UPDATE usuarios SET ultimo_acesso_em = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`)
+    .bind(usuarioId).run()
+  return c.json({ ok: true })
+})
+
+// GET /usuarios/online — quem teve heartbeat nos últimos 5 minutos.
+usuarios.get('/online', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, nick FROM usuarios
+     WHERE ultimo_acesso_em IS NOT NULL AND ultimo_acesso_em >= strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-5 minutes')
+     ORDER BY nick`
+  ).all()
+  return c.json(results)
+})
+
 // GET /usuarios?busca=texto — busca simples por nick (autocomplete de
 // alvos em formulários, listagem de membros etc.) — sem figure aqui de
 // propósito: uma lista de até 100 usuários faria 100 chamadas externas

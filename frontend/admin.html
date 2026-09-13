@@ -22,9 +22,12 @@
     <div id="conteudo">
       <p class="text-sm text-muted">Carregando…</p>
     </div>
+    <div id="layout-footer"></div>
   </main>
 
 <script src="/assets/api.js"></script>
+<script src="/assets/footer.js"></script>
+<script src="/assets/editor-html.js"></script>
 <script src="/assets/layout.js"></script>
 <script>
   const TIPOS_REQUERIMENTO = [
@@ -44,6 +47,7 @@
       { id: 'hierarquia', label: 'Hierarquia' },
       { id: 'permissoes', label: 'Permissões' },
       { id: 'documentos', label: 'Documentos' },
+      { id: 'footer', label: 'Footer' },
       { id: 'sugestoes', label: 'Sugestões' },
       { id: 'banners', label: 'Banners' },
       { id: 'infracoes', label: 'Infrações' },
@@ -755,6 +759,189 @@
     `;
   }
 
+  // ---------- Footer ----------
+  async function carregarFooterAdmin() {
+    const raiz = document.getElementById('conteudo-aba');
+    raiz.innerHTML = '<p class="text-sm text-muted">Carregando…</p>';
+
+    const [config, linksResp, redesResp] = await Promise.all([
+      buscarConfiguracoes(), apiFetch('/footer/links'), apiFetch('/footer/redes-sociais'),
+    ]);
+    const links = linksResp.ok ? await linksResp.json() : [];
+    const redes = redesResp.ok ? await redesResp.json() : [];
+    const estilo = config.footer_estilo || 'estilo1';
+
+    raiz.innerHTML = `
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-5">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Estilo do footer</h2>
+        <div class="flex gap-2 mb-4">
+          <button type="button" data-estilo="estilo1" class="btn-estilo-footer text-xs font-semibold px-3 py-2 rounded-lg transition-colors ${estilo === 'estilo1' ? 'bg-accent text-white' : 'bg-basebg text-muted'}">Estilo 1 (3x3, com online)</button>
+          <button type="button" data-estilo="estilo2" class="btn-estilo-footer text-xs font-semibold px-3 py-2 rounded-lg transition-colors ${estilo === 'estilo2' ? 'bg-accent text-white' : 'bg-basebg text-muted'}">Estilo 2 (com imagem e redes)</button>
+        </div>
+
+        <label class="block text-xs text-muted mb-3">Nome do sistema
+          <input id="footer-nome-sistema" value="${config.nome_sistema || ''}" class="w-full mt-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+        </label>
+
+        <div id="campos-estilo1" class="${estilo === 'estilo1' ? '' : 'hidden'}">
+          <label class="block text-xs text-muted mb-1">Frase em HTML (linha final, estilo 1)</label>
+          ${htmlEditorHtml('footer-frase-html', config.footer_frase_html || '')}
+        </div>
+
+        <div id="campos-estilo2" class="${estilo === 'estilo2' ? '' : 'hidden'} space-y-3">
+          <label class="block text-xs text-muted">URL da imagem (topo, estilo 2)
+            <input id="footer-imagem-url" value="${config.footer_estilo2_imagem_url || ''}" placeholder="https://…" class="w-full mt-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          </label>
+          <label class="block text-xs text-muted">Alinhamento da imagem
+            <select id="footer-imagem-alinhamento" class="w-full mt-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+              <option value="esquerda" ${config.footer_estilo2_imagem_alinhamento === 'esquerda' ? 'selected' : ''}>Esquerda</option>
+              <option value="centro" ${(!config.footer_estilo2_imagem_alinhamento || config.footer_estilo2_imagem_alinhamento === 'centro') ? 'selected' : ''}>Centro</option>
+              <option value="direita" ${config.footer_estilo2_imagem_alinhamento === 'direita' ? 'selected' : ''}>Direita</option>
+            </select>
+          </label>
+          <label class="block text-xs text-muted">Texto simples
+            <textarea id="footer-texto-simples" rows="2" class="w-full mt-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">${config.footer_estilo2_texto_simples || ''}</textarea>
+          </label>
+        </div>
+
+        <button id="btn-salvar-footer-config" class="mt-4 bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Salvar</button>
+        <p id="msg-footer-config" class="hidden text-xs mt-2"></p>
+      </div>
+
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-5">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Links úteis</h2>
+        <div class="space-y-2 mb-3">
+          ${links.map((l) => `
+            <div class="flex items-center gap-2 bg-basebg border border-border rounded-lg p-2">
+              <input data-link-titulo="${l.id}" value="${l.titulo}" class="flex-1 bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">
+              <input data-link-url="${l.id}" value="${l.url}" class="flex-1 bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">
+              <input data-link-ordem="${l.id}" type="number" value="${l.ordem}" class="w-16 bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">
+              <button data-salvar-link="${l.id}" class="text-xs font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-2.5 py-1.5">Salvar</button>
+              <button data-excluir-link="${l.id}" class="text-muted hover:text-red-600 px-1"><i class="fa-solid fa-trash"></i></button>
+            </div>
+          `).join('') || '<p class="text-sm text-muted">Nenhum link cadastrado.</p>'}
+        </div>
+        <form id="form-novo-link" class="grid grid-cols-1 sm:grid-cols-[1fr_1fr_80px_auto] gap-2">
+          <input id="novo-link-titulo" placeholder="Título" required class="bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <input id="novo-link-url" placeholder="URL" required class="bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <input id="novo-link-ordem" type="number" placeholder="Ordem" value="0" class="bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <button type="submit" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Adicionar</button>
+        </form>
+      </div>
+
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Redes sociais</h2>
+        <div class="space-y-2 mb-3">
+          ${redes.map((r) => `
+            <div class="flex items-center gap-2 bg-basebg border border-border rounded-lg p-2">
+              <input data-rede-nome="${r.id}" value="${r.nome}" placeholder="Nome" class="flex-1 bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">
+              <input data-rede-url="${r.id}" value="${r.url}" placeholder="URL" class="flex-1 bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">
+              <input data-rede-icone="${r.id}" value="${r.icone || ''}" placeholder="fa-brands fa-discord" class="flex-1 bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">
+              <button data-salvar-rede="${r.id}" class="text-xs font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-2.5 py-1.5">Salvar</button>
+              <button data-excluir-rede="${r.id}" class="text-muted hover:text-red-600 px-1"><i class="fa-solid fa-trash"></i></button>
+            </div>
+          `).join('') || '<p class="text-sm text-muted">Nenhuma rede social cadastrada.</p>'}
+        </div>
+        <form id="form-nova-rede" class="grid grid-cols-1 sm:grid-cols-[1fr_1fr_1fr_auto] gap-2">
+          <input id="nova-rede-nome" placeholder="Nome (ex: Discord)" required class="bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <input id="nova-rede-url" placeholder="URL" required class="bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <input id="nova-rede-icone" placeholder="fa-brands fa-discord" class="bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <button type="submit" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Adicionar</button>
+        </form>
+      </div>
+    `;
+    ligarEditorHtml('footer-frase-html');
+
+    raiz.querySelectorAll('.btn-estilo-footer').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        await apiFetch('/configuracoes', { method: 'PATCH', body: JSON.stringify({ footer_estilo: btn.dataset.estilo }) });
+        carregarFooterAdmin();
+      });
+    });
+
+    document.getElementById('btn-salvar-footer-config').addEventListener('click', async () => {
+      const msg = document.getElementById('msg-footer-config');
+      const valores = { nome_sistema: document.getElementById('footer-nome-sistema').value.trim() };
+      if (estilo === 'estilo1') {
+        valores.footer_frase_html = document.getElementById('footer-frase-html-textarea').value;
+      } else {
+        valores.footer_estilo2_imagem_url = document.getElementById('footer-imagem-url').value.trim();
+        valores.footer_estilo2_imagem_alinhamento = document.getElementById('footer-imagem-alinhamento').value;
+        valores.footer_estilo2_texto_simples = document.getElementById('footer-texto-simples').value.trim();
+      }
+      const resp = await apiFetch('/configuracoes', { method: 'PATCH', body: JSON.stringify(valores) });
+      msg.classList.remove('hidden');
+      msg.textContent = resp.ok ? 'Salvo!' : 'Não foi possível salvar.';
+      msg.className = `text-xs mt-2 ${resp.ok ? 'text-green-600' : 'text-red-500'}`;
+    });
+
+    raiz.querySelectorAll('[data-salvar-link]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.salvarLink;
+        await apiFetch(`/footer/links/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            titulo: raiz.querySelector(`[data-link-titulo="${id}"]`).value.trim(),
+            url: raiz.querySelector(`[data-link-url="${id}"]`).value.trim(),
+            ordem: Number(raiz.querySelector(`[data-link-ordem="${id}"]`).value),
+          }),
+        });
+        carregarFooterAdmin();
+      });
+    });
+    raiz.querySelectorAll('[data-excluir-link]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        await apiFetch(`/footer/links/${btn.dataset.excluirLink}`, { method: 'DELETE' });
+        carregarFooterAdmin();
+      });
+    });
+    document.getElementById('form-novo-link').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await apiFetch('/footer/links', {
+        method: 'POST',
+        body: JSON.stringify({
+          titulo: document.getElementById('novo-link-titulo').value.trim(),
+          url: document.getElementById('novo-link-url').value.trim(),
+          ordem: Number(document.getElementById('novo-link-ordem').value) || 0,
+        }),
+      });
+      carregarFooterAdmin();
+    });
+
+    raiz.querySelectorAll('[data-salvar-rede]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.salvarRede;
+        await apiFetch(`/footer/redes-sociais/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            nome: raiz.querySelector(`[data-rede-nome="${id}"]`).value.trim(),
+            url: raiz.querySelector(`[data-rede-url="${id}"]`).value.trim(),
+            icone: raiz.querySelector(`[data-rede-icone="${id}"]`).value.trim() || null,
+          }),
+        });
+        carregarFooterAdmin();
+      });
+    });
+    raiz.querySelectorAll('[data-excluir-rede]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        await apiFetch(`/footer/redes-sociais/${btn.dataset.excluirRede}`, { method: 'DELETE' });
+        carregarFooterAdmin();
+      });
+    });
+    document.getElementById('form-nova-rede').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await apiFetch('/footer/redes-sociais', {
+        method: 'POST',
+        body: JSON.stringify({
+          nome: document.getElementById('nova-rede-nome').value.trim(),
+          url: document.getElementById('nova-rede-url').value.trim(),
+          icone: document.getElementById('nova-rede-icone').value.trim() || undefined,
+        }),
+      });
+      carregarFooterAdmin();
+    });
+  }
+
   // ---------- Documentos: quem pode criar/editar/deletar ----------
   async function carregarPermissoesDocumentos() {
     const raiz = document.getElementById('conteudo-aba');
@@ -1210,6 +1397,7 @@
     hierarquia: carregarHierarquia,
     permissoes: carregarPermissoes,
     documentos: carregarPermissoesDocumentos,
+    footer: carregarFooterAdmin,
     sugestoes: carregarSugestoes,
     banners: carregarBanners,
     infracoes: carregarInfracoes,
