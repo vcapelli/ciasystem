@@ -76,6 +76,13 @@
   buscarConfiguracoes().then((config) => {
     if (config.logo_url) {
       document.getElementById('login-logo').innerHTML = `<img src="${config.logo_url}" class="w-full h-full object-contain" alt="Logo">`;
+      let iconeLink = document.querySelector('link[rel="icon"]');
+      if (!iconeLink) {
+        iconeLink = document.createElement('link');
+        iconeLink.rel = 'icon';
+        document.head.appendChild(iconeLink);
+      }
+      iconeLink.href = config.logo_url;
     }
   });
 

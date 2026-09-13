@@ -48,7 +48,7 @@ function iniciais(nick) {
 
 function renderNavbar(me, logoUrl) {
   return `
-    <nav class="sticky top-0 z-20 bg-dark text-white h-[72px] px-6 pr-28 flex items-center justify-between relative overflow-hidden shadow-md">
+    <nav class="sticky top-0 z-20 bg-dark text-white h-[72px] px-6 pr-28 flex items-center justify-between relative shadow-md">
       <a href="/index.html" class="flex items-center gap-3 shrink-0 z-10">
         <div class="h-8 w-8 rounded-lg bg-accent/25 flex items-center justify-center text-accent font-black text-sm overflow-hidden">
           ${logoUrl ? `<img src="${logoUrl}" class="w-full h-full object-contain" alt="Logo">` : 'CIA'}
@@ -226,6 +226,16 @@ async function montarLayout(paginaAtiva) {
   const itensExtras = menuResp.ok ? await menuResp.json() : [];
 
   document.body.insertAdjacentHTML('afterbegin', renderNavbar(me, config.logo_url));
+
+  if (config.logo_url) {
+    let iconeLink = document.querySelector('link[rel="icon"]');
+    if (!iconeLink) {
+      iconeLink = document.createElement('link');
+      iconeLink.rel = 'icon';
+      document.head.appendChild(iconeLink);
+    }
+    iconeLink.href = config.logo_url;
+  }
 
   const sidebarHost = document.getElementById('layout-sidebar');
   if (sidebarHost) sidebarHost.innerHTML = renderSidebar(itensExtras, paginaAtiva, me.administrador_sistema);

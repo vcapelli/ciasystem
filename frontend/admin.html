@@ -44,7 +44,6 @@
       { id: 'hierarquia', label: 'Hierarquia' },
       { id: 'permissoes', label: 'Permissões' },
       { id: 'documentos', label: 'Documentos' },
-      { id: 'categorias-doc', label: 'Categorias' },
       { id: 'sugestoes', label: 'Sugestões' },
       { id: 'banners', label: 'Banners' },
       { id: 'infracoes', label: 'Infrações' },
@@ -510,8 +509,14 @@
 
     raiz.innerHTML = `
       <div class="bg-card border border-border rounded-2xl shadow-sm p-5 max-w-lg">
-        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Logo do sistema</h2>
-        <input id="config-logo-url" value="${config.logo_url || ''}" placeholder="https://…" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent mb-3">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-1">Logo do sistema</h2>
+        <p class="text-xs text-muted mb-3">Usada na navbar, na tela de login e como ícone do site (favicon).</p>
+        <div class="flex items-center gap-3 mb-3">
+          <span class="h-12 w-12 rounded-lg bg-basebg border border-border overflow-hidden flex items-center justify-center shrink-0">
+            ${config.logo_url ? `<img src="${config.logo_url}" class="w-full h-full object-contain" alt="Logo atual">` : '<i class="fa-solid fa-image text-muted"></i>'}
+          </span>
+          <input id="config-logo-url" value="${config.logo_url || ''}" placeholder="https://…" class="flex-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+        </div>
         <button id="btn-salvar-logo" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Salvar</button>
         <p id="config-msg" class="hidden text-xs mt-2"></p>
       </div>
@@ -526,6 +531,7 @@
       msg.classList.remove('hidden');
       msg.textContent = resp.ok ? 'Salvo!' : 'Não foi possível salvar.';
       msg.className = `text-xs mt-2 ${resp.ok ? 'text-green-600' : 'text-red-500'}`;
+      if (resp.ok) carregarConfiguracoes();
     });
   }
 
@@ -910,11 +916,18 @@
       }
       carregarPermissoesDocumentos();
     });
+
+    raiz.insertAdjacentHTML('beforeend', `
+      <h2 class="text-sm font-bold uppercase tracking-wide text-muted mt-8 mb-3">Categorias de documento</h2>
+      <div id="conteudo-aba-categorias"></div>
+    `);
+    carregarCategoriasDocumento();
   }
 
   // ---------- Categorias de documento ----------
   async function carregarCategoriasDocumento() {
-    const raiz = document.getElementById('conteudo-aba');
+    const raiz = document.getElementById('conteudo-aba-categorias');
+    if (!raiz) return;
     raiz.innerHTML = '<p class="text-sm text-muted">Carregando…</p>';
 
     const resp = await apiFetch('/documentos-categorias');
@@ -1197,7 +1210,6 @@
     hierarquia: carregarHierarquia,
     permissoes: carregarPermissoes,
     documentos: carregarPermissoesDocumentos,
-    'categorias-doc': carregarCategoriasDocumento,
     sugestoes: carregarSugestoes,
     banners: carregarBanners,
     infracoes: carregarInfracoes,
