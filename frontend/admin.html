@@ -753,11 +753,41 @@
     const raiz = document.getElementById('conteudo-aba');
     raiz.innerHTML = '<p class="text-sm text-muted">Carregando…</p>';
 
-    const [permResp, gruposResp] = await Promise.all([apiFetch('/documentos-permissoes'), apiFetch('/grupos')]);
+    const [permResp, gruposResp, docsResp] = await Promise.all([
+      apiFetch('/documentos-permissoes'), apiFetch('/grupos'), apiFetch('/documentos'),
+    ]);
     const permissoesLista = permResp.ok ? await permResp.json() : [];
     const grupos = gruposResp.ok ? await gruposResp.json() : [];
+    const documentosLista = docsResp.ok ? await docsResp.json() : [];
 
     raiz.innerHTML = `
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-5">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Quem pode ver as solicitações em aberto de cada documento</h2>
+        <p class="text-xs text-muted mb-3">Além de quem já participa da solicitação (autores/aprovadores/administradores) e dos administradores do sistema, que sempre veem tudo.</p>
+        <div class="space-y-2">
+          ${documentosLista.map((d) => `
+            <div class="flex items-center justify-between gap-3 px-3 py-2 bg-basebg border border-border rounded-lg">
+              <p class="text-sm font-semibold flex-1">${d.titulo}</p>
+              <select data-grupo-visualizacao="${d.id}" class="bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">
+                <option value="">Ninguém além dos participantes</option>
+                ${grupos.map((g) => `<option value="${g.id}" ${d.grupo_visualizacao_solicitacoes_id === g.id ? 'selected' : ''}>${g.nome}</option>`).join('')}
+              </select>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+
+    raiz.querySelectorAll('[data-grupo-visualizacao]').forEach((select) => {
+      select.addEventListener('change', async () => {
+        await apiFetch(`/documentos/${select.dataset.grupoVisualizacao}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ grupo_visualizacao_solicitacoes_id: select.value ? Number(select.value) : null }),
+        });
+      });
+    });
+
+    raiz.insertAdjacentHTML('beforeend', `
       <div class="bg-card border border-border rounded-2xl shadow-sm divide-y divide-border overflow-hidden mb-5">
         ${permissoesLista.length ? permissoesLista.map((p) => `
           <div class="flex items-center justify-between px-4 py-3">
@@ -803,7 +833,7 @@
           <p id="perm-doc-erro" class="hidden text-xs text-red-500"></p>
         </form>
       </div>
-    `;
+    `);
 
     let alvoModo = 'usuario';
     let usuarioSelecionadoId = null;

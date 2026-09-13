@@ -27,10 +27,17 @@
 <script src="/assets/api.js"></script>
 <script src="/assets/layout.js"></script>
 <script src="/assets/editor-html.js"></script>
+<script src="/assets/seletor-usuarios.js"></script>
 <script>
-  const partesUrl = window.location.pathname.split('/').filter(Boolean); // ['documentos', slug, numero?]
+  // Formatos de URL possíveis:
+  //   /documentos/{slug}                  → documento vigente
+  //   /documentos/{slug}/{numero}          → versão antiga (implementada), só leitura
+  //   /documentos/{slug}/revisao/{numero}   → página da solicitação (rascunho/votação)
+  const partesUrl = window.location.pathname.split('/').filter(Boolean);
   const slugDocumento = partesUrl[1];
-  const numeroVersaoAntiga = partesUrl[2] || null;
+  const ehPaginaSolicitacao = partesUrl[2] === 'revisao';
+  const numeroSolicitacao = ehPaginaSolicitacao ? partesUrl[3] : null;
+  const numeroVersaoAntiga = !ehPaginaSolicitacao ? (partesUrl[2] || null) : null;
 
   const BADGE_STATUS_DOC = {
     vigente: 'bg-green-500/15 text-green-600', em_revisao: 'bg-accent/15 text-accent', arquivado: 'bg-white/10 text-muted',
@@ -42,8 +49,8 @@
     constituicao_militar: 'Constituição Militar', codigo_penal_militar: 'Código Penal Militar',
     guia_defesa_batalhao: 'Guia de Defesa do Batalhão', outro: 'Outro',
   };
-  const LABEL_PAPEL = { autor: 'Autor', revisor: 'Revisor', administrador_forum: 'Administrador do Fórum' };
-  const ORDEM_PAPEIS = ['autor', 'revisor', 'administrador_forum'];
+  const LABEL_PAPEL = { autor: 'Autores', aprovador: 'Aprovadores', administrador_forum: 'Administradores do Fórum' };
+  const ORDEM_PAPEIS = ['autor', 'aprovador', 'administrador_forum'];
 
   function formatarData(iso) {
     if (!iso) return '—';
@@ -60,10 +67,12 @@
 
   async function renderRodapeRevisao(info) {
     if (!info) return '';
-    const comAvatar = await Promise.all(ORDEM_PAPEIS.map(async (papel) => {
-      const a = info.aprovadores.find((x) => x.papel === papel);
-      const figure = await buscarFigure(a?.usuario_nick);
-      return { papel, a, figure };
+    const porPapel = {};
+    for (const papel of ORDEM_PAPEIS) porPapel[papel] = info.aprovadores.filter((a) => a.papel === papel);
+
+    const secoes = await Promise.all(ORDEM_PAPEIS.map(async (papel) => {
+      const pessoas = await Promise.all(porPapel[papel].map(async (a) => ({ ...a, figure: await buscarFigure(a.usuario_nick) })));
+      return { papel, pessoas };
     }));
 
     return `
@@ -74,48 +83,18 @@
         <div><p class="uppercase text-muted font-semibold mb-0.5">Implementado em</p><p>${formatarData(info.implementado_em)}</p></div>
       </div>
       <div class="flex flex-wrap gap-6">
-        ${comAvatar.map(({ papel, a, figure }) => `
+        ${secoes.map(({ papel, pessoas }) => pessoas.map((a) => `
           <div class="text-center">
             <span class="h-12 w-12 mx-auto rounded-full bg-basebg border border-border overflow-hidden inline-block">
-              ${figure ? `<img src="${avatarUrl(figure, 'mini', '2')}" class="w-full h-[190%] object-cover object-top -mt-3 transition-transform duration-300 hover:-translate-y-[10px]" alt="">` : `<span class="w-full h-full flex items-center justify-center text-xs font-bold">${(a?.usuario_nick || '?').slice(0,2).toUpperCase()}</span>`}
+              ${a.figure ? `<img src="${avatarUrl(a.figure, 'mini', '2')}" class="w-full h-[190%] object-cover object-top -mt-3 transition-transform duration-300 hover:-translate-y-[10px]" alt="">` : `<span class="w-full h-full flex items-center justify-center text-xs font-bold">${(a.usuario_nick || '?').slice(0,2).toUpperCase()}</span>`}
             </span>
-            <p class="text-xs font-semibold mt-1">${LABEL_PAPEL[papel]}</p>
-            <p class="text-xs text-muted">${a?.usuario_nick || '—'}</p>
-            ${a?.comentario ? `<p class="text-xs text-muted italic mt-0.5">"${a.comentario}"</p>` : ''}
+            <p class="text-xs font-semibold mt-1">${LABEL_PAPEL[papel].replace(/s$/, '')}</p>
+            <p class="text-xs text-muted">${a.usuario_nick || '—'}</p>
+            ${a.comentario ? `<p class="text-xs text-muted italic mt-0.5">"${a.comentario}"</p>` : ''}
           </div>
-        `).join('')}
+        `).join('')).join('')}
       </div>
     `;
-  }
-
-  async function buscarUsuarios(termo) {
-    if (termo.length < 2) return [];
-    const r = await apiFetch(`/usuarios?busca=${encodeURIComponent(termo)}`);
-    return r.ok ? await r.json() : [];
-  }
-
-  function ligarAutocompleteUsuario(inputEl, sugestoesEl, aoSelecionar) {
-    let debounce;
-    inputEl.addEventListener('input', () => {
-      aoSelecionar(null);
-      clearTimeout(debounce);
-      const termo = inputEl.value.trim();
-      if (termo.length < 2) { sugestoesEl.classList.add('hidden'); return; }
-      debounce = setTimeout(async () => {
-        const lista = await buscarUsuarios(termo);
-        sugestoesEl.innerHTML = lista.length
-          ? lista.map((u) => `<button type="button" data-id="${u.id}" data-nick="${u.nick}" class="w-full text-left px-3 py-2 text-sm hover:bg-basebg transition-colors">${u.nick}</button>`).join('')
-          : '<p class="px-3 py-2 text-sm text-muted">Nenhum usuário encontrado.</p>';
-        sugestoesEl.classList.remove('hidden');
-      }, 250);
-    });
-    sugestoesEl.addEventListener('click', (e) => {
-      const btn = e.target.closest('button[data-id]');
-      if (!btn) return;
-      inputEl.value = btn.dataset.nick;
-      sugestoesEl.classList.add('hidden');
-      aoSelecionar(Number(btn.dataset.id));
-    });
   }
 
   // ---------- Visão de uma versão antiga (somente leitura) ----------
@@ -142,7 +121,7 @@
     document.getElementById('rodape-versao-antiga').innerHTML = await renderRodapeRevisao(revisao);
   }
 
-  // ---------- Vista principal do documento (vigente + lista de revisões) ----------
+  // ---------- Vista principal do documento (vigente + solicitações abertas) ----------
   async function montarDocumento(me) {
     const container = document.getElementById('conteudo');
     container.innerHTML = '<p class="text-sm text-muted mt-2">Carregando…</p>';
@@ -153,7 +132,6 @@
 
     const revisoesResp = await apiFetch(`/documentos/${doc.id}/revisoes`);
     const revisoes = revisoesResp.ok ? await revisoesResp.json() : [];
-    const revisaoEmCurso = revisoes.find((r) => !['implementado', 'cancelado', 'reprovado'].includes(r.status));
     const versoesImplementadas = revisoes.filter((r) => r.status === 'implementado');
 
     container.innerHTML = `
@@ -168,16 +146,21 @@
         <div id="rodape-atual"></div>
       </div>
 
-      ${!revisaoEmCurso ? `
-        <button id="btn-abrir-revisao" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors mb-6">
-          <i class="fa-solid fa-pen"></i> Abrir solicitação de alteração
-        </button>
-        <div id="form-abrir-revisao" class="hidden bg-card border border-border rounded-2xl shadow-sm p-5 mb-6"></div>
-      ` : `
-        <a href="#" data-ver-revisao="${revisaoEmCurso.id}" class="block bg-accent/10 border border-accent/30 rounded-2xl p-4 mb-6 hover:bg-accent/15 transition-colors">
-          <p class="text-sm font-semibold text-accent">Já existe uma revisão em andamento (nº ${revisaoEmCurso.numero_revisao}) — clique pra ver</p>
-        </a>
-      `}
+      <button id="btn-abrir-solicitacao" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors mb-6">
+        <i class="fa-solid fa-pen"></i> Abrir solicitação de alteração
+      </button>
+      <div id="form-abrir-solicitacao" class="hidden bg-card border border-border rounded-2xl shadow-sm p-5 mb-6"></div>
+
+      ${doc.solicitacoes_abertas?.length ? `
+        <h2 class="text-sm font-bold uppercase tracking-wide text-muted mb-3">Solicitações em aberto</h2>
+        <div class="flex flex-wrap gap-2 mb-6">
+          ${doc.solicitacoes_abertas.map((r) => `
+            <a href="/documentos/${slugDocumento}/revisao/${r.numero_revisao}" class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-accent/10 text-accent hover:bg-accent/20 transition-colors">
+              Solicitação nº ${r.numero_revisao} <span class="capitalize">· ${r.status.replace(/_/g, ' ')}</span>
+            </a>
+          `).join('')}
+        </div>
+      ` : ''}
 
       ${versoesImplementadas.length ? `
         <h2 class="text-sm font-bold uppercase tracking-wide text-muted mb-3">Versões anteriores</h2>
@@ -189,119 +172,77 @@
           `).join('')}
         </div>
       ` : ''}
-
-      <h2 class="text-sm font-bold uppercase tracking-wide text-muted mb-3">Histórico de revisões</h2>
-      <div class="space-y-2">
-        ${revisoes.length ? revisoes.map((r) => `
-          <a href="#" data-ver-revisao="${r.id}" class="flex items-center justify-between bg-card border border-border rounded-xl px-4 py-3 hover:bg-basebg transition-colors">
-            <div>
-              <p class="text-sm font-semibold">Revisão nº ${r.numero_revisao}</p>
-              <p class="text-xs text-muted">por ${r.autor_nick || '—'} · ${formatarData(r.criado_em)}</p>
-            </div>
-            <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full capitalize ${BADGE_STATUS_DOC[r.status] || ''}">${r.status.replace(/_/g, ' ')}</span>
-          </a>
-        `).join('') : '<p class="text-sm text-muted">Nenhuma revisão ainda.</p>'}
-      </div>
     `;
 
     if (doc.ultima_revisao_implementada) {
       document.getElementById('rodape-atual').innerHTML = await renderRodapeRevisao(doc.ultima_revisao_implementada);
     }
 
-    container.querySelectorAll('[data-ver-revisao]').forEach((a) => {
-      a.addEventListener('click', (e) => { e.preventDefault(); montarRevisao(me, doc, a.dataset.verRevisao); });
-    });
+    document.getElementById('btn-abrir-solicitacao').addEventListener('click', () => {
+      const form = document.getElementById('form-abrir-solicitacao');
+      const abrindo = form.classList.contains('hidden');
+      form.classList.add('hidden');
+      if (!abrindo) return;
+      form.classList.remove('hidden');
+      form.innerHTML = `
+        <form class="space-y-3">
+          <label class="text-xs text-muted">O que pretende alterar? (descrição inicial)
+            <textarea data-campo="descricao_inicial" rows="2" required class="w-full mt-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></textarea>
+          </label>
+          <label class="block text-xs text-muted mb-1">Coautores (opcional — podem editar o rascunho junto com você)</label>
+          ${seletorUsuariosHtml('seletor-coautores-abrir', 'Buscar por nick…')}
+          <button type="submit" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Abrir solicitação</button>
+          <p data-erro class="hidden text-xs text-red-500"></p>
+        </form>
+      `;
+      ligarSeletorUsuarios('seletor-coautores-abrir', { excluirIds: [me.id] });
 
-    const btnAbrir = document.getElementById('btn-abrir-revisao');
-    if (btnAbrir) {
-      btnAbrir.addEventListener('click', () => {
-        const form = document.getElementById('form-abrir-revisao');
-        const abrindo = form.classList.contains('hidden');
-        form.classList.add('hidden');
-        if (!abrindo) return;
-        form.classList.remove('hidden');
-        form.innerHTML = `
-          <form class="space-y-3">
-            <label class="block text-xs text-muted mb-1">Conteúdo proposto</label>
-            ${htmlEditorHtml('editor-nova-revisao', doc.conteudo_atual)}
-            <label class="text-xs text-muted">O que pretende alterar? (descrição inicial)
-              <textarea data-campo="descricao_inicial" rows="2" required class="w-full mt-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></textarea>
-            </label>
-            <div class="grid grid-cols-2 gap-3">
-              <div class="relative">
-                <label class="text-xs text-muted">Revisor
-                  <input data-campo-nick="revisor" placeholder="Buscar por nick…" autocomplete="off" required class="w-full mt-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
-                </label>
-                <div data-sugestoes="revisor" class="hidden absolute z-10 mt-1 w-full bg-card border border-border rounded-lg shadow-md max-h-40 overflow-y-auto"></div>
-              </div>
-              <div class="relative">
-                <label class="text-xs text-muted">Administrador do Fórum
-                  <input data-campo-nick="administrador_forum" placeholder="Buscar por nick…" autocomplete="off" required class="w-full mt-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
-                </label>
-                <div data-sugestoes="administrador_forum" class="hidden absolute z-10 mt-1 w-full bg-card border border-border rounded-lg shadow-md max-h-40 overflow-y-auto"></div>
-              </div>
-            </div>
-            <button type="submit" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Abrir solicitação</button>
-            <p data-erro class="hidden text-xs text-red-500"></p>
-          </form>
-        `;
-        ligarEditorHtml('editor-nova-revisao');
-
-        let revisorId = null, administradorForumId = null;
-        ligarAutocompleteUsuario(
-          form.querySelector('[data-campo-nick="revisor"]'), form.querySelector('[data-sugestoes="revisor"]'),
-          (id) => { revisorId = id; }
-        );
-        ligarAutocompleteUsuario(
-          form.querySelector('[data-campo-nick="administrador_forum"]'), form.querySelector('[data-sugestoes="administrador_forum"]'),
-          (id) => { administradorForumId = id; }
-        );
-
-        form.querySelector('form').addEventListener('submit', async (e) => {
-          e.preventDefault();
-          const erroEl = form.querySelector('[data-erro]');
-          if (!revisorId || !administradorForumId) {
-            erroEl.textContent = 'Selecione um revisor e um administrador do fórum válidos na busca.';
-            erroEl.classList.remove('hidden');
-            return;
-          }
-          const resp = await apiFetch(`/documentos/${doc.id}/revisoes`, {
-            method: 'POST',
-            body: JSON.stringify({
-              conteudo_proposto: document.getElementById('editor-nova-revisao-textarea').value,
-              descricao_inicial: form.querySelector('[data-campo="descricao_inicial"]').value.trim(),
-              revisor_id: revisorId,
-              administrador_forum_id: administradorForumId,
-            }),
-          });
-          if (!resp.ok) {
-            const d = await resp.json().catch(() => ({}));
-            erroEl.textContent = d.erro || 'Não foi possível abrir a revisão.';
-            erroEl.classList.remove('hidden');
-            return;
-          }
-          montarDocumento(me);
+      form.querySelector('form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const resp = await apiFetch(`/documentos/${doc.id}/revisoes`, {
+          method: 'POST',
+          body: JSON.stringify({
+            descricao_inicial: form.querySelector('[data-campo="descricao_inicial"]').value.trim(),
+            coautores_ids: obterSelecionados('seletor-coautores-abrir'),
+          }),
         });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          const erroEl = form.querySelector('[data-erro]');
+          erroEl.textContent = d.erro || 'Não foi possível abrir a solicitação.';
+          erroEl.classList.remove('hidden');
+          return;
+        }
+        const { numero_revisao } = await resp.json();
+        window.location.href = `/documentos/${slugDocumento}/revisao/${numero_revisao}`;
       });
-    }
+    });
   }
 
-  // ---------- Vista de uma revisão específica (em andamento) ----------
-  async function montarRevisao(me, doc, revisaoId) {
+  // ---------- Página da solicitação (rascunho / votação em etapas) ----------
+  async function montarSolicitacao(me) {
     const container = document.getElementById('conteudo');
     container.innerHTML = '<p class="text-sm text-muted mt-2">Carregando…</p>';
 
-    const resp = await apiFetch(`/documentos/${doc.id}/revisoes/${revisaoId}`);
-    if (!resp.ok) { container.innerHTML = '<p class="text-sm text-red-500 mt-2">Revisão não encontrada.</p>'; return; }
+    const resp = await apiFetch(`/documentos/slug/${slugDocumento}/revisao/${numeroSolicitacao}`);
+    if (!resp.ok) {
+      const d = await resp.json().catch(() => ({}));
+      container.innerHTML = `<p class="text-sm text-red-500 mt-2">${d.erro || 'Solicitação não encontrada.'}</p>`;
+      return;
+    }
     const r = await resp.json();
+    const documentoId = r.documento.id;
 
-    const administradorForum = r.aprovadores.find((a) => a.papel === 'administrador_forum');
-    const souAdministradorForumDesta = administradorForum?.usuario_id === me.id;
+    const souAutor = r.aprovadores.some((a) => a.papel === 'autor' && a.usuario_id === me.id);
+    const minhaLinhaEtapaAtual = r.aprovadores.find((a) => {
+      const papelDaEtapa = ORDEM_PAPEIS[r.etapa_atual - 1];
+      return a.papel === papelDaEtapa && a.usuario_id === me.id;
+    });
 
     container.innerHTML = `
-      <button id="btn-voltar-doc" class="text-xs text-muted hover:text-dark transition-colors mt-2 mb-2">← Voltar pro documento</button>
-      <div class="flex items-center justify-between mb-1">
-        <h1 class="text-lg font-display font-bold">Revisão nº ${r.numero_revisao}</h1>
+      <a href="/documentos/${slugDocumento}" class="text-xs text-muted hover:text-dark transition-colors">← Voltar pro documento</a>
+      <div class="flex items-center justify-between mt-2 mb-1">
+        <h1 class="text-lg font-display font-bold">${r.documento.titulo} — Solicitação nº ${r.numero_revisao}</h1>
         <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full capitalize ${BADGE_STATUS_DOC[r.status] || ''}">${r.status.replace(/_/g, ' ')}</span>
       </div>
       <p class="text-xs text-muted mb-4">por ${r.autor_nick || '—'} · aberta em ${formatarData(r.criado_em)}</p>
@@ -309,34 +250,51 @@
       <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-5">
         <div class="flex items-center justify-between mb-2">
           <h2 class="text-xs font-semibold uppercase tracking-wide text-muted">Conteúdo proposto</h2>
-          ${r.status !== 'implementado' && r.status !== 'cancelado' && r.autor_id === me.id ? '<button id="btn-editar-conteudo" class="text-xs text-accent hover:underline">Editar</button>' : ''}
+          ${r.status === 'rascunho' && souAutor ? '<span class="text-xs text-muted">Editável (rascunho)</span>' : ''}
         </div>
-        <div id="conteudo-proposto-view" class="text-sm">${r.conteudo_proposto}</div>
-        <div id="conteudo-proposto-edit" class="hidden"></div>
+        <div id="area-conteudo"></div>
       </div>
 
-      <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-5">
-        <h2 class="text-xs font-semibold uppercase tracking-wide text-muted mb-3">Aprovadores</h2>
-        <div class="space-y-2">
-          ${r.aprovadores.map((a) => `
-            <div class="flex items-center justify-between px-3 py-2 bg-basebg border border-border rounded-lg">
-              <div>
-                <p class="text-sm font-semibold">${LABEL_PAPEL[a.papel]}</p>
-                <p class="text-xs text-muted">${a.usuario_nick || '—'}${a.comentario ? ` — "${a.comentario}"` : ''}</p>
-              </div>
-              <div class="flex items-center gap-2">
-                <span class="text-xs font-semibold px-2 py-0.5 rounded-full capitalize ${BADGE_STATUS_DOC[a.status] || ''}">${a.status}</span>
-                ${a.papel !== 'autor' && a.status === 'pendente' && a.usuario_id === me.id ? `
-                  <button data-decidir-papel="${a.papel}" data-status="aprovado" class="text-xs font-semibold px-2 py-1 rounded-lg bg-green-500/15 text-green-600 hover:bg-green-500/25 transition-colors"><i class="fa-solid fa-check"></i></button>
-                  <button data-decidir-papel="${a.papel}" data-status="reprovado" class="text-xs font-semibold px-2 py-1 rounded-lg bg-red-500/15 text-red-600 hover:bg-red-500/25 transition-colors"><i class="fa-solid fa-xmark"></i></button>
-                ` : ''}
-              </div>
+      ${r.status === 'rascunho' && souAutor ? `
+        <button id="btn-enviar-aprovacao" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors mb-6">
+          <i class="fa-solid fa-paper-plane"></i> Salvar e enviar pra aprovação
+        </button>
+        <div id="form-enviar-aprovacao" class="hidden bg-card border border-border rounded-2xl shadow-sm p-5 mb-6"></div>
+      ` : ''}
+
+      ${r.status !== 'rascunho' ? `
+        <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-5">
+          <h2 class="text-xs font-semibold uppercase tracking-wide text-muted mb-3">Etapas de assinatura</h2>
+          <div class="space-y-4">
+            ${ORDEM_PAPEIS.map((papel, i) => {
+              const pessoas = r.aprovadores.filter((a) => a.papel === papel);
+              const etapaNum = i + 1;
+              const ativa = r.etapa_atual === etapaNum;
+              return `
+                <div>
+                  <p class="text-xs font-semibold uppercase tracking-wide mb-1.5 ${ativa ? 'text-accent' : 'text-muted'}">${LABEL_PAPEL[papel]}${ativa ? ' — vez atual' : ''}</p>
+                  <div class="space-y-1.5">
+                    ${pessoas.map((a) => `
+                      <div class="flex items-center justify-between px-3 py-2 bg-basebg border border-border rounded-lg">
+                        <p class="text-sm">${a.usuario_nick || '—'}${a.comentario ? ` — <span class="text-muted italic">"${a.comentario}"</span>` : ''}</p>
+                        <span class="text-xs font-semibold px-2 py-0.5 rounded-full capitalize ${BADGE_STATUS_DOC[a.status] || ''}">${a.status}</span>
+                      </div>
+                    `).join('')}
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+          ${minhaLinhaEtapaAtual && minhaLinhaEtapaAtual.status === 'pendente' ? `
+            <div class="flex gap-2 mt-4">
+              <button id="btn-assinar-aprovar" class="text-sm font-semibold px-4 py-2 rounded-lg bg-green-500/15 text-green-600 hover:bg-green-500/25 transition-colors"><i class="fa-solid fa-check"></i> Aprovar</button>
+              <button id="btn-assinar-reprovar" class="text-sm font-semibold px-4 py-2 rounded-lg bg-red-500/15 text-red-600 hover:bg-red-500/25 transition-colors"><i class="fa-solid fa-xmark"></i> Reprovar</button>
             </div>
-          `).join('')}
+          ` : ''}
         </div>
-      </div>
+      ` : ''}
 
-      ${r.status === 'aprovado' && souAdministradorForumDesta ? `
+      ${r.status === 'aprovado' && r.aprovadores.some((a) => a.papel === 'administrador_forum' && a.usuario_id === me.id) ? `
         <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-5">
           <h2 class="text-xs font-semibold uppercase tracking-wide text-muted mb-2">Agendar implementação</h2>
           <div class="flex items-center gap-2">
@@ -349,7 +307,7 @@
       ${r.status === 'agendado' ? `
         <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-5">
           <p class="text-sm">Agendado para <b>${formatarData(r.agendado_para)}</b>.</p>
-          ${souAdministradorForumDesta || me.administrador_sistema ? `
+          ${r.aprovadores.some((a) => a.papel === 'administrador_forum' && a.usuario_id === me.id) || me.administrador_sistema ? `
             <button id="btn-implementar" class="mt-2 text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Implementar agora</button>
           ` : ''}
         </div>
@@ -365,7 +323,7 @@
             </div>
           `).join('')}
         </div>
-        ${r.status !== 'implementado' && r.status !== 'cancelado' ? `
+        ${r.status === 'rascunho' && souAutor ? `
           <form id="form-novo-historico" class="flex gap-2">
             <input placeholder="Descreva mais uma alteração…" required class="flex-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
             <button type="submit" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Adicionar</button>
@@ -374,52 +332,114 @@
       </div>
     `;
 
-    document.getElementById('btn-voltar-doc').addEventListener('click', () => montarDocumento(me));
+    // --- Conteúdo: editável se rascunho + sou autor, senão só exibe ---
+    const areaConteudo = document.getElementById('area-conteudo');
+    if (r.status === 'rascunho' && souAutor) {
+      areaConteudo.innerHTML = `
+        ${htmlEditorHtml('editor-conteudo-solicitacao', r.conteudo_proposto)}
+        <button id="btn-salvar-rascunho" class="mt-2 text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Salvar rascunho</button>
+      `;
+      ligarEditorHtml('editor-conteudo-solicitacao');
+      document.getElementById('btn-salvar-rascunho').addEventListener('click', async () => {
+        await apiFetch(`/documentos/${documentoId}/revisoes/${r.id}/historico`, {
+          method: 'POST',
+          body: JSON.stringify({ descricao: 'Rascunho salvo.', conteudo_proposto: document.getElementById('editor-conteudo-solicitacao-textarea').value }),
+        });
+        montarSolicitacao(me);
+      });
+    } else {
+      areaConteudo.innerHTML = `<div class="text-sm">${r.conteudo_proposto}</div>`;
+    }
 
-    const btnEditar = document.getElementById('btn-editar-conteudo');
-    if (btnEditar) {
-      btnEditar.addEventListener('click', () => {
-        document.getElementById('conteudo-proposto-view').classList.add('hidden');
-        btnEditar.classList.add('hidden');
-        const editArea = document.getElementById('conteudo-proposto-edit');
-        editArea.classList.remove('hidden');
-        editArea.innerHTML = `
-          ${htmlEditorHtml('editor-editar-conteudo', r.conteudo_proposto)}
-          <button id="btn-salvar-conteudo" class="mt-2 text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Salvar</button>
+    // --- Enviar pra aprovação ---
+    const btnEnviar = document.getElementById('btn-enviar-aprovacao');
+    if (btnEnviar) {
+      btnEnviar.addEventListener('click', () => {
+        const form = document.getElementById('form-enviar-aprovacao');
+        const abrindo = form.classList.contains('hidden');
+        form.classList.add('hidden');
+        if (!abrindo) return;
+        form.classList.remove('hidden');
+
+        const autoresAtuaisIds = r.aprovadores.filter((a) => a.papel === 'autor').map((a) => a.usuario_id);
+
+        form.innerHTML = `
+          <form class="space-y-4">
+            <div>
+              <label class="block text-xs text-muted mb-1">Coautores adicionais (opcional)</label>
+              ${seletorUsuariosHtml('seletor-coautores-enviar', 'Buscar por nick…')}
+            </div>
+            <div>
+              <label class="block text-xs text-muted mb-1">Aprovadores (obrigatório — ao menos 1)</label>
+              ${seletorUsuariosHtml('seletor-aprovadores-enviar', 'Buscar por nick…')}
+            </div>
+            <div>
+              <label class="block text-xs text-muted mb-1">Administradores do Fórum (obrigatório — só administradores do sistema)</label>
+              ${seletorUsuariosHtml('seletor-admforum-enviar', 'Buscar por nick de um admin…')}
+            </div>
+            <button type="submit" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Enviar pra aprovação</button>
+            <p data-erro class="hidden text-xs text-red-500"></p>
+          </form>
         `;
-        ligarEditorHtml('editor-editar-conteudo');
-        editArea.querySelector('#btn-salvar-conteudo').addEventListener('click', async () => {
-          const novoConteudo = document.getElementById('editor-editar-conteudo-textarea').value;
-          await apiFetch(`/documentos/${doc.id}/revisoes/${revisaoId}/historico`, {
+        ligarSeletorUsuarios('seletor-coautores-enviar', { excluirIds: autoresAtuaisIds });
+        ligarSeletorUsuarios('seletor-aprovadores-enviar', {});
+        ligarSeletorUsuarios('seletor-admforum-enviar', { apenasAdmin: true });
+
+        form.querySelector('form').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const erroEl = form.querySelector('[data-erro]');
+          const aprovadoresIds = obterSelecionados('seletor-aprovadores-enviar');
+          const administradoresIds = obterSelecionados('seletor-admforum-enviar');
+          if (!aprovadoresIds.length || !administradoresIds.length) {
+            erroEl.textContent = 'Escolha ao menos um aprovador e um administrador do fórum.';
+            erroEl.classList.remove('hidden');
+            return;
+          }
+          const resp = await apiFetch(`/documentos/${documentoId}/revisoes/${r.id}/enviar-para-aprovacao`, {
             method: 'POST',
-            body: JSON.stringify({ descricao: 'Conteúdo proposto editado.', conteudo_proposto: novoConteudo }),
+            body: JSON.stringify({
+              coautores_adicionais_ids: obterSelecionados('seletor-coautores-enviar'),
+              aprovadores_ids: aprovadoresIds,
+              administradores_forum_ids: administradoresIds,
+            }),
           });
-          montarRevisao(me, doc, revisaoId);
+          if (!resp.ok) {
+            const d = await resp.json().catch(() => ({}));
+            erroEl.textContent = d.erro || 'Não foi possível enviar.';
+            erroEl.classList.remove('hidden');
+            return;
+          }
+          montarSolicitacao(me);
         });
       });
     }
 
-    container.querySelectorAll('[data-decidir-papel]').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const comentario = btn.dataset.status === 'reprovado' ? (prompt('Motivo da reprovação (opcional):') || undefined) : undefined;
-        await apiFetch(`/documentos/${doc.id}/revisoes/${revisaoId}/aprovadores/${btn.dataset.decidirPapel}/decidir`, {
-          method: 'POST',
-          body: JSON.stringify({ status: btn.dataset.status, comentario }),
-        });
-        montarRevisao(me, doc, revisaoId);
+    // --- Assinar (aprovar/reprovar na etapa atual) ---
+    const btnAprovar = document.getElementById('btn-assinar-aprovar');
+    if (btnAprovar) {
+      btnAprovar.addEventListener('click', async () => {
+        await apiFetch(`/documentos/${documentoId}/revisoes/${r.id}/assinar`, { method: 'POST', body: JSON.stringify({ status: 'aprovado' }) });
+        montarSolicitacao(me);
       });
-    });
+    }
+    const btnReprovar = document.getElementById('btn-assinar-reprovar');
+    if (btnReprovar) {
+      btnReprovar.addEventListener('click', async () => {
+        const comentario = prompt('Motivo da reprovação (opcional) — isso reinicia toda a votação:') || undefined;
+        await apiFetch(`/documentos/${documentoId}/revisoes/${r.id}/assinar`, { method: 'POST', body: JSON.stringify({ status: 'reprovado', comentario }) });
+        montarSolicitacao(me);
+      });
+    }
 
     const btnAgendar = document.getElementById('btn-agendar');
     if (btnAgendar) {
       btnAgendar.addEventListener('click', async () => {
         const valor = document.getElementById('input-agendar').value;
         if (!valor) return;
-        await apiFetch(`/documentos/${doc.id}/revisoes/${revisaoId}/agendar`, {
-          method: 'POST',
-          body: JSON.stringify({ agendado_para: new Date(valor).toISOString() }),
+        await apiFetch(`/documentos/${documentoId}/revisoes/${r.id}/agendar`, {
+          method: 'POST', body: JSON.stringify({ agendado_para: new Date(valor).toISOString() }),
         });
-        montarRevisao(me, doc, revisaoId);
+        montarSolicitacao(me);
       });
     }
 
@@ -427,8 +447,8 @@
     if (btnImplementar) {
       btnImplementar.addEventListener('click', async () => {
         if (!confirm('Implementar essa revisão agora? Isso substitui o conteúdo vigente do documento.')) return;
-        await apiFetch(`/documentos/${doc.id}/revisoes/${revisaoId}/implementar`, { method: 'POST' });
-        montarDocumento(me);
+        await apiFetch(`/documentos/${documentoId}/revisoes/${r.id}/implementar`, { method: 'POST' });
+        window.location.href = `/documentos/${slugDocumento}`;
       });
     }
 
@@ -437,11 +457,10 @@
       formHistorico.addEventListener('submit', async (e) => {
         e.preventDefault();
         const input = formHistorico.querySelector('input');
-        await apiFetch(`/documentos/${doc.id}/revisoes/${revisaoId}/historico`, {
-          method: 'POST',
-          body: JSON.stringify({ descricao: input.value.trim() }),
+        await apiFetch(`/documentos/${documentoId}/revisoes/${r.id}/historico`, {
+          method: 'POST', body: JSON.stringify({ descricao: input.value.trim() }),
         });
-        montarRevisao(me, doc, revisaoId);
+        montarSolicitacao(me);
       });
     }
   }
@@ -449,7 +468,8 @@
   montarLayout('/documentos.html').then((me) => {
     if (!me) return;
     if (!slugDocumento) { document.getElementById('conteudo').innerHTML = '<p class="text-sm text-red-500 mt-2">Nenhum documento especificado.</p>'; return; }
-    if (numeroVersaoAntiga) montarVersaoAntiga();
+    if (ehPaginaSolicitacao) montarSolicitacao(me);
+    else if (numeroVersaoAntiga) montarVersaoAntiga();
     else montarDocumento(me);
   });
 </script>
