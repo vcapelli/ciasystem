@@ -113,13 +113,14 @@ twitter.get('/', async (c) => {
       (SELECT COUNT(*) FROM tweet_curtidas WHERE tweet_id = t.id) AS curtidas,
       (SELECT COUNT(*) FROM tweets r WHERE r.resposta_a_id = t.id AND r.apagado = 0) AS respostas,
       (SELECT COUNT(*) FROM tweets r WHERE r.tweet_original_id = t.id AND r.apagado = 0) AS retweets,
-      EXISTS(SELECT 1 FROM tweet_curtidas WHERE tweet_id = t.id AND usuario_id = ?) AS curtido_por_mim
+      EXISTS(SELECT 1 FROM tweet_curtidas WHERE tweet_id = t.id AND usuario_id = ?) AS curtido_por_mim,
+      (SELECT id FROM tweets WHERE tweet_original_id = t.id AND autor_id = ? AND apagado = 0 LIMIT 1) AS meu_retweet_id
     FROM tweets t
     JOIN usuarios u ON u.id = t.autor_id
     LEFT JOIN patentes p ON p.id = u.patente_atual_id
     WHERE t.apagado = 0 ${filtroAutor}
     ORDER BY t.criado_em DESC LIMIT ? OFFSET ?
-  `).bind(usuarioId, ...paramsFiltro, porPagina, offset).all()
+  `).bind(usuarioId, usuarioId, ...paramsFiltro, porPagina, offset).all()
 
   const totalRow = await c.env.DB.prepare(
     `SELECT COUNT(*) AS n FROM tweets t WHERE t.apagado = 0 ${filtroAutor}`
@@ -172,12 +173,13 @@ twitter.get('/:id', async (c) => {
       (SELECT COUNT(*) FROM tweet_curtidas WHERE tweet_id = t.id) AS curtidas,
       (SELECT COUNT(*) FROM tweets r WHERE r.resposta_a_id = t.id AND r.apagado = 0) AS respostas,
       (SELECT COUNT(*) FROM tweets r WHERE r.tweet_original_id = t.id AND r.apagado = 0) AS retweets,
-      EXISTS(SELECT 1 FROM tweet_curtidas WHERE tweet_id = t.id AND usuario_id = ?) AS curtido_por_mim
+      EXISTS(SELECT 1 FROM tweet_curtidas WHERE tweet_id = t.id AND usuario_id = ?) AS curtido_por_mim,
+      (SELECT id FROM tweets WHERE tweet_original_id = t.id AND autor_id = ? AND apagado = 0 LIMIT 1) AS meu_retweet_id
      FROM tweets t
      JOIN usuarios u ON u.id = t.autor_id
      LEFT JOIN patentes p ON p.id = u.patente_atual_id
      WHERE t.id = ? AND t.apagado = 0`
-  ).bind(usuarioId, id).first()
+  ).bind(usuarioId, usuarioId, id).first()
   if (!tweet) return c.json({ erro: 'não encontrado' }, 404)
 
   const { results: midias } = await c.env.DB.prepare(`SELECT * FROM tweet_midias WHERE tweet_id = ? ORDER BY ordem`).bind(id).all()

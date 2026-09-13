@@ -124,7 +124,7 @@
     await preencherFigurasTweets(tweets);
 
     lista.innerHTML = tweets.length
-      ? tweets.map((t) => renderCardTweet(t)).join('')
+      ? tweets.map((t) => renderCardTweet(t, null, meAtual)).join('')
       : '<p class="text-sm text-muted">Ainda não há publicações.</p>';
 
     renderPaginacao(total);

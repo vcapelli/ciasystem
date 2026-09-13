@@ -243,7 +243,7 @@
 
     await preencherFigurasTweets(itens.map((i) => i.tweetParaExibir));
 
-    raiz.innerHTML = `<div class="space-y-3">${itens.map((i) => renderCardTweet(i.tweetParaExibir, i.repostadoPor)).join('')}</div>`;
+    raiz.innerHTML = `<div class="space-y-3">${itens.map((i) => renderCardTweet(i.tweetParaExibir, i.repostadoPor, me)).join('')}</div>`;
     ligarAcoesTweet(raiz, me);
   }
 

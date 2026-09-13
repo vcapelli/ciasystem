@@ -54,7 +54,8 @@ function renderComentario(r) {
 // `cabecalhoRepostagem`, se passado, é o nick de quem repostou —
 // desenha o aviso "{nick} repostou:" acima do card, que fica igual ao
 // post original por baixo.
-function renderCardTweet(t, cabecalhoRepostagem) {
+function renderCardTweet(t, cabecalhoRepostagem, me) {
+  const podeDeletar = me && (t.autor_id === me.id || me.administrador_sistema);
   return `
     <div>
       ${cabecalhoRepostagem ? `
@@ -72,16 +73,23 @@ function renderCardTweet(t, cabecalhoRepostagem) {
         <p class="text-xs text-muted flex items-center gap-1 mb-2"><i class="fa-regular fa-clock"></i> ${tempoRelativoTweet(t.criado_em)}</p>
         ${t.conteudo ? `<p class="text-sm whitespace-pre-wrap">${t.conteudo}</p>` : ''}
         <hr class="border-border my-3">
-        <div class="flex items-center gap-6 text-xs text-muted">
-          <button class="btn-curtir relative flex items-center gap-1.5 transition-colors ${t.curtido_por_mim ? 'text-accent' : 'hover:text-dark'}" data-id="${t.id}" data-tooltip="curtidas">
-            <i class="${t.curtido_por_mim ? 'fa-solid' : 'fa-regular'} fa-thumbs-up"></i> <span class="contador-curtidas">${t.curtidas}</span>
-          </button>
-          <button class="btn-comentar flex items-center gap-1.5 hover:text-dark transition-colors" data-id="${t.id}">
-            <i class="fa-regular fa-comment"></i> <span class="contador-respostas">${t.respostas}</span>
-          </button>
-          <span class="relative flex items-center gap-1.5 hover:text-dark transition-colors" data-tooltip="retweets">
-            <i class="fa-solid fa-retweet"></i> ${t.retweets}
-          </span>
+        <div class="flex items-center justify-between text-xs text-muted">
+          <div class="flex items-center gap-6">
+            <button class="btn-curtir relative flex items-center gap-1.5 transition-colors ${t.curtido_por_mim ? 'text-accent' : 'hover:text-dark'}" data-id="${t.id}" data-tooltip="curtidas">
+              <i class="${t.curtido_por_mim ? 'fa-solid' : 'fa-regular'} fa-thumbs-up"></i> <span class="contador-curtidas">${t.curtidas}</span>
+            </button>
+            <button class="btn-comentar flex items-center gap-1.5 hover:text-dark transition-colors" data-id="${t.id}">
+              <i class="fa-regular fa-comment"></i> <span class="contador-respostas">${t.respostas}</span>
+            </button>
+            <button class="btn-retweet relative flex items-center gap-1.5 transition-colors ${t.meu_retweet_id ? 'text-green-600' : 'hover:text-dark'}" data-id="${t.id}" data-meu-retweet-id="${t.meu_retweet_id || ''}" data-tooltip="retweets">
+              <i class="fa-solid fa-retweet"></i> <span class="contador-retweets">${t.retweets}</span>
+            </button>
+          </div>
+          ${podeDeletar ? `
+            <button class="btn-deletar-tweet hover:text-red-600 transition-colors px-1" data-id="${t.id}" title="Excluir">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          ` : ''}
         </div>
         <div id="comentarios-${t.id}" class="hidden mt-3 -mx-4 -mb-4 border-t border-border"></div>
       </div>
@@ -114,13 +122,15 @@ function _ligarTooltipPessoasTweet(botao, tweetId, tipo) {
     if (carregado) return;
     tooltip.innerHTML = '<p class="text-xs text-muted p-3">Carregando…</p>';
     const lista = await _buscarListaPessoasTweet(tweetId, tipo);
+    lista.forEach((p) => { p.autor_nick = p.nick; });
+    await preencherFigurasTweets(lista);
     carregado = true;
     tooltip.innerHTML = `
       <p class="text-xs font-semibold px-3 py-2 border-b border-border">${tipo === 'curtidas' ? 'Curtiram' : 'Retuitaram'} (${lista.length})</p>
       <div class="max-h-48 overflow-y-auto">
         ${lista.length ? lista.map((p) => `
           <a href="/perfil/${p.nick}" class="flex items-center gap-2 px-3 py-2 hover:bg-basebg transition-colors">
-            <span class="h-7 w-7 rounded-full bg-basebg border border-border flex items-center justify-center text-[0.6rem] font-bold shrink-0">${p.nick.slice(0,2).toUpperCase()}</span>
+            ${renderAvatarTweet(p.nick, p.autor_figure, 'pequeno')}
             <span class="min-w-0">
               <p class="text-xs font-semibold truncate">${p.nick}</p>
               <p class="text-[0.65rem] text-muted truncate">${p.patente_nome || '—'}</p>
@@ -200,6 +210,28 @@ function ligarAcoesTweet(raiz, me) {
     });
   });
 
+  raiz.querySelectorAll('.btn-retweet').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const contador = btn.querySelector('.contador-retweets');
+      if (btn.dataset.meuRetweetId) {
+        const resp = await apiFetch(`/tweets/${btn.dataset.meuRetweetId}`, { method: 'DELETE' });
+        if (!resp.ok) return;
+        btn.dataset.meuRetweetId = '';
+        contador.textContent = Number(contador.textContent) - 1;
+        btn.classList.remove('text-green-600');
+      } else {
+        const resp = await apiFetch('/tweets', { method: 'POST', body: JSON.stringify({ tweet_original_id: Number(btn.dataset.id) }) });
+        if (!resp.ok) return;
+        const { id } = await resp.json();
+        btn.dataset.meuRetweetId = id;
+        contador.textContent = Number(contador.textContent) + 1;
+        btn.classList.add('text-green-600');
+      }
+      _cacheListaPessoasTweet[`retweets-${btn.dataset.id}`] = null;
+    });
+  });
+
   raiz.querySelectorAll('[data-tooltip="curtidas"]').forEach((el) => {
     _ligarTooltipPessoasTweet(el, el.closest('[data-tweet-id]').dataset.tweetId, 'curtidas');
   });
@@ -209,5 +241,16 @@ function ligarAcoesTweet(raiz, me) {
 
   raiz.querySelectorAll('.btn-comentar').forEach((btn) => {
     btn.addEventListener('click', () => _abrirComentarios(btn.dataset.id, me));
+  });
+
+  raiz.querySelectorAll('.btn-deletar-tweet').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm('Excluir essa publicação? Essa ação não pode ser desfeita.')) return;
+      const resp = await apiFetch(`/tweets/${btn.dataset.id}`, { method: 'DELETE' });
+      if (!resp.ok) return;
+      const card = btn.closest('[data-tweet-id]');
+      (card.parentElement || card).remove();
+    });
   });
 }
