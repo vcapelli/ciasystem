@@ -183,6 +183,7 @@
   function renderAbas(nick, ehMeuPerfil) {
     const abas = [
       { id: 'linha-do-tempo', label: 'Linha do tempo', href: `/perfil/${nick}` },
+      { id: 'cursos', label: 'Cursos', href: `/perfil/${nick}/cursos` },
       { id: 'postagens', label: 'Feed', href: `/perfil/${nick}/postagens` },
     ];
     if (ehMeuPerfil) abas.push({ id: 'configuracoes', label: 'Configurações', href: `/perfil/${nick}/configuracoes` });
@@ -220,6 +221,33 @@
         }).join('')}
       </div>
     `;
+  }
+
+  function renderCursos(usuarioId) {
+    setTimeout(() => montarCursosAsync(usuarioId), 0);
+    return '<div id="cursos-raiz"><p class="text-sm text-muted">Carregando…</p></div>';
+  }
+
+  async function montarCursosAsync(usuarioId) {
+    const raiz = document.getElementById('cursos-raiz');
+    if (!raiz) return;
+    const resp = await apiFetch(`/grupos/cursos-concluidos/${usuarioId}`);
+    const cursos = resp.ok ? await resp.json() : [];
+
+    raiz.innerHTML = cursos.length ? `
+      <div class="space-y-2">
+        ${cursos.map((c) => `
+          <div class="bg-card border border-border rounded-2xl shadow-sm px-4 py-3">
+            <div class="flex items-center justify-between">
+              <p class="text-sm font-semibold">${c.curso_titulo}${c.curso_abreviacao ? ` <span class="text-muted font-normal">(${c.curso_abreviacao})</span>` : ''}</p>
+              <p class="text-xs text-muted">${c.data_efetiva}</p>
+            </div>
+            <p class="text-xs text-muted mt-0.5">${c.grupo_nome} · instrutor ${c.instrutor_nick}</p>
+            ${c.comentario ? `<p class="text-xs text-muted mt-1">${c.comentario}</p>` : ''}
+          </div>
+        `).join('')}
+      </div>
+    ` : '<p class="text-sm text-muted">Nenhum curso concluído ainda.</p>';
   }
 
   function renderPostagens(tweets, me) {
@@ -594,7 +622,7 @@
 
         <div>
           ${renderAbas(perfil.nick, ehMeuPerfil)}
-          ${aba === 'postagens' ? renderPostagens(tweets, me) : aba === 'configuracoes' && ehMeuPerfil ? renderConfiguracoes(meCompleto, banners, me) : renderTimeline(requerimentos, patentesMapa, me)}
+          ${aba === 'postagens' ? renderPostagens(tweets, me) : aba === 'cursos' ? renderCursos(perfil.id) : aba === 'configuracoes' && ehMeuPerfil ? renderConfiguracoes(meCompleto, banners, me) : renderTimeline(requerimentos, patentesMapa, me)}
         </div>
       </div>
     `;

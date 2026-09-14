@@ -34,6 +34,37 @@ grupos.get('/', async (c) => {
   return c.json(results)
 })
 
+// GET /grupos/todos-cursos — todas as aulas/cursos de todos os
+// grupos, pra alimentar o requisito "Curso Concluído" no admin.
+// Precisa ficar declarado antes de GET /:slug pra não ser confundido
+// com um slug de grupo.
+grupos.get('/todos-cursos', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT ga.id, ga.titulo, ga.abreviacao, g.nome AS grupo_nome
+     FROM grupo_aulas ga JOIN grupos g ON g.id = ga.grupo_id
+     WHERE ga.ativo = 1 ORDER BY g.nome, ga.titulo`
+  ).all()
+  return c.json(results)
+})
+
+// GET /grupos/cursos-concluidos/:usuarioId — cursos aprovados desse
+// usuário, de qualquer grupo (pra aba "Cursos" do perfil).
+grupos.get('/cursos-concluidos/:usuarioId', async (c) => {
+  const { usuarioId } = c.req.param()
+  const { results } = await c.env.DB.prepare(
+    `SELECT r.id, r.data_efetiva, r.comentario, ga.titulo AS curso_titulo, ga.abreviacao AS curso_abreviacao,
+            g.nome AS grupo_nome, g.slug AS grupo_slug, ins.nick AS instrutor_nick
+     FROM grupo_aula_relatorio_alunos ra
+     JOIN grupo_aula_relatorios r ON r.id = ra.relatorio_id
+     JOIN grupo_aulas ga ON ga.id = r.aula_id
+     JOIN grupos g ON g.id = r.grupo_id
+     JOIN usuarios ins ON ins.id = r.instrutor_id
+     WHERE ra.usuario_id = ? AND r.aprovado = 1
+     ORDER BY r.data_efetiva DESC`
+  ).bind(usuarioId).all()
+  return c.json(results)
+})
+
 grupos.get('/:slug', async (c) => {
   const slug = c.req.param('slug')
   const grupo = await c.env.DB.prepare(`SELECT * FROM grupos WHERE slug = ? AND ativo = 1`).bind(slug).first()
@@ -277,12 +308,18 @@ grupos.get('/:slug/registros', async (c) => {
 
   const { results } = await c.env.DB.prepare(
     `SELECT gr.id, gr.tipo, gr.motivo, gr.data_efetiva, gr.permissao, gr.criado_em,
-            u.nick AS usuario_nick, u.tag AS usuario_tag,
+            u.nick AS usuario_nick,
+            ugAlvo_n.nome AS usuario_cargo_atual,
             reg.nick AS registrado_por_nick,
+            ugReg_n.nome AS registrado_por_cargo,
             na.nome AS nivel_anterior_nome, nn.nome AS nivel_novo_nome
      FROM grupo_registros gr
      JOIN usuarios u ON u.id = gr.usuario_id
+     LEFT JOIN usuario_grupos ugAlvo ON ugAlvo.usuario_id = gr.usuario_id AND ugAlvo.grupo_id = gr.grupo_id AND ugAlvo.ativo = 1
+     LEFT JOIN grupo_niveis ugAlvo_n ON ugAlvo_n.id = ugAlvo.nivel_id
      LEFT JOIN usuarios reg ON reg.id = gr.registrado_por_id
+     LEFT JOIN usuario_grupos ugReg ON ugReg.usuario_id = gr.registrado_por_id AND ugReg.grupo_id = gr.grupo_id AND ugReg.ativo = 1
+     LEFT JOIN grupo_niveis ugReg_n ON ugReg_n.id = ugReg.nivel_id
      LEFT JOIN grupo_niveis na ON na.id = gr.nivel_anterior_id
      LEFT JOIN grupo_niveis nn ON nn.id = gr.nivel_novo_id
      WHERE gr.grupo_id = ? ORDER BY gr.criado_em DESC`
@@ -316,13 +353,14 @@ grupos.post('/:slug/registros', async (c) => {
     .run()
 
   if (body.tipo === 'admissao' && body.nivel_novo_id) {
-    try {
+    const jaMembro = await c.env.DB.prepare(`SELECT id FROM usuario_grupos WHERE usuario_id = ? AND grupo_id = ?`)
+      .bind(body.usuario_id, grupo.id).first<{ id: number }>()
+    if (jaMembro) {
+      await c.env.DB.prepare(`UPDATE usuario_grupos SET ativo = 1, nivel_id = ? WHERE id = ?`)
+        .bind(body.nivel_novo_id, jaMembro.id).run()
+    } else {
       await c.env.DB.prepare(`INSERT INTO usuario_grupos (usuario_id, grupo_id, nivel_id) VALUES (?, ?, ?)`)
         .bind(body.usuario_id, grupo.id, body.nivel_novo_id).run()
-    } catch {
-      // já era membro — só reativa e atualiza o cargo, se estava inativo.
-      await c.env.DB.prepare(`UPDATE usuario_grupos SET ativo = 1, nivel_id = ? WHERE grupo_id = ? AND usuario_id = ?`)
-        .bind(body.nivel_novo_id, grupo.id, body.usuario_id).run()
     }
   }
   if ((body.tipo === 'promocao' || body.tipo === 'rebaixamento') && body.nivel_novo_id) {
@@ -541,6 +579,70 @@ grupos.get('/:slug/aulas/:aulaSlug', async (c) => {
   return c.json(aula)
 })
 
+// --- Relatórios de aula ---
+
+grupos.post('/:slug/aulas-relatorios', async (c) => {
+  const criadoPorId = c.get('usuarioId')
+  const slug = c.req.param('slug')
+  const body = await c.req.json<{
+    aula_id: number; instrutor_id: number; data_efetiva: string
+    aprovado: boolean; comentario?: string; alunos_ids: number[]
+  }>()
+
+  const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
+  if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
+  if (!(await ehAdminDoGrupo(c.env.DB, criadoPorId, grupo.id))) {
+    return c.json({ erro: 'sem permissão de administrador neste grupo' }, 403)
+  }
+  if (!body.alunos_ids?.length) return c.json({ erro: 'escolha ao menos um aluno' }, 400)
+
+  const { meta } = await c.env.DB.prepare(
+    `INSERT INTO grupo_aula_relatorios (grupo_id, aula_id, instrutor_id, data_efetiva, aprovado, comentario, criado_por_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).bind(grupo.id, body.aula_id, body.instrutor_id, body.data_efetiva, body.aprovado ? 1 : 0, body.comentario ?? null, criadoPorId).run()
+
+  for (const alunoId of body.alunos_ids) {
+    await c.env.DB.prepare(`INSERT INTO grupo_aula_relatorio_alunos (relatorio_id, usuario_id) VALUES (?, ?)`)
+      .bind(meta.last_row_id, alunoId).run()
+  }
+
+  return c.json({ id: meta.last_row_id }, 201)
+})
+
+grupos.get('/:slug/aulas-relatorios', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  const slug = c.req.param('slug')
+  const pagina = Math.max(1, Number(c.req.query('pagina')) || 1)
+  const porPagina = 10
+  const offset = (pagina - 1) * porPagina
+
+  const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
+  if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
+  if (!(await pertenceAoGrupo(c.env.DB, usuarioId, grupo.id))) {
+    return c.json({ erro: 'só membros deste grupo (ou administradores) podem ver isso' }, 403)
+  }
+
+  const { results: relatorios } = await c.env.DB.prepare(
+    `SELECT r.*, ga.titulo AS curso_titulo, ins.nick AS instrutor_nick
+     FROM grupo_aula_relatorios r
+     JOIN grupo_aulas ga ON ga.id = r.aula_id
+     JOIN usuarios ins ON ins.id = r.instrutor_id
+     WHERE r.grupo_id = ? ORDER BY r.criado_em DESC LIMIT ? OFFSET ?`
+  ).bind(grupo.id, porPagina, offset).all<{ id: number }>()
+
+  for (const rel of relatorios as unknown as Record<string, unknown>[]) {
+    const { results: alunos } = await c.env.DB.prepare(
+      `SELECT u.id, u.nick FROM grupo_aula_relatorio_alunos ra JOIN usuarios u ON u.id = ra.usuario_id WHERE ra.relatorio_id = ?`
+    ).bind(rel.id).all()
+    rel.alunos = alunos
+  }
+
+  const totalRow = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM grupo_aula_relatorios WHERE grupo_id = ?`)
+    .bind(grupo.id).first<{ n: number }>()
+
+  return c.json({ relatorios, total: totalRow?.n ?? 0, pagina, por_pagina: porPagina })
+})
+
 // --- Páginas do hub ---
 
 grupos.post('/:slug/paginas', async (c) => {
@@ -669,9 +771,27 @@ grupos.get('/:slug/noticias', async (c) => {
     return c.json({ erro: 'só membros deste grupo (ou administradores) podem ver isso' }, 403)
   }
 
-  const { results } = await c.env.DB.prepare(`SELECT * FROM grupo_noticias WHERE grupo_id = ? ORDER BY criado_em DESC`)
-    .bind(grupo.id).all()
+  const { results } = await c.env.DB.prepare(
+    `SELECT n.*, u.nick AS autor_nick, gn.nome AS autor_cargo
+     FROM grupo_noticias n
+     JOIN usuarios u ON u.id = n.autor_id
+     LEFT JOIN usuario_grupos ug ON ug.usuario_id = n.autor_id AND ug.grupo_id = n.grupo_id AND ug.ativo = 1
+     LEFT JOIN grupo_niveis gn ON gn.id = ug.nivel_id
+     WHERE n.grupo_id = ? ORDER BY n.criado_em DESC`
+  ).bind(grupo.id).all()
   return c.json(results)
+})
+
+grupos.delete('/:slug/noticias/:noticiaId', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  const { slug, noticiaId } = c.req.param()
+  const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
+  if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
+  if (!(await ehAdminDoGrupo(c.env.DB, usuarioId, grupo.id))) {
+    return c.json({ erro: 'sem permissão de administrador neste grupo' }, 403)
+  }
+  await c.env.DB.prepare(`DELETE FROM grupo_noticias WHERE id = ? AND grupo_id = ?`).bind(noticiaId, grupo.id).run()
+  return c.json({ ok: true })
 })
 
 // GET /grupos/usuario/:usuarioId — grupos que esse usuário integra

@@ -83,7 +83,7 @@
   function descreverRequisito(r) {
     if (r.tipo === 'tempo_na_patente') return `${r.dias} dia(s) na patente`;
     if (r.tipo === 'tempo_na_policia') return `${r.dias} dia(s) na polícia`;
-    if (r.tipo === 'curso') return r.curso_nome || 'Curso';
+    if (r.tipo === 'curso') return r.curso_nome || (r.aula_titulo ? `${r.aula_titulo} (${r.aula_grupo_nome})` : 'Curso');
     if (r.tipo === 'certificado') return r.certificado_tipo;
     if (r.tipo === 'grupo') return `Membro de ${r.grupo_nome || 'grupo'}`;
     return r.descricao || 'Outro requisito';
@@ -93,13 +93,14 @@
     const raiz = document.getElementById('conteudo-aba');
     raiz.innerHTML = '<p class="text-sm text-muted">Carregando…</p>';
 
-    const [patentesResp, requisitosResp, gruposResp, cursosResp] = await Promise.all([
-      apiFetch('/patentes'), apiFetch('/requisitos-patente'), apiFetch('/grupos'), apiFetch('/cursos'),
+    const [patentesResp, requisitosResp, gruposResp, cursosResp, cursosDeGruposResp] = await Promise.all([
+      apiFetch('/patentes'), apiFetch('/requisitos-patente'), apiFetch('/grupos'), apiFetch('/cursos'), apiFetch('/grupos/todos-cursos'),
     ]);
     const todasPatentes = patentesResp.ok ? await patentesResp.json() : [];
     const todosRequisitos = requisitosResp.ok ? await requisitosResp.json() : [];
     const grupos = gruposResp.ok ? await gruposResp.json() : [];
     const cursos = cursosResp.ok ? await cursosResp.json() : [];
+    const cursosDeGrupos = cursosDeGruposResp.ok ? await cursosDeGruposResp.json() : [];
 
     const oficiais = todasPatentes.filter((p) => p.sub_corpo === 'oficiais' || p.nome === 'Alto Comando Militar').sort((a, b) => b.ordem - a.ordem);
     const pracas = todasPatentes.filter((p) => p.sub_corpo === 'pracas' || p.sub_corpo === 'pracas_especiais').sort((a, b) => b.ordem - a.ordem);
@@ -209,7 +210,10 @@
           if (tipo === 'tempo_na_patente' || tipo === 'tempo_na_policia') {
             campoDinamico.innerHTML = `<input type="number" min="0" placeholder="Dias" data-campo="dias" class="w-full bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">`;
           } else if (tipo === 'curso') {
-            campoDinamico.innerHTML = `<select data-campo="curso_id" class="w-full bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">${cursos.map((cu) => `<option value="${cu.id}">${cu.nome}</option>`).join('')}</select>`;
+            campoDinamico.innerHTML = `<select data-campo="curso_id" class="w-full bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">
+              ${cursos.length ? `<optgroup label="Cursos militares">${cursos.map((cu) => `<option value="curso:${cu.id}">${cu.nome}</option>`).join('')}</optgroup>` : ''}
+              ${cursosDeGrupos.length ? `<optgroup label="Cursos de grupos">${cursosDeGrupos.map((cu) => `<option value="aula:${cu.id}">${cu.titulo} — ${cu.grupo_nome}</option>`).join('')}</optgroup>` : ''}
+            </select>`;
           } else if (tipo === 'certificado') {
             campoDinamico.innerHTML = `<select data-campo="certificado_tipo" class="w-full bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent"><option value="CFO">CFO</option><option value="CQ">CQ</option><option value="CCJ">CCJ</option></select>`;
           } else if (tipo === 'grupo') {
@@ -227,7 +231,11 @@
           const campoValor = campoDinamico.querySelector('[data-campo]')?.value;
           const corpo = { patente_id: Number(patenteId), tipo };
           if (tipo === 'tempo_na_patente' || tipo === 'tempo_na_policia') corpo.dias = Number(campoValor);
-          else if (tipo === 'curso') corpo.curso_id = Number(campoValor);
+          else if (tipo === 'curso') {
+            const [origem, id] = campoValor.split(':');
+            if (origem === 'aula') corpo.aula_id = Number(id);
+            else corpo.curso_id = Number(id);
+          }
           else if (tipo === 'certificado') corpo.certificado_tipo = campoValor;
           else if (tipo === 'grupo') corpo.grupo_id = Number(campoValor);
           else corpo.descricao = campoValor;

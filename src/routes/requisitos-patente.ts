@@ -18,9 +18,11 @@ requisitos.get('/', async (c) => {
   const patenteId = c.req.query('patente_id')
 
   const base = `
-    SELECT rp.*, c.nome AS curso_nome, g.nome AS grupo_nome
+    SELECT rp.*, c.nome AS curso_nome, ga.titulo AS aula_titulo, g.nome AS grupo_nome, gAula.nome AS aula_grupo_nome
     FROM requisitos_patente rp
     LEFT JOIN cursos c ON c.id = rp.curso_id
+    LEFT JOIN grupo_aulas ga ON ga.id = rp.aula_id
+    LEFT JOIN grupos gAula ON gAula.id = ga.grupo_id
     LEFT JOIN grupos g ON g.id = rp.grupo_id
   `
   const query = patenteId
@@ -41,6 +43,7 @@ requisitos.post('/', async (c) => {
     tipo: 'tempo_na_patente' | 'tempo_na_policia' | 'curso' | 'certificado' | 'grupo' | 'outro'
     dias?: number
     curso_id?: number
+    aula_id?: number
     certificado_tipo?: 'CFO' | 'CQ' | 'CCJ'
     grupo_id?: number
     descricao?: string
@@ -49,10 +52,10 @@ requisitos.post('/', async (c) => {
   if (!body.patente_id || !body.tipo) return c.json({ erro: 'patente_id e tipo são obrigatórios' }, 400)
 
   const { meta } = await c.env.DB.prepare(
-    `INSERT INTO requisitos_patente (patente_id, tipo, dias, curso_id, certificado_tipo, grupo_id, descricao)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO requisitos_patente (patente_id, tipo, dias, curso_id, aula_id, certificado_tipo, grupo_id, descricao)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(
-    body.patente_id, body.tipo, body.dias ?? null, body.curso_id ?? null,
+    body.patente_id, body.tipo, body.dias ?? null, body.curso_id ?? null, body.aula_id ?? null,
     body.certificado_tipo ?? null, body.grupo_id ?? null, body.descricao ?? null
   ).run()
 

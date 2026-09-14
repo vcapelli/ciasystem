@@ -62,6 +62,17 @@
     return `${String(d.getDate()).padStart(2,'0')} ${MESES[d.getMonth()]} ${d.getFullYear()}`;
   }
 
+  const _cacheFigurePorNick = {};
+  async function buscarFigurePorNick(nick) {
+    if (!nick || nick === '—') return null;
+    if (nick in _cacheFigurePorNick) return _cacheFigurePorNick[nick];
+    try {
+      const r = await apiFetch(`/usuarios/nick/${encodeURIComponent(nick)}`);
+      _cacheFigurePorNick[nick] = r.ok ? (await r.json()).figure : null;
+    } catch { _cacheFigurePorNick[nick] = null; }
+    return _cacheFigurePorNick[nick];
+  }
+
   function renderAbas(grupo, souMembro, souAdminDoGrupo) {
     if (!souMembro) {
       return `
@@ -79,7 +90,10 @@
       { id: 'regimento', label: 'Regimento Interno', href: `/grupos/${slug}/regimento` },
       { id: 'registros', label: 'Requerimentos internos', href: `/grupos/${slug}/registros` },
     ];
-    if (grupo.permite_aulas) abas.push({ id: 'aulas', label: 'Aulas', href: `/grupos/${slug}/aulas` });
+    if (grupo.permite_aulas) {
+      abas.push({ id: 'aulas', label: 'Aulas', href: `/grupos/${slug}/aulas` });
+      abas.push({ id: 'relatorios', label: 'Relatórios', href: `/grupos/${slug}/relatorios` });
+    }
     if (souAdminDoGrupo) abas.push({ id: 'configuracoes', label: 'Configurações', href: `/grupos/${slug}/configuracoes` });
 
     return `
@@ -159,9 +173,17 @@
           <p id="erro-nova-noticia" class="hidden text-xs text-red-500 mt-1"></p>
         </div>
       ` : ''}
-      ${renderNoticias(noticias)}
+      <div id="lista-noticias">${await renderNoticias(noticias, souAdminDoGrupo)}</div>
     `;
     ligarEditorHtml('editor-nova-noticia');
+
+    document.querySelectorAll('.btn-deletar-noticia').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Excluir essa notícia?')) return;
+        await apiFetch(`/grupos/${slug}/noticias/${btn.dataset.id}`, { method: 'DELETE' });
+        btn.closest('[data-noticia-id]').remove();
+      });
+    });
 
     const btnPublicar = document.getElementById('btn-publicar-noticia');
     if (btnPublicar) {
@@ -229,19 +251,33 @@
     });
   }
 
-  function renderNoticias(noticias) {
-    if (!noticias.length) return '<p class="text-sm text-muted">Nenhuma notícia publicada ainda.</p>';
+  async function renderCardNoticia(n, souAdminDoGrupo) {
+    const figura = await buscarFigurePorNick(n.autor_nick);
     return `
-      <div class="space-y-3">
-        ${noticias.map((n) => `
-          <div class="bg-card border border-border rounded-xl p-4 shadow-sm">
-            <p class="text-sm font-semibold">${n.titulo}</p>
-            <p class="text-sm text-muted mt-1 whitespace-pre-wrap">${n.conteudo}</p>
-            <p class="text-xs text-muted mt-2">${new Date(n.publicado_em || n.criado_em).toLocaleDateString('pt-BR')}</p>
+      <div class="bg-card border border-border rounded-2xl p-4" data-noticia-id="${n.id}">
+        <div class="flex items-center gap-2.5 mb-2">
+          <span class="h-9 w-9 rounded-full bg-basebg border border-border overflow-hidden inline-block shrink-0">
+            ${figura ? `<img src="${avatarUrl(figura, 'mini', '2')}" class="w-full h-[190%] object-cover object-top -mt-2 transition-transform duration-300 hover:-translate-y-[8px]" alt="">` : `<span class="w-full h-full flex items-center justify-center text-xs font-bold">${(n.autor_nick || '?').slice(0,2).toUpperCase()}</span>`}
+          </span>
+          <div>
+            <p class="font-semibold text-sm">${n.autor_nick}${n.autor_cargo ? ` <span class="text-muted font-normal">· ${n.autor_cargo}</span>` : ''}</p>
           </div>
-        `).join('')}
+        </div>
+        <p class="text-sm font-bold mb-1">${n.titulo}</p>
+        <div class="text-sm">${n.conteudo}</div>
+        <hr class="border-border my-3">
+        <div class="flex items-center justify-between text-xs text-muted">
+          <p><i class="fa-regular fa-clock"></i> ${new Date(n.publicado_em || n.criado_em).toLocaleString('pt-BR')}</p>
+          ${souAdminDoGrupo ? `<button class="btn-deletar-noticia hover:text-red-600 transition-colors px-1" data-id="${n.id}" title="Excluir"><i class="fa-solid fa-trash"></i></button>` : ''}
+        </div>
       </div>
     `;
+  }
+
+  async function renderNoticias(noticias, souAdminDoGrupo) {
+    if (!noticias.length) return '<p class="text-sm text-muted">Nenhuma notícia publicada ainda.</p>';
+    const cards = await Promise.all(noticias.map((n) => renderCardNoticia(n, souAdminDoGrupo)));
+    return `<div class="space-y-3">${cards.join('')}</div>`;
   }
 
   const COR_TIPO_REGISTRO = {
@@ -265,20 +301,38 @@
     return `${String(dia).padStart(2,'0')} ${MESES[mes - 1]} ${ano}`;
   }
 
-  function renderCardRegistroGrupo(r) {
+  async function renderCardRegistroGrupo(r) {
     const cor = COR_TIPO_REGISTRO[r.tipo] || '#6b7280';
+    const [figAlvo, figAutor] = await Promise.all([
+      buscarFigurePorNick(r.usuario_nick), buscarFigurePorNick(r.registrado_por_nick),
+    ]);
+
+    function avatarPessoa(nick, figure) {
+      return `
+        <span class="h-7 w-7 rounded-full bg-basebg border border-border overflow-hidden inline-block shrink-0">
+          ${figure ? `<img src="${avatarUrl(figure, 'mini', '2')}" class="w-full h-[190%] object-cover object-top -mt-2" alt="">` : `<span class="w-full h-full flex items-center justify-center text-[0.6rem] font-bold">${nick.slice(0,2).toUpperCase()}</span>`}
+        </span>
+      `;
+    }
+
     return `
       <div class="bg-card border border-border rounded-2xl shadow-sm overflow-hidden" style="border-left: 4px solid ${cor}">
         <div class="flex items-center justify-between px-4 py-2.5 border-b border-border">
           <p class="text-sm font-bold">${TIPO_REGISTRO_LABEL[r.tipo] || r.tipo}</p>
           <p class="text-xs text-muted">${r.data_efetiva || new Date(r.criado_em).toLocaleDateString('pt-BR')}</p>
         </div>
-        <div class="px-4 py-3 text-sm space-y-1">
-          <p><b>Nick:</b> ${r.usuario_nick}${r.usuario_tag ? ` [${r.usuario_tag}]` : ''}</p>
+        <div class="px-4 py-3 text-sm space-y-2">
+          <div class="flex items-center gap-2">
+            ${avatarPessoa(r.usuario_nick, figAlvo)}
+            <p>${r.usuario_nick}${r.usuario_cargo_atual ? ` <span class="text-muted text-xs">· ${r.usuario_cargo_atual}</span>` : ''}</p>
+          </div>
           ${r.nivel_novo_nome ? `<p><b>${CAMPOS_TIPO_REGISTRO[r.tipo]?.rotuloCargo || 'Cargo'}:</b> ${r.nivel_novo_nome}</p>` : ''}
           ${r.motivo ? `<p><b>Observações:</b> ${r.motivo}</p>` : ''}
           ${r.permissao ? `<p><b>Permissão:</b> ${r.permissao}</p>` : ''}
-          <p class="text-xs text-muted/70 pt-1">Registrado por ${r.registrado_por_nick || '—'}</p>
+          <div class="flex items-center gap-2 pt-1 border-t border-border">
+            ${avatarPessoa(r.registrado_por_nick || '—', figAutor)}
+            <p class="text-xs text-muted">Registrado por ${r.registrado_por_nick || '—'}${r.registrado_por_cargo ? ` · ${r.registrado_por_cargo}` : ''}</p>
+          </div>
         </div>
       </div>
     `;
@@ -289,38 +343,21 @@
     const r = await apiFetch(`/grupos/${slug}/registros`);
     const registros = r.ok ? await r.json() : [];
 
+    let niveis = [];
+    if (souAdminDoGrupo) {
+      const niveisResp = await apiFetch(`/grupos/${slug}/niveis`);
+      niveis = niveisResp.ok ? await niveisResp.json() : [];
+    }
+
+    function repintarCamposTipo(tipo) {
+      const cfg = CAMPOS_TIPO_REGISTRO[tipo];
+      document.getElementById('nr-rotulo-cargo').textContent = cfg.rotuloCargo;
+      document.getElementById('nr-bloco-permissao').classList.toggle('hidden', !cfg.permissao);
+    }
+
     container.innerHTML = `
       ${souAdminDoGrupo ? `
-        <button id="btn-novo-registro" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors mb-4">
-          <i class="fa-solid fa-plus"></i> Novo requerimento interno
-        </button>
-        <div id="form-novo-registro" class="hidden mb-5"></div>
-      ` : ''}
-      <div class="space-y-3">
-        ${registros.length ? registros.map(renderCardRegistroGrupo).join('') : '<p class="text-sm text-muted">Nenhum requerimento interno ainda.</p>'}
-      </div>
-    `;
-
-    if (!souAdminDoGrupo) return;
-
-    document.getElementById('btn-novo-registro').addEventListener('click', async () => {
-      const form = document.getElementById('form-novo-registro');
-      const abrindo = form.classList.contains('hidden');
-      form.classList.add('hidden');
-      if (!abrindo) return;
-      form.classList.remove('hidden');
-
-      const niveisResp = await apiFetch(`/grupos/${slug}/niveis`);
-      const niveis = niveisResp.ok ? await niveisResp.json() : [];
-
-      function repintarCamposTipo(tipo) {
-        const cfg = CAMPOS_TIPO_REGISTRO[tipo];
-        document.getElementById('nr-rotulo-cargo').textContent = cfg.rotuloCargo;
-        document.getElementById('nr-bloco-permissao').classList.toggle('hidden', !cfg.permissao);
-      }
-
-      form.innerHTML = `
-        <form class="bg-card border border-border rounded-2xl shadow-sm p-4 space-y-3">
+        <form id="form-novo-registro" class="bg-card border border-border rounded-2xl shadow-sm p-4 space-y-3 mb-5">
           <select id="nr-tipo" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
             <option value="admissao">Admissão</option>
             <option value="promocao">Promoção</option>
@@ -360,40 +397,174 @@
           <button type="submit" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Registrar</button>
           <p id="nr-erro" class="hidden text-xs text-red-500"></p>
         </form>
-      `;
-      ligarSeletorUsuarios('nr-seletor-nick', {});
-      document.getElementById('nr-tipo').addEventListener('change', (e) => repintarCamposTipo(e.target.value));
-      repintarCamposTipo('admissao');
+      ` : ''}
+      <div id="lista-registros" class="space-y-3"><p class="text-sm text-muted">Carregando…</p></div>
+    `;
 
-      form.querySelector('form').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const erroEl = document.getElementById('nr-erro');
-        const selecionados = obterSelecionados('nr-seletor-nick');
-        if (!selecionados.length) {
-          erroEl.textContent = 'Escolha o nick.';
-          erroEl.classList.remove('hidden');
-          return;
-        }
-        const dataInput = document.getElementById('nr-data').value;
-        const resp = await apiFetch(`/grupos/${slug}/registros`, {
-          method: 'POST',
-          body: JSON.stringify({
-            tipo: document.getElementById('nr-tipo').value,
-            usuario_id: selecionados[0],
-            nivel_novo_id: Number(document.getElementById('nr-cargo').value),
-            motivo: document.getElementById('nr-observacoes').value.trim() || undefined,
-            permissao: document.getElementById('nr-permissao').value.trim() || undefined,
-            data_efetiva: dataInput ? formatarDataExtensoRegistro(dataInput) : undefined,
-          }),
-        });
-        if (!resp.ok) {
-          const d = await resp.json().catch(() => ({}));
-          erroEl.textContent = d.erro || 'Não foi possível registrar.';
-          erroEl.classList.remove('hidden');
-          return;
-        }
-        montarRegistros(souAdminDoGrupo);
+    const listaRegistros = document.getElementById('lista-registros');
+    listaRegistros.innerHTML = registros.length
+      ? (await Promise.all(registros.map(renderCardRegistroGrupo))).join('')
+      : '<p class="text-sm text-muted">Nenhum requerimento interno ainda.</p>';
+
+    if (!souAdminDoGrupo) return;
+
+    ligarSeletorUsuarios('nr-seletor-nick', {});
+    document.getElementById('nr-tipo').addEventListener('change', (e) => repintarCamposTipo(e.target.value));
+    repintarCamposTipo('admissao');
+
+    document.getElementById('form-novo-registro').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const erroEl = document.getElementById('nr-erro');
+      const selecionados = obterSelecionados('nr-seletor-nick');
+      if (!selecionados.length) {
+        erroEl.textContent = 'Escolha o nick.';
+        erroEl.classList.remove('hidden');
+        return;
+      }
+      const dataInput = document.getElementById('nr-data').value;
+      const resp = await apiFetch(`/grupos/${slug}/registros`, {
+        method: 'POST',
+        body: JSON.stringify({
+          tipo: document.getElementById('nr-tipo').value,
+          usuario_id: selecionados[0],
+          nivel_novo_id: Number(document.getElementById('nr-cargo').value),
+          motivo: document.getElementById('nr-observacoes').value.trim() || undefined,
+          permissao: document.getElementById('nr-permissao').value.trim() || undefined,
+          data_efetiva: dataInput ? formatarDataExtensoRegistro(dataInput) : undefined,
+        }),
       });
+      if (!resp.ok) {
+        const d = await resp.json().catch(() => ({}));
+        erroEl.textContent = d.erro || 'Não foi possível registrar.';
+        erroEl.classList.remove('hidden');
+        return;
+      }
+      montarRegistros(souAdminDoGrupo);
+    });
+  }
+
+  // ---------- Relatórios de aula ----------
+  let paginaRelatorios = 1;
+
+  function renderCardRelatorioAula(rel) {
+    return `
+      <div class="bg-card border border-border rounded-2xl shadow-sm overflow-hidden" style="border-left: 4px solid ${rel.aprovado ? '#046b2f' : '#dc2626'}">
+        <div class="flex items-center justify-between px-4 py-2.5 border-b border-border">
+          <p class="text-sm font-bold">${rel.curso_titulo}</p>
+          <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full ${rel.aprovado ? 'bg-green-500/15 text-green-600' : 'bg-red-500/15 text-red-600'}">${rel.aprovado ? 'Aprovado' : 'Reprovado'}</span>
+        </div>
+        <div class="px-4 py-3 text-sm space-y-1">
+          <p><b>Instrutor:</b> ${rel.instrutor_nick}</p>
+          <p><b>Data:</b> ${rel.data_efetiva}</p>
+          <p><b>Aluno${rel.alunos.length > 1 ? 's' : ''}:</b> ${rel.alunos.map((a) => a.nick).join(', ')}</p>
+          ${rel.comentario ? `<p><b>Comentário:</b> ${rel.comentario}</p>` : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  async function montarRelatoriosAula(grupo, souAdminDoGrupo, me) {
+    const container = document.getElementById('conteudo-principal');
+
+    const [aulasResp, relResp] = await Promise.all([
+      apiFetch(`/grupos/${slug}/aulas`), apiFetch(`/grupos/${slug}/aulas-relatorios?pagina=${paginaRelatorios}`),
+    ]);
+    const aulas = aulasResp.ok ? await aulasResp.json() : [];
+    const { relatorios, total } = relResp.ok ? await relResp.json() : { relatorios: [], total: 0 };
+    const totalPaginas = Math.max(1, Math.ceil(total / 10));
+
+    container.innerHTML = `
+      ${souAdminDoGrupo ? `
+        <form id="form-relatorio-aula" class="bg-card border border-border rounded-2xl shadow-sm p-4 space-y-3 mb-5">
+          <div>
+            <label class="block text-xs text-muted mb-1">Instrutor</label>
+            ${seletorUsuariosHtml('rel-seletor-instrutor', 'Buscar por nick…')}
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs text-muted mb-1">Data</label>
+              <input id="rel-data" type="date" required class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            </div>
+            <div>
+              <label class="block text-xs text-muted mb-1">Curso</label>
+              <select id="rel-curso" required class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                ${aulas.map((a) => `<option value="${a.id}">${a.titulo}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs text-muted mb-1">Aluno(s)</label>
+            ${seletorUsuariosHtml('rel-seletor-alunos', 'Buscar por nick…')}
+          </div>
+          <div>
+            <label class="block text-xs text-muted mb-1">Resultado</label>
+            <select id="rel-resultado" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+              <option value="1">Aprovado</option>
+              <option value="0">Reprovado</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-muted mb-1">Comentário (opcional)</label>
+            <textarea id="rel-comentario" rows="2" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></textarea>
+          </div>
+          <button type="submit" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Registrar relatório</button>
+          <p id="rel-erro" class="hidden text-xs text-red-500"></p>
+        </form>
+      ` : ''}
+
+      ${!aulas.length ? '<p class="text-xs text-muted mb-3">Nenhum curso cadastrado nesse grupo ainda — crie um na aba Aulas.</p>' : ''}
+
+      <div class="space-y-3">
+        ${relatorios.length ? relatorios.map(renderCardRelatorioAula).join('') : '<p class="text-sm text-muted">Nenhum relatório registrado ainda.</p>'}
+      </div>
+
+      ${totalPaginas > 1 ? `
+        <div class="flex items-center justify-center gap-2 mt-5">
+          <button id="rel-pagina-anterior" ${paginaRelatorios === 1 ? 'disabled' : ''} class="h-8 w-8 rounded-lg bg-card border border-border text-sm disabled:opacity-40 hover:bg-basebg transition-colors"><i class="fa-solid fa-chevron-left"></i></button>
+          <span class="text-xs text-muted px-2">Página ${paginaRelatorios} de ${totalPaginas}</span>
+          <button id="rel-pagina-seguinte" ${paginaRelatorios === totalPaginas ? 'disabled' : ''} class="h-8 w-8 rounded-lg bg-card border border-border text-sm disabled:opacity-40 hover:bg-basebg transition-colors"><i class="fa-solid fa-chevron-right"></i></button>
+        </div>
+      ` : ''}
+    `;
+
+    document.getElementById('rel-pagina-anterior')?.addEventListener('click', () => { paginaRelatorios--; montarRelatoriosAula(grupo, souAdminDoGrupo, me); });
+    document.getElementById('rel-pagina-seguinte')?.addEventListener('click', () => { paginaRelatorios++; montarRelatoriosAula(grupo, souAdminDoGrupo, me); });
+
+    if (!souAdminDoGrupo) return;
+
+    ligarSeletorUsuarios('rel-seletor-instrutor', { iniciais: [{ id: me.id, nick: me.nick }] });
+    ligarSeletorUsuarios('rel-seletor-alunos', {});
+
+    document.getElementById('form-relatorio-aula').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const erroEl = document.getElementById('rel-erro');
+      const instrutores = obterSelecionados('rel-seletor-instrutor');
+      const alunos = obterSelecionados('rel-seletor-alunos');
+      if (!instrutores.length || !alunos.length) {
+        erroEl.textContent = 'Escolha o instrutor e ao menos um aluno.';
+        erroEl.classList.remove('hidden');
+        return;
+      }
+      const dataInput = document.getElementById('rel-data').value;
+      const resp = await apiFetch(`/grupos/${slug}/aulas-relatorios`, {
+        method: 'POST',
+        body: JSON.stringify({
+          aula_id: Number(document.getElementById('rel-curso').value),
+          instrutor_id: instrutores[0],
+          alunos_ids: alunos,
+          aprovado: document.getElementById('rel-resultado').value === '1',
+          comentario: document.getElementById('rel-comentario').value.trim() || undefined,
+          data_efetiva: dataInput ? formatarDataExtensoRegistro(dataInput) : undefined,
+        }),
+      });
+      if (!resp.ok) {
+        const d = await resp.json().catch(() => ({}));
+        erroEl.textContent = d.erro || 'Não foi possível registrar.';
+        erroEl.classList.remove('hidden');
+        return;
+      }
+      paginaRelatorios = 1;
+      montarRelatoriosAula(grupo, souAdminDoGrupo, me);
     });
   }
 
@@ -785,7 +956,7 @@
         <div class="h-36 rounded-2xl overflow-hidden shadow-sm bg-cover bg-center" style="${grupo.banner_url ? `background-image: url('${grupo.banner_url}')` : `background: linear-gradient(135deg, ${grupo.cor || '#212529'}, #12161c)`}"></div>
         <div class="absolute left-6 -bottom-8 h-24 w-24 rounded-2xl bg-card border border-border shadow-sm flex items-center justify-center p-3">
           ${grupo.imagem_url
-            ? `<img src="${grupo.imagem_url}" class="max-h-full max-w-full object-contain" alt="">`
+            ? `<img src="${grupo.imagem_url}" class="max-w-full object-contain" style="height: 68px;" alt="">`
             : `<span class="text-lg font-bold">${grupo.codigo}</span>`}
         </div>
       </div>
@@ -818,6 +989,8 @@
       await montarRegimentoInterno(souAdminDoGrupo);
     } else if (aba === 'registros') {
       await montarRegistros(souAdminDoGrupo);
+    } else if (aba === 'relatorios' && grupo.permite_aulas) {
+      await montarRelatoriosAula(grupo, souAdminDoGrupo, me);
     } else if (aba === 'aulas' && grupo.permite_aulas) {
       await montarAulas(grupo, souAdminDoGrupo);
     } else if (aba === 'configuracoes' && souAdminDoGrupo) {
