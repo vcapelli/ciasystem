@@ -78,7 +78,7 @@ grupos.get('/:slug/membros', async (c) => {
   if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
 
   const { results } = await c.env.DB.prepare(
-    `SELECT u.id, u.nick, u.tag, gn.nome AS nivel, ug.administrador_grupo, ug.data_ingresso
+    `SELECT u.id, u.nick, u.tag, ug.nivel_id, gn.nome AS nivel, ug.administrador_grupo, ug.data_ingresso
      FROM usuario_grupos ug
      JOIN usuarios u ON u.id = ug.usuario_id
      JOIN grupo_niveis gn ON gn.id = ug.nivel_id
@@ -325,6 +325,20 @@ grupos.get('/:slug/registros', async (c) => {
      WHERE gr.grupo_id = ? ORDER BY gr.criado_em DESC`
   ).bind(grupo.id).all()
   return c.json(results)
+})
+
+grupos.delete('/:slug/registros/:registroId', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  const { slug, registroId } = c.req.param()
+  const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
+  if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
+  if (!(await ehAdminDoGrupo(c.env.DB, usuarioId, grupo.id))) {
+    return c.json({ erro: 'sem permissão de administrador neste grupo' }, 403)
+  }
+  // Só apaga o registro/log — não desfaz o efeito (promoção, admissão
+  // etc.) que já foi aplicado. Pra reverter, use outro requerimento.
+  await c.env.DB.prepare(`DELETE FROM grupo_registros WHERE id = ? AND grupo_id = ?`).bind(registroId, grupo.id).run()
+  return c.json({ ok: true })
 })
 
 grupos.post('/:slug/registros', async (c) => {
@@ -607,6 +621,18 @@ grupos.post('/:slug/aulas-relatorios', async (c) => {
   }
 
   return c.json({ id: meta.last_row_id }, 201)
+})
+
+grupos.delete('/:slug/aulas-relatorios/:relatorioId', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  const { slug, relatorioId } = c.req.param()
+  const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
+  if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
+  if (!(await ehAdminDoGrupo(c.env.DB, usuarioId, grupo.id))) {
+    return c.json({ erro: 'sem permissão de administrador neste grupo' }, 403)
+  }
+  await c.env.DB.prepare(`DELETE FROM grupo_aula_relatorios WHERE id = ? AND grupo_id = ?`).bind(relatorioId, grupo.id).run()
+  return c.json({ ok: true })
 })
 
 grupos.get('/:slug/aulas-relatorios', async (c) => {

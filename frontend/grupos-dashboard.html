@@ -301,7 +301,7 @@
     return `${String(dia).padStart(2,'0')} ${MESES[mes - 1]} ${ano}`;
   }
 
-  async function renderCardRegistroGrupo(r) {
+  async function renderCardRegistroGrupo(r, souAdminDoGrupo) {
     const cor = COR_TIPO_REGISTRO[r.tipo] || '#6b7280';
     const [figAlvo, figAutor] = await Promise.all([
       buscarFigurePorNick(r.usuario_nick), buscarFigurePorNick(r.registrado_por_nick),
@@ -316,10 +316,13 @@
     }
 
     return `
-      <div class="bg-card border border-border rounded-2xl shadow-sm overflow-hidden" style="border-left: 4px solid ${cor}">
+      <div class="bg-card border border-border rounded-2xl shadow-sm overflow-hidden" data-registro-id="${r.id}" style="border-left: 4px solid ${cor}">
         <div class="flex items-center justify-between px-4 py-2.5 border-b border-border">
           <p class="text-sm font-bold">${TIPO_REGISTRO_LABEL[r.tipo] || r.tipo}</p>
-          <p class="text-xs text-muted">${r.data_efetiva || new Date(r.criado_em).toLocaleDateString('pt-BR')}</p>
+          <div class="flex items-center gap-3">
+            <p class="text-xs text-muted">${r.data_efetiva || new Date(r.criado_em).toLocaleDateString('pt-BR')}</p>
+            ${souAdminDoGrupo ? `<button class="btn-deletar-registro hover:text-red-600 transition-colors text-muted" data-id="${r.id}" title="Excluir"><i class="fa-solid fa-trash text-xs"></i></button>` : ''}
+          </div>
         </div>
         <div class="px-4 py-3 text-sm space-y-2">
           <div class="flex items-center gap-2">
@@ -403,7 +406,7 @@
 
     const listaRegistros = document.getElementById('lista-registros');
     listaRegistros.innerHTML = registros.length
-      ? (await Promise.all(registros.map(renderCardRegistroGrupo))).join('')
+      ? (await Promise.all(registros.map((r) => renderCardRegistroGrupo(r, souAdminDoGrupo)))).join('')
       : '<p class="text-sm text-muted">Nenhum requerimento interno ainda.</p>';
 
     if (!souAdminDoGrupo) return;
@@ -411,6 +414,15 @@
     ligarSeletorUsuarios('nr-seletor-nick', {});
     document.getElementById('nr-tipo').addEventListener('change', (e) => repintarCamposTipo(e.target.value));
     repintarCamposTipo('admissao');
+    document.getElementById('nr-data').value = new Date().toISOString().slice(0, 10);
+
+    document.querySelectorAll('.btn-deletar-registro').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Excluir esse requerimento interno? Isso só apaga o registro — não desfaz o efeito já aplicado.')) return;
+        await apiFetch(`/grupos/${slug}/registros/${btn.dataset.id}`, { method: 'DELETE' });
+        document.querySelector(`[data-registro-id="${btn.dataset.id}"]`).remove();
+      });
+    });
 
     document.getElementById('form-novo-registro').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -446,17 +458,44 @@
   // ---------- Relatórios de aula ----------
   let paginaRelatorios = 1;
 
-  function renderCardRelatorioAula(rel) {
+  function avatarPessoaPequeno(nick, figure) {
     return `
-      <div class="bg-card border border-border rounded-2xl shadow-sm overflow-hidden" style="border-left: 4px solid ${rel.aprovado ? '#046b2f' : '#dc2626'}">
+      <span class="h-6 w-6 rounded-full bg-basebg border border-border overflow-hidden inline-block shrink-0">
+        ${figure ? `<img src="${avatarUrl(figure, 'mini', '2')}" class="w-full h-[190%] object-cover object-top -mt-1.5" alt="">` : `<span class="w-full h-full flex items-center justify-center text-[0.55rem] font-bold">${nick.slice(0,2).toUpperCase()}</span>`}
+      </span>
+    `;
+  }
+
+  async function renderCardRelatorioAula(rel, souAdminDoGrupo) {
+    const figInstrutor = await buscarFigurePorNick(rel.instrutor_nick);
+    const figurasAlunos = await Promise.all(rel.alunos.map((a) => buscarFigurePorNick(a.nick)));
+
+    return `
+      <div class="bg-card border border-border rounded-2xl shadow-sm overflow-hidden" data-relatorio-id="${rel.id}" style="border-left: 4px solid ${rel.aprovado ? '#046b2f' : '#dc2626'}">
         <div class="flex items-center justify-between px-4 py-2.5 border-b border-border">
           <p class="text-sm font-bold">${rel.curso_titulo}</p>
-          <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full ${rel.aprovado ? 'bg-green-500/15 text-green-600' : 'bg-red-500/15 text-red-600'}">${rel.aprovado ? 'Aprovado' : 'Reprovado'}</span>
+          <div class="flex items-center gap-3">
+            <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full ${rel.aprovado ? 'bg-green-500/15 text-green-600' : 'bg-red-500/15 text-red-600'}">${rel.aprovado ? 'Aprovado' : 'Reprovado'}</span>
+            ${souAdminDoGrupo ? `<button class="btn-deletar-relatorio hover:text-red-600 transition-colors text-muted" data-id="${rel.id}" title="Excluir"><i class="fa-solid fa-trash text-xs"></i></button>` : ''}
+          </div>
         </div>
-        <div class="px-4 py-3 text-sm space-y-1">
-          <p><b>Instrutor:</b> ${rel.instrutor_nick}</p>
+        <div class="px-4 py-3 text-sm space-y-2">
+          <div class="flex items-center gap-2">
+            ${avatarPessoaPequeno(rel.instrutor_nick, figInstrutor)}
+            <p><b>Instrutor:</b> ${rel.instrutor_nick}</p>
+          </div>
           <p><b>Data:</b> ${rel.data_efetiva}</p>
-          <p><b>Aluno${rel.alunos.length > 1 ? 's' : ''}:</b> ${rel.alunos.map((a) => a.nick).join(', ')}</p>
+          <div>
+            <p class="font-semibold mb-1">Aluno${rel.alunos.length > 1 ? 's' : ''}:</p>
+            <div class="space-y-1">
+              ${rel.alunos.map((a, i) => `
+                <div class="flex items-center gap-2">
+                  ${avatarPessoaPequeno(a.nick, figurasAlunos[i])}
+                  <p>${a.nick}</p>
+                </div>
+              `).join('')}
+            </div>
+          </div>
           ${rel.comentario ? `<p><b>Comentário:</b> ${rel.comentario}</p>` : ''}
         </div>
       </div>
@@ -515,7 +554,7 @@
       ${!aulas.length ? '<p class="text-xs text-muted mb-3">Nenhum curso cadastrado nesse grupo ainda — crie um na aba Aulas.</p>' : ''}
 
       <div class="space-y-3">
-        ${relatorios.length ? relatorios.map(renderCardRelatorioAula).join('') : '<p class="text-sm text-muted">Nenhum relatório registrado ainda.</p>'}
+        ${relatorios.length ? (await Promise.all(relatorios.map((r) => renderCardRelatorioAula(r, souAdminDoGrupo)))).join('') : '<p class="text-sm text-muted">Nenhum relatório registrado ainda.</p>'}
       </div>
 
       ${totalPaginas > 1 ? `
@@ -530,10 +569,19 @@
     document.getElementById('rel-pagina-anterior')?.addEventListener('click', () => { paginaRelatorios--; montarRelatoriosAula(grupo, souAdminDoGrupo, me); });
     document.getElementById('rel-pagina-seguinte')?.addEventListener('click', () => { paginaRelatorios++; montarRelatoriosAula(grupo, souAdminDoGrupo, me); });
 
+    document.querySelectorAll('.btn-deletar-relatorio').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Excluir esse relatório de aula?')) return;
+        await apiFetch(`/grupos/${slug}/aulas-relatorios/${btn.dataset.id}`, { method: 'DELETE' });
+        document.querySelector(`[data-relatorio-id="${btn.dataset.id}"]`).remove();
+      });
+    });
+
     if (!souAdminDoGrupo) return;
 
     ligarSeletorUsuarios('rel-seletor-instrutor', { iniciais: [{ id: me.id, nick: me.nick }] });
     ligarSeletorUsuarios('rel-seletor-alunos', {});
+    document.getElementById('rel-data').value = new Date().toISOString().slice(0, 10);
 
     document.getElementById('form-relatorio-aula').addEventListener('submit', async (e) => {
       e.preventDefault();

@@ -93,13 +93,12 @@
     const raiz = document.getElementById('conteudo-aba');
     raiz.innerHTML = '<p class="text-sm text-muted">Carregando…</p>';
 
-    const [patentesResp, requisitosResp, gruposResp, cursosResp, cursosDeGruposResp] = await Promise.all([
-      apiFetch('/patentes'), apiFetch('/requisitos-patente'), apiFetch('/grupos'), apiFetch('/cursos'), apiFetch('/grupos/todos-cursos'),
+    const [patentesResp, requisitosResp, gruposResp, cursosDeGruposResp] = await Promise.all([
+      apiFetch('/patentes'), apiFetch('/requisitos-patente'), apiFetch('/grupos'), apiFetch('/grupos/todos-cursos'),
     ]);
     const todasPatentes = patentesResp.ok ? await patentesResp.json() : [];
     const todosRequisitos = requisitosResp.ok ? await requisitosResp.json() : [];
     const grupos = gruposResp.ok ? await gruposResp.json() : [];
-    const cursos = cursosResp.ok ? await cursosResp.json() : [];
     const cursosDeGrupos = cursosDeGruposResp.ok ? await cursosDeGruposResp.json() : [];
 
     const oficiais = todasPatentes.filter((p) => p.sub_corpo === 'oficiais' || p.nome === 'Alto Comando Militar').sort((a, b) => b.ordem - a.ordem);
@@ -211,8 +210,7 @@
             campoDinamico.innerHTML = `<input type="number" min="0" placeholder="Dias" data-campo="dias" class="w-full bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">`;
           } else if (tipo === 'curso') {
             campoDinamico.innerHTML = `<select data-campo="curso_id" class="w-full bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">
-              ${cursos.length ? `<optgroup label="Cursos militares">${cursos.map((cu) => `<option value="curso:${cu.id}">${cu.nome}</option>`).join('')}</optgroup>` : ''}
-              ${cursosDeGrupos.length ? `<optgroup label="Cursos de grupos">${cursosDeGrupos.map((cu) => `<option value="aula:${cu.id}">${cu.titulo} — ${cu.grupo_nome}</option>`).join('')}</optgroup>` : ''}
+              ${cursosDeGrupos.map((cu) => `<option value="aula:${cu.id}">${cu.titulo} — ${cu.grupo_nome}</option>`).join('')}
             </select>`;
           } else if (tipo === 'certificado') {
             campoDinamico.innerHTML = `<select data-campo="certificado_tipo" class="w-full bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent"><option value="CFO">CFO</option><option value="CQ">CQ</option><option value="CCJ">CCJ</option></select>`;
