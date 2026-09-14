@@ -52,7 +52,7 @@
     orgao_topo: 'Órgão de Topo', setor_inteligencia: 'Setor de Inteligência',
   };
   const TIPO_REGISTRO_LABEL = {
-    admissao: 'Admissão', promocao: 'Promoção', rebaixamento: 'Rebaixamento', saida: 'Saída',
+    admissao: 'Admissão', promocao: 'Promoção', rebaixamento: 'Rebaixamento', saida: 'Desligamento', advertencia: 'Advertência',
   };
 
   function formatarDataCurtaGrupo(iso) {
@@ -62,10 +62,21 @@
     return `${String(d.getDate()).padStart(2,'0')} ${MESES[d.getMonth()]} ${d.getFullYear()}`;
   }
 
-  function renderAbas(grupo, souAdminDoGrupo) {
+  function renderAbas(grupo, souMembro, souAdminDoGrupo) {
+    if (!souMembro) {
+      return `
+        <div class="bg-card border border-border rounded-2xl shadow-sm px-5 pt-3 mb-4">
+          <div class="flex gap-6 border-b border-border">
+            <a href="/grupos/${slug}" class="pb-3 text-sm font-semibold border-b-2 border-accent text-dark">Membros</a>
+          </div>
+        </div>
+      `;
+    }
+
     const abas = [
       { id: 'membros', label: 'Membros', href: `/grupos/${slug}` },
       { id: 'noticias', label: 'Notícias', href: `/grupos/${slug}/noticias` },
+      { id: 'regimento', label: 'Regimento Interno', href: `/grupos/${slug}/regimento` },
       { id: 'registros', label: 'Requerimentos internos', href: `/grupos/${slug}/registros` },
     ];
     if (grupo.permite_aulas) abas.push({ id: 'aulas', label: 'Aulas', href: `/grupos/${slug}/aulas` });
@@ -73,9 +84,9 @@
 
     return `
       <div class="bg-card border border-border rounded-2xl shadow-sm px-5 pt-3 mb-4">
-        <div class="flex gap-6 border-b border-border">
+        <div class="flex gap-6 border-b border-border overflow-x-auto">
           ${abas.map((a) => `
-            <a href="${a.href}" class="pb-3 text-sm font-semibold border-b-2 transition-colors ${aba === a.id ? 'border-accent text-dark' : 'border-transparent text-muted hover:text-dark'}">
+            <a href="${a.href}" class="pb-3 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap ${aba === a.id ? 'border-accent text-dark' : 'border-transparent text-muted hover:text-dark'}">
               ${a.label}
             </a>
           `).join('')}
@@ -126,6 +137,98 @@
     `;
   }
 
+  async function montarNoticias(souAdminDoGrupo, me) {
+    const container = document.getElementById('conteudo-principal');
+    const r = await apiFetch(`/grupos/${slug}/noticias`);
+    const noticias = r.ok ? (await r.json()).filter((n) => n.status === 'publicada') : [];
+
+    container.innerHTML = `
+      ${souAdminDoGrupo ? `
+        <div class="bg-card border border-border rounded-2xl p-4 mb-4">
+          <div class="flex items-center gap-2.5 mb-2">
+            <span class="h-9 w-9 rounded-full bg-basebg border border-border overflow-hidden inline-block shrink-0">
+              ${me.figure ? `<img src="${avatarUrl(me.figure, 'mini', '2')}" class="w-full h-[190%] object-cover object-top -mt-2" alt="">` : ''}
+            </span>
+            <span class="font-semibold text-sm">${me.nick}</span>
+          </div>
+          <input id="nova-noticia-titulo" placeholder="Título da notícia" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-accent">
+          ${htmlEditorHtml('editor-nova-noticia', '')}
+          <div class="flex justify-end mt-2">
+            <button id="btn-publicar-noticia" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-xl px-5 py-2 text-sm transition-colors">Publicar</button>
+          </div>
+          <p id="erro-nova-noticia" class="hidden text-xs text-red-500 mt-1"></p>
+        </div>
+      ` : ''}
+      ${renderNoticias(noticias)}
+    `;
+    ligarEditorHtml('editor-nova-noticia');
+
+    const btnPublicar = document.getElementById('btn-publicar-noticia');
+    if (btnPublicar) {
+      btnPublicar.addEventListener('click', async () => {
+        const titulo = document.getElementById('nova-noticia-titulo').value.trim();
+        const conteudo = document.getElementById('editor-nova-noticia-textarea').value;
+        const erroEl = document.getElementById('erro-nova-noticia');
+        if (!titulo || !conteudo) {
+          erroEl.textContent = 'Preencha o título e o conteúdo.';
+          erroEl.classList.remove('hidden');
+          return;
+        }
+        const resp = await apiFetch(`/grupos/${slug}/noticias`, { method: 'POST', body: JSON.stringify({ titulo, conteudo }) });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          erroEl.textContent = d.erro || 'Não foi possível publicar.';
+          erroEl.classList.remove('hidden');
+          return;
+        }
+        const { id } = await resp.json();
+        await apiFetch(`/grupos/${slug}/noticias/${id}/publicar`, { method: 'POST' });
+        montarNoticias(souAdminDoGrupo, me);
+      });
+    }
+  }
+
+  // ---------- Regimento Interno ----------
+  async function montarRegimentoInterno(souAdminDoGrupo) {
+    const container = document.getElementById('conteudo-principal');
+    const resp = await apiFetch(`/grupos/${slug}/paginas/regimento-interno`);
+    const pagina = resp.ok ? await resp.json() : { conteudo_html: '' };
+    const temConteudo = Boolean(pagina.conteudo_html?.trim());
+
+    container.innerHTML = `
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-lg font-display font-bold">Regimento Interno</h2>
+          ${souAdminDoGrupo ? '<button id="btn-editar-regimento" class="text-xs font-semibold text-accent hover:underline">Editar</button>' : ''}
+        </div>
+        <div id="regimento-view" class="text-sm">${temConteudo ? pagina.conteudo_html : '<p class="text-muted">Ainda não foi definido.</p>'}</div>
+        <div id="regimento-edit" class="hidden"></div>
+      </div>
+    `;
+
+    const btnEditar = document.getElementById('btn-editar-regimento');
+    if (!btnEditar) return;
+
+    btnEditar.addEventListener('click', () => {
+      document.getElementById('regimento-view').classList.add('hidden');
+      btnEditar.classList.add('hidden');
+      const editArea = document.getElementById('regimento-edit');
+      editArea.classList.remove('hidden');
+      editArea.innerHTML = `
+        ${htmlEditorHtml('editor-regimento', temConteudo ? pagina.conteudo_html : '')}
+        <button id="btn-salvar-regimento" class="mt-2 text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Salvar</button>
+      `;
+      ligarEditorHtml('editor-regimento');
+      editArea.querySelector('#btn-salvar-regimento').addEventListener('click', async () => {
+        await apiFetch(`/grupos/${slug}/paginas/regimento-interno`, {
+          method: 'PATCH',
+          body: JSON.stringify({ titulo: 'Regimento Interno', conteudo_html: document.getElementById('editor-regimento-textarea').value }),
+        });
+        montarRegimentoInterno(souAdminDoGrupo);
+      });
+    });
+  }
+
   function renderNoticias(noticias) {
     if (!noticias.length) return '<p class="text-sm text-muted">Nenhuma notícia publicada ainda.</p>';
     return `
@@ -141,23 +244,157 @@
     `;
   }
 
-  function renderRegistros(registros) {
-    if (!registros.length) return '<p class="text-sm text-muted">Nenhum registro interno ainda.</p>';
+  const COR_TIPO_REGISTRO = {
+    admissao: '#046b2f', promocao: '#046b2f', rebaixamento: '#c2410c',
+    saida: '#dc2626', advertencia: '#ca8a04',
+  };
+
+  // Campos de cada tipo — todos usam nick/data/observações; os 4
+  // últimos também pedem permissão (quem autorizou).
+  const CAMPOS_TIPO_REGISTRO = {
+    admissao: { rotuloCargo: 'Cargo', permissao: false },
+    promocao: { rotuloCargo: 'Próximo cargo', permissao: true },
+    rebaixamento: { rotuloCargo: 'Próximo cargo', permissao: true },
+    saida: { rotuloCargo: 'Cargo', permissao: true },
+    advertencia: { rotuloCargo: 'Cargo', permissao: true },
+  };
+
+  function formatarDataExtensoRegistro(valorInputDate) {
+    const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    const [ano, mes, dia] = valorInputDate.split('-').map(Number);
+    return `${String(dia).padStart(2,'0')} ${MESES[mes - 1]} ${ano}`;
+  }
+
+  function renderCardRegistroGrupo(r) {
+    const cor = COR_TIPO_REGISTRO[r.tipo] || '#6b7280';
     return `
-      <div class="space-y-2">
-        ${registros.map((r) => `
-          <div class="bg-card border border-border rounded-xl px-4 py-3 shadow-sm">
-            <div class="flex items-center justify-between">
-              <p class="text-sm font-semibold">${TIPO_REGISTRO_LABEL[r.tipo] || r.tipo} — ${r.usuario_nick}</p>
-              <p class="text-xs text-muted">${new Date(r.criado_em).toLocaleDateString('pt-BR')}</p>
-            </div>
-            ${r.nivel_anterior_nome || r.nivel_novo_nome ? `<p class="text-xs text-muted mt-1">${r.nivel_anterior_nome || '—'} → ${r.nivel_novo_nome || '—'}</p>` : ''}
-            ${r.motivo ? `<p class="text-xs text-muted mt-1">${r.motivo}</p>` : ''}
-            ${r.registrado_por_nick ? `<p class="text-xs text-muted/70 mt-1">Registrado por ${r.registrado_por_nick}</p>` : ''}
-          </div>
-        `).join('')}
+      <div class="bg-card border border-border rounded-2xl shadow-sm overflow-hidden" style="border-left: 4px solid ${cor}">
+        <div class="flex items-center justify-between px-4 py-2.5 border-b border-border">
+          <p class="text-sm font-bold">${TIPO_REGISTRO_LABEL[r.tipo] || r.tipo}</p>
+          <p class="text-xs text-muted">${r.data_efetiva || new Date(r.criado_em).toLocaleDateString('pt-BR')}</p>
+        </div>
+        <div class="px-4 py-3 text-sm space-y-1">
+          <p><b>Nick:</b> ${r.usuario_nick}${r.usuario_tag ? ` [${r.usuario_tag}]` : ''}</p>
+          ${r.nivel_novo_nome ? `<p><b>${CAMPOS_TIPO_REGISTRO[r.tipo]?.rotuloCargo || 'Cargo'}:</b> ${r.nivel_novo_nome}</p>` : ''}
+          ${r.motivo ? `<p><b>Observações:</b> ${r.motivo}</p>` : ''}
+          ${r.permissao ? `<p><b>Permissão:</b> ${r.permissao}</p>` : ''}
+          <p class="text-xs text-muted/70 pt-1">Registrado por ${r.registrado_por_nick || '—'}</p>
+        </div>
       </div>
     `;
+  }
+
+  async function montarRegistros(souAdminDoGrupo) {
+    const container = document.getElementById('conteudo-principal');
+    const r = await apiFetch(`/grupos/${slug}/registros`);
+    const registros = r.ok ? await r.json() : [];
+
+    container.innerHTML = `
+      ${souAdminDoGrupo ? `
+        <button id="btn-novo-registro" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors mb-4">
+          <i class="fa-solid fa-plus"></i> Novo requerimento interno
+        </button>
+        <div id="form-novo-registro" class="hidden mb-5"></div>
+      ` : ''}
+      <div class="space-y-3">
+        ${registros.length ? registros.map(renderCardRegistroGrupo).join('') : '<p class="text-sm text-muted">Nenhum requerimento interno ainda.</p>'}
+      </div>
+    `;
+
+    if (!souAdminDoGrupo) return;
+
+    document.getElementById('btn-novo-registro').addEventListener('click', async () => {
+      const form = document.getElementById('form-novo-registro');
+      const abrindo = form.classList.contains('hidden');
+      form.classList.add('hidden');
+      if (!abrindo) return;
+      form.classList.remove('hidden');
+
+      const niveisResp = await apiFetch(`/grupos/${slug}/niveis`);
+      const niveis = niveisResp.ok ? await niveisResp.json() : [];
+
+      function repintarCamposTipo(tipo) {
+        const cfg = CAMPOS_TIPO_REGISTRO[tipo];
+        document.getElementById('nr-rotulo-cargo').textContent = cfg.rotuloCargo;
+        document.getElementById('nr-bloco-permissao').classList.toggle('hidden', !cfg.permissao);
+      }
+
+      form.innerHTML = `
+        <form class="bg-card border border-border rounded-2xl shadow-sm p-4 space-y-3">
+          <select id="nr-tipo" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            <option value="admissao">Admissão</option>
+            <option value="promocao">Promoção</option>
+            <option value="rebaixamento">Rebaixamento</option>
+            <option value="saida">Desligamento</option>
+            <option value="advertencia">Advertência</option>
+          </select>
+
+          <div>
+            <label class="block text-xs text-muted mb-1">Nick</label>
+            ${seletorUsuariosHtml('nr-seletor-nick', 'Buscar por nick…')}
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs text-muted mb-1">Data</label>
+              <input id="nr-data" type="date" required class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            </div>
+            <div>
+              <label id="nr-rotulo-cargo" class="block text-xs text-muted mb-1">Cargo</label>
+              <select id="nr-cargo" required class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                ${[...niveis].sort((a,b) => b.ordem - a.ordem).map((n) => `<option value="${n.id}">${n.nome}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs text-muted mb-1">Observações (opcional)</label>
+            <textarea id="nr-observacoes" rows="2" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></textarea>
+          </div>
+
+          <div id="nr-bloco-permissao">
+            <label class="block text-xs text-muted mb-1">Permissão (quem autorizou)</label>
+            <input id="nr-permissao" placeholder="Nick [TAG] de quem autorizou" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          </div>
+
+          <button type="submit" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Registrar</button>
+          <p id="nr-erro" class="hidden text-xs text-red-500"></p>
+        </form>
+      `;
+      ligarSeletorUsuarios('nr-seletor-nick', {});
+      document.getElementById('nr-tipo').addEventListener('change', (e) => repintarCamposTipo(e.target.value));
+      repintarCamposTipo('admissao');
+
+      form.querySelector('form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const erroEl = document.getElementById('nr-erro');
+        const selecionados = obterSelecionados('nr-seletor-nick');
+        if (!selecionados.length) {
+          erroEl.textContent = 'Escolha o nick.';
+          erroEl.classList.remove('hidden');
+          return;
+        }
+        const dataInput = document.getElementById('nr-data').value;
+        const resp = await apiFetch(`/grupos/${slug}/registros`, {
+          method: 'POST',
+          body: JSON.stringify({
+            tipo: document.getElementById('nr-tipo').value,
+            usuario_id: selecionados[0],
+            nivel_novo_id: Number(document.getElementById('nr-cargo').value),
+            motivo: document.getElementById('nr-observacoes').value.trim() || undefined,
+            permissao: document.getElementById('nr-permissao').value.trim() || undefined,
+            data_efetiva: dataInput ? formatarDataExtensoRegistro(dataInput) : undefined,
+          }),
+        });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          erroEl.textContent = d.erro || 'Não foi possível registrar.';
+          erroEl.classList.remove('hidden');
+          return;
+        }
+        montarRegistros(souAdminDoGrupo);
+      });
+    });
   }
 
   // ---------- Aulas: lista categorizada + página individual ----------
@@ -383,6 +620,11 @@
         <div>
           <label class="block text-xs text-muted mb-1">URL da imagem/logo</label>
           <input id="gc-imagem" value="${grupo.imagem_url || ''}" placeholder="https://…" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <p class="text-xs text-muted mt-1">O logo costuma vir pequeno (39×39, fundo transparente) — a moldura acima já cuida do enquadramento.</p>
+        </div>
+        <div>
+          <label class="block text-xs text-muted mb-1">URL do banner (topo da página)</label>
+          <input id="gc-banner" value="${grupo.banner_url || ''}" placeholder="https://…" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
         </div>
         <div class="flex items-center gap-3">
           <label class="text-xs text-muted">Cor</label>
@@ -508,6 +750,7 @@
           nome: document.getElementById('gc-nome').value.trim(),
           tipo: document.getElementById('gc-tipo').value,
           imagem_url: document.getElementById('gc-imagem').value.trim() || undefined,
+          banner_url: document.getElementById('gc-banner').value.trim() || undefined,
           cor: document.getElementById('gc-cor').value,
           permite_aulas: document.getElementById('gc-aulas').checked,
         }),
@@ -535,14 +778,15 @@
     const membrosResp = await apiFetch(`/grupos/${slug}/membros`);
     const membros = membrosResp.ok ? await membrosResp.json() : [];
     const souAdminDoGrupo = Boolean(me.administrador_sistema) || Boolean(membros.find((m) => m.id === me.id)?.administrador_grupo);
+    const souMembro = souAdminDoGrupo || Boolean(membros.find((m) => m.id === me.id));
 
     container.innerHTML = `
       <div class="relative mb-10">
-        <div class="h-36 rounded-2xl overflow-hidden shadow-sm" style="background: linear-gradient(135deg, ${grupo.cor || '#212529'}, #12161c)"></div>
-        <div class="absolute left-6 -bottom-8 h-28 w-28 flex items-end justify-center">
+        <div class="h-36 rounded-2xl overflow-hidden shadow-sm bg-cover bg-center" style="${grupo.banner_url ? `background-image: url('${grupo.banner_url}')` : `background: linear-gradient(135deg, ${grupo.cor || '#212529'}, #12161c)`}"></div>
+        <div class="absolute left-6 -bottom-8 h-24 w-24 rounded-2xl bg-card border border-border shadow-sm flex items-center justify-center p-3">
           ${grupo.imagem_url
-            ? `<img src="${grupo.imagem_url}" class="max-h-28 max-w-28 object-contain drop-shadow-lg" alt="">`
-            : `<div class="h-20 w-20 rounded-2xl bg-card border border-border shadow-sm flex items-center justify-center text-lg font-bold">${grupo.codigo}</div>`}
+            ? `<img src="${grupo.imagem_url}" class="max-h-full max-w-full object-contain" alt="">`
+            : `<span class="text-lg font-bold">${grupo.codigo}</span>`}
         </div>
       </div>
 
@@ -551,24 +795,29 @@
         <p class="text-xs text-muted">${TIPO_LABEL[grupo.tipo] || grupo.tipo}</p>
       </div>
 
-      ${renderAbas(grupo, souAdminDoGrupo)}
+      ${renderAbas(grupo, souMembro, souAdminDoGrupo)}
 
       <div id="conteudo-principal"><p class="text-sm text-muted">Carregando…</p></div>
     `;
 
     const conteudoPrincipal = document.getElementById('conteudo-principal');
+    const abaPermitida = souMembro || aba === 'membros';
+
+    if (!abaPermitida) {
+      conteudoPrincipal.innerHTML = '<p class="text-sm text-muted">Você não pertence a este grupo — só quem é membro (ou administrador) pode ver essa aba.</p>';
+      return;
+    }
 
     if (aba === 'membros') {
       const niveisResp = await apiFetch(`/grupos/${slug}/niveis`);
       const niveis = niveisResp.ok ? await niveisResp.json() : [];
       conteudoPrincipal.innerHTML = await renderMembrosAgrupados(membros, niveis);
     } else if (aba === 'noticias') {
-      const r = await apiFetch(`/grupos/${slug}/noticias`);
-      const noticias = r.ok ? (await r.json()).filter((n) => n.status === 'publicada') : [];
-      conteudoPrincipal.innerHTML = renderNoticias(noticias);
+      await montarNoticias(souAdminDoGrupo, me);
+    } else if (aba === 'regimento') {
+      await montarRegimentoInterno(souAdminDoGrupo);
     } else if (aba === 'registros') {
-      const r = await apiFetch(`/grupos/${slug}/registros`);
-      conteudoPrincipal.innerHTML = renderRegistros(r.ok ? await r.json() : []);
+      await montarRegistros(souAdminDoGrupo);
     } else if (aba === 'aulas' && grupo.permite_aulas) {
       await montarAulas(grupo, souAdminDoGrupo);
     } else if (aba === 'configuracoes' && souAdminDoGrupo) {

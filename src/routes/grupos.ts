@@ -14,6 +14,13 @@ async function ehAdmin(db: D1Database, usuarioId: number): Promise<boolean> {
   return Boolean(u?.administrador_sistema)
 }
 
+async function pertenceAoGrupo(db: D1Database, usuarioId: number, grupoId: number): Promise<boolean> {
+  if (await ehAdminDoGrupo(db, usuarioId, grupoId)) return true
+  const membro = await db.prepare(`SELECT 1 FROM usuario_grupos WHERE usuario_id = ? AND grupo_id = ? AND ativo = 1`)
+    .bind(usuarioId, grupoId).first()
+  return membro !== null
+}
+
 // --- Leitura do hub ---
 
 // GET /grupos — lista todos os grupos ativos, com contagem de membros
@@ -93,28 +100,35 @@ grupos.patch('/:slug', async (c) => {
   const slug = c.req.param('slug')
   const body = await c.req.json<{
     nome?: string; tipo?: string; permite_aulas?: boolean; ativo?: boolean
-    imagem_url?: string; cor?: string
+    imagem_url?: string; banner_url?: string; cor?: string
   }>()
-
-  if (!(await ehAdmin(c.env.DB, usuarioId))) {
-    return c.json({ erro: 'só administradores do sistema editam grupos' }, 403)
-  }
 
   const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
   if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
+
+  // Trocar de tipo ou desativar o grupo continua exclusivo do admin do
+  // sistema — o resto (nome, banner, logo, cor, aulas) um admin do
+  // grupo já pode mexer.
+  const admin = await ehAdmin(c.env.DB, usuarioId)
+  if ((body.tipo !== undefined || body.ativo !== undefined) && !admin) {
+    return c.json({ erro: 'só administradores do sistema mudam o tipo ou desativam o grupo' }, 403)
+  }
+  if (!admin && !(await ehAdminDoGrupo(c.env.DB, usuarioId, grupo.id))) {
+    return c.json({ erro: 'sem permissão de administrador neste grupo' }, 403)
+  }
 
   await c.env.DB.prepare(
     `UPDATE grupos SET
       nome = COALESCE(?, nome), tipo = COALESCE(?, tipo),
       permite_aulas = COALESCE(?, permite_aulas), ativo = COALESCE(?, ativo),
-      imagem_url = COALESCE(?, imagem_url), cor = COALESCE(?, cor)
+      imagem_url = COALESCE(?, imagem_url), banner_url = COALESCE(?, banner_url), cor = COALESCE(?, cor)
      WHERE id = ?`
   )
     .bind(
       body.nome ?? null, body.tipo ?? null,
       body.permite_aulas === undefined ? null : (body.permite_aulas ? 1 : 0),
       body.ativo === undefined ? null : (body.ativo ? 1 : 0),
-      body.imagem_url ?? null, body.cor ?? null,
+      body.imagem_url ?? null, body.banner_url ?? null, body.cor ?? null,
       grupo.id
     )
     .run()
@@ -253,13 +267,17 @@ grupos.patch('/:slug/membros/:usuarioId', async (c) => {
 // --- Registros internos ---
 
 grupos.get('/:slug/registros', async (c) => {
+  const usuarioId = c.get('usuarioId')
   const slug = c.req.param('slug')
   const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
   if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
+  if (!(await pertenceAoGrupo(c.env.DB, usuarioId, grupo.id))) {
+    return c.json({ erro: 'só membros deste grupo (ou administradores) podem ver isso' }, 403)
+  }
 
   const { results } = await c.env.DB.prepare(
-    `SELECT gr.id, gr.tipo, gr.motivo, gr.criado_em,
-            u.nick AS usuario_nick,
+    `SELECT gr.id, gr.tipo, gr.motivo, gr.data_efetiva, gr.permissao, gr.criado_em,
+            u.nick AS usuario_nick, u.tag AS usuario_tag,
             reg.nick AS registrado_por_nick,
             na.nome AS nivel_anterior_nome, nn.nome AS nivel_novo_nome
      FROM grupo_registros gr
@@ -276,7 +294,8 @@ grupos.post('/:slug/registros', async (c) => {
   const registradoPorId = c.get('usuarioId')
   const slug = c.req.param('slug')
   const body = await c.req.json<{
-    usuario_id: number; tipo: string; nivel_anterior_id?: number; nivel_novo_id?: number; motivo?: string
+    usuario_id: number; tipo: string; nivel_anterior_id?: number; nivel_novo_id?: number
+    motivo?: string; data_efetiva?: string; permissao?: string
   }>()
 
   const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
@@ -287,12 +306,25 @@ grupos.post('/:slug/registros', async (c) => {
   }
 
   const { meta } = await c.env.DB.prepare(
-    `INSERT INTO grupo_registros (grupo_id, usuario_id, tipo, nivel_anterior_id, nivel_novo_id, motivo, registrado_por_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO grupo_registros (grupo_id, usuario_id, tipo, nivel_anterior_id, nivel_novo_id, motivo, data_efetiva, permissao, registrado_por_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
-    .bind(grupo.id, body.usuario_id, body.tipo, body.nivel_anterior_id ?? null, body.nivel_novo_id ?? null, body.motivo ?? null, registradoPorId)
+    .bind(
+      grupo.id, body.usuario_id, body.tipo, body.nivel_anterior_id ?? null, body.nivel_novo_id ?? null,
+      body.motivo ?? null, body.data_efetiva ?? null, body.permissao ?? null, registradoPorId
+    )
     .run()
 
+  if (body.tipo === 'admissao' && body.nivel_novo_id) {
+    try {
+      await c.env.DB.prepare(`INSERT INTO usuario_grupos (usuario_id, grupo_id, nivel_id) VALUES (?, ?, ?)`)
+        .bind(body.usuario_id, grupo.id, body.nivel_novo_id).run()
+    } catch {
+      // já era membro — só reativa e atualiza o cargo, se estava inativo.
+      await c.env.DB.prepare(`UPDATE usuario_grupos SET ativo = 1, nivel_id = ? WHERE grupo_id = ? AND usuario_id = ?`)
+        .bind(body.nivel_novo_id, grupo.id, body.usuario_id).run()
+    }
+  }
   if ((body.tipo === 'promocao' || body.tipo === 'rebaixamento') && body.nivel_novo_id) {
     await c.env.DB.prepare(`UPDATE usuario_grupos SET nivel_id = ? WHERE grupo_id = ? AND usuario_id = ?`)
       .bind(body.nivel_novo_id, grupo.id, body.usuario_id).run()
@@ -456,6 +488,9 @@ grupos.get('/:slug/aulas', async (c) => {
 
   const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
   if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
+  if (!(await pertenceAoGrupo(c.env.DB, usuarioId, grupo.id))) {
+    return c.json({ erro: 'só membros deste grupo (ou administradores) podem ver isso' }, 403)
+  }
 
   const { results } = await c.env.DB.prepare(`SELECT * FROM grupo_aulas WHERE grupo_id = ? AND ativo = 1 ORDER BY ordem`)
     .bind(grupo.id).all<{ id: number; nivel_minimo_id: number | null }>()
@@ -484,6 +519,9 @@ grupos.get('/:slug/aulas/:aulaSlug', async (c) => {
 
   const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
   if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
+  if (!(await pertenceAoGrupo(c.env.DB, usuarioId, grupo.id))) {
+    return c.json({ erro: 'só membros deste grupo (ou administradores) podem ver isso' }, 403)
+  }
 
   const aula = await c.env.DB.prepare(`SELECT * FROM grupo_aulas WHERE grupo_id = ? AND slug = ? AND ativo = 1`)
     .bind(grupo.id, aulaSlug).first<{ nivel_minimo_id: number | null }>()
@@ -529,15 +567,49 @@ grupos.post('/:slug/paginas', async (c) => {
 })
 
 grupos.get('/:slug/paginas/:caminho', async (c) => {
+  const usuarioId = c.get('usuarioId')
   const { slug, caminho } = c.req.param()
   const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
   if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
+  if (!(await pertenceAoGrupo(c.env.DB, usuarioId, grupo.id))) {
+    return c.json({ erro: 'só membros deste grupo (ou administradores) podem ver isso' }, 403)
+  }
 
   const pagina = await c.env.DB.prepare(`SELECT * FROM grupo_paginas WHERE grupo_id = ? AND caminho = ? AND ativo = 1`)
     .bind(grupo.id, caminho).first()
 
   if (!pagina) return c.json({ erro: 'página não encontrada' }, 404)
   return c.json(pagina)
+})
+
+// PATCH /:slug/paginas/:caminho — edita o conteúdo; cria a página na
+// hora se ainda não existir (usado pelo Regimento Interno, que toda
+// grupo tem por padrão mas começa vazio).
+grupos.patch('/:slug/paginas/:caminho', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  const { slug, caminho } = c.req.param()
+  const body = await c.req.json<{ titulo?: string; conteudo_html: string }>()
+
+  const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
+  if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
+  if (!(await ehAdminDoGrupo(c.env.DB, usuarioId, grupo.id))) {
+    return c.json({ erro: 'sem permissão de administrador neste grupo' }, 403)
+  }
+
+  const existente = await c.env.DB.prepare(`SELECT id FROM grupo_paginas WHERE grupo_id = ? AND caminho = ?`)
+    .bind(grupo.id, caminho).first<{ id: number }>()
+
+  if (existente) {
+    await c.env.DB.prepare(
+      `UPDATE grupo_paginas SET conteudo_html = ?, atualizado_em = strftime('%Y-%m-%dT%H:%M:%SZ','now'), atualizado_por_id = ?, ativo = 1 WHERE id = ?`
+    ).bind(body.conteudo_html, usuarioId, existente.id).run()
+  } else {
+    await c.env.DB.prepare(
+      `INSERT INTO grupo_paginas (grupo_id, titulo, caminho, conteudo_html, criado_por_id) VALUES (?, ?, ?, ?, ?)`
+    ).bind(grupo.id, body.titulo ?? caminho, caminho, body.conteudo_html, usuarioId).run()
+  }
+
+  return c.json({ ok: true })
 })
 
 // --- Notícias de grupo ---
@@ -589,9 +661,13 @@ grupos.post('/:slug/noticias/:noticiaId/publicar', async (c) => {
 })
 
 grupos.get('/:slug/noticias', async (c) => {
+  const usuarioId = c.get('usuarioId')
   const slug = c.req.param('slug')
   const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
   if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
+  if (!(await pertenceAoGrupo(c.env.DB, usuarioId, grupo.id))) {
+    return c.json({ erro: 'só membros deste grupo (ou administradores) podem ver isso' }, 403)
+  }
 
   const { results } = await c.env.DB.prepare(`SELECT * FROM grupo_noticias WHERE grupo_id = ? ORDER BY criado_em DESC`)
     .bind(grupo.id).all()
