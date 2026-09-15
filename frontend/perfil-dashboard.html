@@ -237,13 +237,16 @@
     raiz.innerHTML = cursos.length ? `
       <div class="space-y-2">
         ${cursos.map((c) => `
-          <div class="bg-card border border-border rounded-2xl shadow-sm px-4 py-3">
-            <div class="flex items-center justify-between">
-              <p class="text-sm font-semibold">${c.curso_titulo}${c.curso_abreviacao ? ` <span class="text-muted font-normal">(${c.curso_abreviacao})</span>` : ''}</p>
-              <p class="text-xs text-muted">${c.data_efetiva}</p>
+          <div class="bg-card border border-border rounded-2xl shadow-sm px-4 py-3 flex items-center gap-3">
+            <span class="h-11 w-11 rounded-xl bg-basebg border border-border flex items-center justify-center overflow-hidden shrink-0 p-1.5">
+              ${c.grupo_imagem_url ? `<img src="${c.grupo_imagem_url}" class="max-w-full max-h-full object-contain" alt="">` : `<i class="fa-solid fa-graduation-cap text-muted"></i>`}
+            </span>
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-semibold truncate">${c.curso_titulo}${c.curso_abreviacao ? ` <span class="text-muted font-normal">(${c.curso_abreviacao})</span>` : ''}</p>
+              <p class="text-xs text-muted truncate">${c.grupo_nome} · instrutor ${c.instrutor_nick}</p>
+              ${c.comentario ? `<p class="text-xs text-muted mt-0.5">${c.comentario}</p>` : ''}
             </div>
-            <p class="text-xs text-muted mt-0.5">${c.grupo_nome} · instrutor ${c.instrutor_nick}</p>
-            ${c.comentario ? `<p class="text-xs text-muted mt-1">${c.comentario}</p>` : ''}
+            <p class="text-xs text-muted shrink-0">${c.data_efetiva}</p>
           </div>
         `).join('')}
       </div>
@@ -563,6 +566,24 @@
     const avatarCirculo = perfil.figure ? montarUrlAvatarPerfil(perfil) : null;
     const avatarGrande = perfil.figure ? avatarUrl(perfil.figure, 'grande', '2') : null;
 
+    // Dias no posto (desde a última mudança de patente aprovada) e
+    // dias na polícia (desde a instrução inicial/contratação).
+    const TIPOS_MUDANCA_PATENTE = ['instrucao_inicial', 'promocao', 'rebaixamento', 'contratacao', 'transferencia_corpo'];
+    const TIPOS_INGRESSO = ['instrucao_inicial', 'contratacao'];
+    const reqsAprovados = requerimentos.filter((r) => r.status === 'aprovado');
+    function diasDesde(iso) { return iso ? Math.floor((Date.now() - new Date(iso).getTime()) / 86400000) : null; }
+
+    const ultimaMudancaPatente = reqsAprovados.find((r) => TIPOS_MUDANCA_PATENTE.includes(r.tipo));
+    const diasNoPosto = diasDesde(ultimaMudancaPatente?.criado_em);
+
+    const reqsIngresso = reqsAprovados.filter((r) => TIPOS_INGRESSO.includes(r.tipo));
+    const primeiroIngresso = reqsIngresso[reqsIngresso.length - 1] || reqsAprovados[reqsAprovados.length - 1];
+    const diasNaPolicia = diasDesde(primeiroIngresso?.criado_em);
+
+    const textoIdentificacao = requerimentos[0]
+      ? montarIdentificacao(perfil.nick, requerimentos[0].tipo, requerimentos[0].autor_tag, requerimentos[0].criado_em)
+      : `${perfil.nick}${perfil.tag ? ` [${perfil.tag}]` : ''}`;
+
     container.innerHTML = `
       <div class="relative mb-16">
         <div class="perfil-banner h-44 rounded-2xl overflow-hidden" ${perfil.banner_imagem_url ? `style="background-image: url('${perfil.banner_imagem_url}')"` : ''}></div>
@@ -578,37 +599,43 @@
         <div>
           <div class="bg-card border border-border rounded-2xl p-5 shadow-sm">
             ${avatarGrande ? `
-              <div class="flex justify-center mb-4">
+              <div class="flex justify-center mb-3">
                 <img src="${avatarGrande}" class="max-h-64 object-contain" alt="Avatar de ${perfil.nick}">
               </div>
             ` : ''}
+            <p class="text-center text-lg font-display font-bold">${perfil.nick}</p>
 
-            <h1 class="text-xl font-display font-bold">${perfil.nick}${perfil.tag ? ` <span class="text-muted font-normal text-base">[${perfil.tag}]</span>` : ''}</h1>
-            <p class="text-xs text-muted mt-1">${requerimentos[0] ? montarIdentificacao(perfil.nick, requerimentos[0].tipo, requerimentos[0].autor_tag, requerimentos[0].criado_em) : `${perfil.nick}${perfil.tag ? ` [${perfil.tag}]` : ''}`}</p>
-            <p class="text-xs text-muted mt-0.5">Último requerimento: ${formatarDataCurta(ultimoRequerimento)}</p>
-
-            <div class="mt-2">
-              <span class="text-xs font-semibold px-2.5 py-1 rounded-full capitalize ${BADGE_STATUS[perfil.status] || 'bg-white/10 text-white'}">
-                ${(perfil.status || '').replace(/_/g, ' ')}
-              </span>
+            <div class="flex items-center gap-2 bg-basebg border border-border rounded-lg px-3 py-2 mt-3">
+              <p id="texto-identificacao" class="text-xs flex-1 min-w-0 truncate">${textoIdentificacao}</p>
+              <button id="btn-copiar-identificacao" title="Copiar" class="text-muted hover:text-accent transition-colors shrink-0">
+                <i class="fa-regular fa-copy"></i>
+              </button>
             </div>
 
-            <p class="text-sm mt-2">${perfil.patente_nome || 'Conta institucional'}${perfil.corpo ? ` · ${perfil.corpo === 'militar' ? 'Corpo Militar' : 'Corpo Executivo'}` : ''}</p>
+            <div class="text-sm mt-4 space-y-1.5">
+              <p><b>Status:</b> <span class="capitalize">${(perfil.status || '').replace(/_/g, ' ')}</span></p>
+              <p><b>Patente/Cargo:</b> ${perfil.patente_nome || 'Conta institucional'}</p>
+              <p><b>Dias no posto:</b> ${diasNoPosto ?? '—'}</p>
+              <p><b>Dias na polícia:</b> ${diasNaPolicia ?? '—'}</p>
+            </div>
+          </div>
 
-            ${grupos.length ? `
-              <div class="mt-4">
-                <p class="text-xs uppercase tracking-wide text-muted mb-2">Grupos</p>
-                <div class="flex flex-wrap gap-2">
-                  ${grupos.map((g) => `
-                    <span title="${g.nome} · ${g.nivel_nome}" class="h-9 w-9 rounded-xl bg-basebg border border-border flex items-center justify-center text-xs font-bold">
-                      ${g.codigo}
-                    </span>
-                  `).join('')}
-                </div>
+          ${grupos.length ? `
+            <div class="bg-card border border-border rounded-2xl p-4 mt-4 shadow-sm">
+              <p class="text-xs uppercase tracking-wide text-muted mb-2">Grupos</p>
+              <div class="flex flex-wrap gap-2">
+                ${grupos.map((g) => `
+                  <a href="/grupos/${g.slug}" title="${g.nome} · ${g.nivel_nome}" class="h-11 w-11 rounded-xl bg-basebg border border-border flex items-center justify-center overflow-hidden p-1.5 hover:border-accent transition-colors">
+                    ${g.imagem_url ? `<img src="${g.imagem_url}" class="max-w-full max-h-full object-contain" alt="">` : `<span class="text-xs font-bold">${g.codigo}</span>`}
+                  </a>
+                `).join('')}
               </div>
-            ` : ''}
+            </div>
+          ` : ''}
 
-            <div id="bio-area" class="mt-4"></div>
+          <div class="bg-card border border-border rounded-2xl p-4 mt-4 shadow-sm">
+            <p class="text-xs uppercase tracking-wide text-muted mb-2">Biografia</p>
+            <div id="bio-area"></div>
           </div>
 
           <div class="bg-card border border-border rounded-2xl p-4 mt-4 shadow-sm">
@@ -626,6 +653,16 @@
         </div>
       </div>
     `;
+
+    document.getElementById('btn-copiar-identificacao').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-copiar-identificacao');
+      try {
+        await navigator.clipboard.writeText(document.getElementById('texto-identificacao').textContent);
+        btn.innerHTML = '<i class="fa-solid fa-check text-green-600"></i>';
+        setTimeout(() => { btn.innerHTML = '<i class="fa-regular fa-copy"></i>'; }, 1500);
+      } catch {}
+    });
+
 
     const bioArea = document.getElementById('bio-area');
     if (ehMeuPerfil) {

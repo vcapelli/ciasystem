@@ -53,7 +53,7 @@ grupos.get('/cursos-concluidos/:usuarioId', async (c) => {
   const { usuarioId } = c.req.param()
   const { results } = await c.env.DB.prepare(
     `SELECT r.id, r.data_efetiva, r.comentario, ga.titulo AS curso_titulo, ga.abreviacao AS curso_abreviacao,
-            g.nome AS grupo_nome, g.slug AS grupo_slug, ins.nick AS instrutor_nick
+            g.nome AS grupo_nome, g.slug AS grupo_slug, g.imagem_url AS grupo_imagem_url, ins.nick AS instrutor_nick
      FROM grupo_aula_relatorio_alunos ra
      JOIN grupo_aula_relatorios r ON r.id = ra.relatorio_id
      JOIN grupo_aulas ga ON ga.id = r.aula_id
@@ -826,7 +826,7 @@ grupos.get('/usuario/:usuarioId', async (c) => {
   const usuarioId = c.req.param('usuarioId')
 
   const { results } = await c.env.DB.prepare(
-    `SELECT g.id, g.codigo, g.nome, g.slug, g.tipo, gn.nome AS nivel_nome
+    `SELECT g.id, g.codigo, g.nome, g.slug, g.tipo, g.imagem_url, gn.nome AS nivel_nome
      FROM usuario_grupos ug
      JOIN grupos g ON g.id = ug.grupo_id
      JOIN grupo_niveis gn ON gn.id = ug.nivel_id
