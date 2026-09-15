@@ -242,8 +242,8 @@
               ${c.grupo_imagem_url ? `<img src="${c.grupo_imagem_url}" class="max-w-full max-h-full object-contain" alt="">` : `<i class="fa-solid fa-graduation-cap text-muted"></i>`}
             </span>
             <div class="flex-1 min-w-0">
-              <p class="text-sm font-semibold truncate">${c.curso_titulo}${c.curso_abreviacao ? ` <span class="text-muted font-normal">(${c.curso_abreviacao})</span>` : ''}</p>
-              <p class="text-xs text-muted truncate">${c.grupo_nome} · instrutor ${c.instrutor_nick}</p>
+              <p class="text-sm font-semibold truncate">${c.curso_titulo}</p>
+              <p class="text-xs text-muted truncate">Instrutor: ${c.instrutor_nick}</p>
               ${c.comentario ? `<p class="text-xs text-muted mt-0.5">${c.comentario}</p>` : ''}
             </div>
             <p class="text-xs text-muted shrink-0">${c.data_efetiva}</p>
@@ -583,6 +583,10 @@
     const textoIdentificacao = requerimentos[0]
       ? montarIdentificacao(perfil.nick, requerimentos[0].tipo, requerimentos[0].autor_tag, requerimentos[0].criado_em)
       : `${perfil.nick}${perfil.tag ? ` [${perfil.tag}]` : ''}`;
+    const abreviacoesGrupos = grupos.filter((g) => g.nivel_abreviacao).map((g) => `${g.nivel_abreviacao}.${g.codigo}`);
+    const textoIdentificacaoCompleto = abreviacoesGrupos.length
+      ? `${textoIdentificacao} - ${abreviacoesGrupos.join('/')}`
+      : textoIdentificacao;
 
     container.innerHTML = `
       <div class="relative mb-16">
@@ -606,7 +610,7 @@
             <p class="text-center text-lg font-display font-bold">${perfil.nick}</p>
 
             <div class="flex items-center gap-2 bg-basebg border border-border rounded-lg px-3 py-2 mt-3">
-              <p id="texto-identificacao" class="text-xs flex-1 min-w-0 truncate">${textoIdentificacao}</p>
+              <p id="texto-identificacao" class="text-xs flex-1 min-w-0 truncate">${textoIdentificacaoCompleto}</p>
               <button id="btn-copiar-identificacao" title="Copiar" class="text-muted hover:text-accent transition-colors shrink-0">
                 <i class="fa-regular fa-copy"></i>
               </button>
@@ -626,7 +630,7 @@
               <div class="flex flex-wrap gap-2">
                 ${grupos.map((g) => `
                   <a href="/grupos/${g.slug}" title="${g.nome} · ${g.nivel_nome}" class="h-11 w-11 rounded-xl bg-basebg border border-border flex items-center justify-center overflow-hidden p-1.5 hover:border-accent transition-colors">
-                    ${g.imagem_url ? `<img src="${g.imagem_url}" class="max-w-full max-h-full object-contain" alt="">` : `<span class="text-xs font-bold">${g.codigo}</span>`}
+                    ${g.imagem_url ? `<img src="${g.imagem_url}" class="max-w-full max-h-full object-contain" alt="${g.nome}">` : `<span class="text-xs font-bold">${g.codigo}</span>`}
                   </a>
                 `).join('')}
               </div>

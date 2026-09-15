@@ -119,7 +119,7 @@
       } catch { m.figure = null; }
     }));
 
-    const gruposPorNivel = [...niveis].sort((a, b) => b.ordem - a.ordem).map((nv) => ({
+    const gruposPorNivel = [...niveis].sort((a, b) => a.ordem - b.ordem).map((nv) => ({
       nivel: nv,
       membros: membros.filter((m) => m.nivel_id === nv.id),
     }));
@@ -382,7 +382,7 @@
             <div>
               <label id="nr-rotulo-cargo" class="block text-xs text-muted mb-1">Cargo</label>
               <select id="nr-cargo" required class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
-                ${[...niveis].sort((a,b) => b.ordem - a.ordem).map((n) => `<option value="${n.id}">${n.nome}</option>`).join('')}
+                ${[...niveis].sort((a,b) => a.ordem - b.ordem).map((n) => `<option value="${n.id}">${n.nome}</option>`).join('')}
               </select>
             </div>
           </div>
@@ -724,7 +724,7 @@
           <input id="na-descricao" placeholder="Descrição curta (opcional)" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
           <select id="na-nivel-minimo" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
             <option value="">Qualquer membro do grupo pode ver</option>
-            ${[...niveis].sort((a,b) => b.ordem - a.ordem).map((n) => `<option value="${n.id}">A partir de ${n.nome}</option>`).join('')}
+            ${[...niveis].sort((a,b) => a.ordem - b.ordem).map((n) => `<option value="${n.id}">A partir de ${n.nome}</option>`).join('')}
           </select>
           <label class="block text-xs text-muted mb-1">Conteúdo</label>
           ${htmlEditorHtml('editor-nova-aula', '')}
@@ -828,6 +828,14 @@
           <input id="gc-nome" value="${grupo.nome}" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
         </div>
         <div>
+          <label class="block text-xs text-muted mb-1">URL do grupo</label>
+          <div class="flex items-center">
+            <span class="text-sm text-muted bg-basebg border border-r-0 border-border rounded-l-lg px-3 py-2">/grupos/</span>
+            <input id="gc-slug" value="${grupo.slug}" required pattern="[a-z0-9]+(-[a-z0-9]+)*" class="flex-1 bg-basebg border border-border rounded-r-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          </div>
+          <p class="text-xs text-muted mt-1">Cuidado: mudar isso quebra links já compartilhados pro grupo.</p>
+        </div>
+        <div>
           <label class="block text-xs text-muted mb-1">Tipo</label>
           <select id="gc-tipo" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
             <option value="companhia" ${grupo.tipo === 'companhia' ? 'selected' : ''}>Companhia</option>
@@ -868,12 +876,17 @@
 
     config.innerHTML = `
       <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-4 max-w-2xl">
-        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Cargos internos (do maior pro menor)</h2>
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-1">Cargos internos (do topo pro fundo)</h2>
+        <p class="text-xs text-muted mb-3">Ordem menor = cargo mais alto. Ex: Líder = 1, Vice-Líder = 2…</p>
         <div class="space-y-1.5 mb-3">
-          ${[...niveis].sort((a,b) => b.ordem - a.ordem).map((n) => `
+          ${[...niveis].sort((a,b) => a.ordem - b.ordem).map((n) => `
             <div class="flex items-center gap-2 bg-basebg border border-border rounded-lg p-2">
-              <input data-nivel-nome="${n.id}" value="${n.nome}" class="flex-1 bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">
-              <input data-nivel-ordem="${n.id}" type="number" value="${n.ordem}" class="w-16 bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">
+              <input data-nivel-nome="${n.id}" value="${n.nome}" placeholder="Nome" class="flex-1 bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">
+              <input data-nivel-ordem="${n.id}" type="number" value="${n.ordem}" title="Ordem" class="w-14 bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">
+              <div class="flex items-center shrink-0">
+                <input data-nivel-abreviacao="${n.id}" value="${n.abreviacao || ''}" placeholder="L" title="Abreviação" class="w-12 bg-card border border-border rounded-l-lg px-2 py-1.5 text-xs text-right focus:outline-none focus:ring-2 focus:ring-accent">
+                <span class="bg-basebg border border-l-0 border-border rounded-r-lg px-2 py-1.5 text-xs text-muted">.${grupo.codigo}</span>
+              </div>
               <button data-salvar-nivel="${n.id}" class="text-xs font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-2.5 py-1.5">Salvar</button>
               <button data-excluir-nivel="${n.id}" class="text-muted hover:text-red-600 px-1"><i class="fa-solid fa-trash"></i></button>
             </div>
@@ -881,7 +894,11 @@
         </div>
         <form id="form-novo-nivel" class="flex gap-2">
           <input id="novo-nivel-nome" placeholder="Nome do cargo" required class="flex-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
-          <input id="novo-nivel-ordem" type="number" placeholder="Ordem" required class="w-24 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <input id="novo-nivel-ordem" type="number" placeholder="Ordem" required class="w-20 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <div class="flex items-center shrink-0">
+            <input id="novo-nivel-abreviacao" placeholder="L" class="w-14 bg-basebg border border-border rounded-l-lg px-2 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-accent">
+            <span class="bg-basebg border border-l-0 border-border rounded-r-lg px-2 py-2 text-sm text-muted">.${grupo.codigo}</span>
+          </div>
           <button type="submit" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Adicionar</button>
         </form>
       </div>
@@ -908,6 +925,7 @@
           body: JSON.stringify({
             nome: config.querySelector(`[data-nivel-nome="${id}"]`).value.trim(),
             ordem: Number(config.querySelector(`[data-nivel-ordem="${id}"]`).value),
+            abreviacao: config.querySelector(`[data-nivel-abreviacao="${id}"]`).value.trim(),
           }),
         });
         montarConfigHierarquia(grupo);
@@ -932,6 +950,7 @@
         body: JSON.stringify({
           nome: document.getElementById('novo-nivel-nome').value.trim(),
           ordem: Number(document.getElementById('novo-nivel-ordem').value),
+          abreviacao: document.getElementById('novo-nivel-abreviacao').value.trim() || undefined,
         }),
       });
       montarConfigHierarquia(grupo);
@@ -963,10 +982,12 @@
       e.preventDefault();
       const erroEl = document.getElementById('form-config-erro');
       erroEl.classList.add('hidden');
+      const novoSlug = document.getElementById('gc-slug').value.trim();
       const resposta = await apiFetch(`/grupos/${slug}`, {
         method: 'PATCH',
         body: JSON.stringify({
           nome: document.getElementById('gc-nome').value.trim(),
+          slug: novoSlug,
           tipo: document.getElementById('gc-tipo').value,
           imagem_url: document.getElementById('gc-imagem').value.trim() || undefined,
           banner_url: document.getElementById('gc-banner').value.trim() || undefined,
@@ -978,6 +999,10 @@
         const dados = await resposta.json().catch(() => ({}));
         erroEl.textContent = dados.erro || 'Não foi possível salvar.';
         erroEl.classList.remove('hidden');
+        return;
+      }
+      if (novoSlug && novoSlug !== slug) {
+        window.location.href = `/grupos/${novoSlug}/configuracoes`;
         return;
       }
       grupo.permite_aulas = document.getElementById('gc-aulas').checked;
