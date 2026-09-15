@@ -583,10 +583,6 @@
     const textoIdentificacao = requerimentos[0]
       ? montarIdentificacao(perfil.nick, requerimentos[0].tipo, requerimentos[0].autor_tag, requerimentos[0].criado_em)
       : `${perfil.nick}${perfil.tag ? ` [${perfil.tag}]` : ''}`;
-    const abreviacoesGrupos = grupos.filter((g) => g.nivel_abreviacao).map((g) => `${g.nivel_abreviacao}.${g.codigo}`);
-    const textoIdentificacaoCompleto = abreviacoesGrupos.length
-      ? `${textoIdentificacao} - ${abreviacoesGrupos.join('/')}`
-      : textoIdentificacao;
 
     container.innerHTML = `
       <div class="relative mb-16">
@@ -610,7 +606,7 @@
             <p class="text-center text-lg font-display font-bold">${perfil.nick}</p>
 
             <div class="flex items-center gap-2 bg-basebg border border-border rounded-lg px-3 py-2 mt-3">
-              <p id="texto-identificacao" class="text-xs flex-1 min-w-0 truncate">${textoIdentificacaoCompleto}</p>
+              <p id="texto-identificacao" class="text-xs flex-1 min-w-0 truncate">${textoIdentificacao}</p>
               <button id="btn-copiar-identificacao" title="Copiar" class="text-muted hover:text-accent transition-colors shrink-0">
                 <i class="fa-regular fa-copy"></i>
               </button>

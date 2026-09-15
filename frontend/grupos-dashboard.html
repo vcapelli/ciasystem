@@ -877,7 +877,8 @@
     config.innerHTML = `
       <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-4 max-w-2xl">
         <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-1">Cargos internos (do topo pro fundo)</h2>
-        <p class="text-xs text-muted mb-3">Ordem menor = cargo mais alto. Ex: Líder = 1, Vice-Líder = 2…</p>
+        <p class="text-xs text-muted mb-1">Ordem menor = cargo mais alto. Ex: Líder = 1, Vice-Líder = 2…</p>
+        <p class="text-xs text-muted mb-3">Se a abreviação ficar em branco, o cargo é identificado só pelo código do grupo (ex: em "Instrutores" (INS), o cargo "Instrutor" sem abreviação vira só "INS" em vez de "algo.INS").</p>
         <div class="space-y-1.5 mb-3">
           ${[...niveis].sort((a,b) => a.ordem - b.ordem).map((n) => `
             <div class="flex items-center gap-2 bg-basebg border border-border rounded-lg p-2">

@@ -31,7 +31,14 @@ const COR_GRUPO = {
   verde: '#22c55e',
 };
 
-function renderLinhaMembro(u, formatoExoneracao) {
+// Se a abreviação do cargo estiver vazia, o próprio código do grupo
+// já identifica (ex: cargo "Instrutor" sem abreviação no grupo
+// Instrutores (INS) vira só "INS", não "algo.INS").
+function computarAbreviacaoGrupo(g) {
+  return g.nivel_abreviacao ? `${g.nivel_abreviacao}.${g.codigo}` : g.codigo;
+}
+
+function renderLinhaMembro(u, formatoExoneracao, tipo) {
   let identificacao;
   if (formatoExoneracao) {
     identificacao = `${u.nick} [${u.tag || '---'}] [${u.ultimo_autor_tag || '---'}] {${u.crime_nome || ''}} - ${formatarDataCurtaReq(u.ultimo_requerimento_em)} até ${u.exoneracao_ate ? formatarDataCurtaReq(u.exoneracao_ate) : 'Indeterminado'}`;
@@ -41,18 +48,23 @@ function renderLinhaMembro(u, formatoExoneracao) {
       : `${u.nick}${u.tag ? ` [${u.tag}]` : ' [---]'}`;
   }
 
+  const mostrarGrupos = (tipo === 'corpo-de-oficiais' || tipo === 'corpo-executivo') && u.grupos?.length;
+  if (mostrarGrupos) {
+    identificacao += ` - ${u.grupos.map(computarAbreviacaoGrupo).join('/')}`;
+  }
+
   return `
-    <a href="/perfil/${u.nick}" class="flex items-center gap-3 px-4 py-2.5 hover:bg-basebg transition-colors">
-      <span class="h-8 w-8 rounded-full bg-basebg border border-border overflow-hidden inline-block shrink-0">
-        ${u.figure ? `<img src="${avatarUrl(u.figure, 'mini', '2')}" class="w-full h-[190%] object-cover object-top -mt-2" alt="">` : `<span class="w-full h-full flex items-center justify-center text-[0.65rem] font-bold">${u.nick.slice(0,2).toUpperCase()}</span>`}
+    <a href="/perfil/${u.nick}" class="flex items-center gap-3 px-4 py-3 hover:bg-basebg transition-colors">
+      <span class="h-11 w-11 rounded-full bg-basebg border border-border overflow-hidden inline-block shrink-0">
+        ${u.figure ? `<img src="${avatarUrl(u.figure, 'mini', '2')}" class="w-full h-[190%] object-cover object-top -mt-3" alt="">` : `<span class="w-full h-full flex items-center justify-center text-sm font-bold">${u.nick.slice(0,2).toUpperCase()}</span>`}
       </span>
-      <span class="text-sm text-muted">▸</span>
-      <span class="text-sm">${identificacao}</span>
+      <span class="text-base text-muted">▸</span>
+      <span class="text-base">${identificacao}</span>
     </a>
   `;
 }
 
-function renderGrupo(g, formatoExoneracao) {
+function renderGrupo(g, formatoExoneracao, tipo) {
   const icone = ICONE_PATENTE[g.titulo] || 'fa-solid fa-users';
   const cor = g.cor && g.cor.startsWith('#') ? g.cor : (COR_GRUPO[g.cor] || COR_GRUPO.escuro);
   return `
@@ -66,7 +78,7 @@ function renderGrupo(g, formatoExoneracao) {
       </div>
       <div class="divide-y divide-border">
         ${g.itens.length
-          ? g.itens.map((u) => renderLinhaMembro(u, formatoExoneracao)).join('')
+          ? g.itens.map((u) => renderLinhaMembro(u, formatoExoneracao, tipo)).join('')
           : '<p class="text-sm text-muted px-4 py-3">Ninguém nessa patente/cargo no momento.</p>'}
       </div>
     </div>
@@ -96,9 +108,9 @@ async function montarListagem(tipo) {
       <div class="bg-card border border-border rounded-2xl shadow-sm divide-y divide-border overflow-hidden">
         ${dados.itens.length
           ? dados.itens.map((u) => `
-              <a href="/perfil/${u.nick}" class="flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-basebg transition-colors">
-                <span class="h-8 w-8 rounded-full bg-basebg border border-border overflow-hidden inline-block shrink-0">
-                  ${u.figure ? `<img src="${avatarUrl(u.figure, 'mini', '2')}" class="w-full h-[190%] object-cover object-top -mt-2" alt="">` : `<span class="w-full h-full flex items-center justify-center text-[0.65rem] font-bold">${u.nick.slice(0,2).toUpperCase()}</span>`}
+              <a href="/perfil/${u.nick}" class="flex items-center gap-3 px-4 py-3 text-base hover:bg-basebg transition-colors">
+                <span class="h-11 w-11 rounded-full bg-basebg border border-border overflow-hidden inline-block shrink-0">
+                  ${u.figure ? `<img src="${avatarUrl(u.figure, 'mini', '2')}" class="w-full h-[190%] object-cover object-top -mt-3" alt="">` : `<span class="w-full h-full flex items-center justify-center text-sm font-bold">${u.nick.slice(0,2).toUpperCase()}</span>`}
                 </span>
                 <span>${u.nick} <span class="text-muted">[${u.tag}]</span></span>
               </a>
@@ -111,14 +123,21 @@ async function montarListagem(tipo) {
 
   // Agrupado (patente ou status) — busca a figure de cada membro em
   // paralelo antes de desenhar (dá pra ter bastante gente aqui, mas é
-  // uma tela só carregada sob demanda, então tudo bem).
+  // uma tela só carregada sob demanda, então tudo bem). Nas listagens
+  // de oficiais e executivo, busca também os grupos de cada um, pra
+  // mostrar a abreviação do cargo interno ao lado da identificação.
   const todosMembros = dados.grupos.flatMap((g) => g.itens);
+  const buscarGrupos = tipo === 'corpo-de-oficiais' || tipo === 'corpo-executivo';
   await Promise.all(
     todosMembros.map(async (u) => {
       const r = await apiFetch(`/usuarios/nick/${encodeURIComponent(u.nick)}`);
       u.figure = r.ok ? (await r.json()).figure : null;
+      if (buscarGrupos && u.id) {
+        const rg = await apiFetch(`/grupos/usuario/${u.id}`);
+        u.grupos = rg.ok ? await rg.json() : [];
+      }
     })
   );
 
-  raiz.innerHTML = `<div class="space-y-5">${dados.grupos.map((g) => renderGrupo(g, dados.formatoExoneracao)).join('')}</div>`;
+  raiz.innerHTML = `<div class="space-y-5">${dados.grupos.map((g) => renderGrupo(g, dados.formatoExoneracao, tipo)).join('')}</div>`;
 }
