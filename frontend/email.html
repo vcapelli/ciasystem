@@ -18,10 +18,18 @@
   <aside id="layout-sidebar" class="w-60 fixed left-0 top-[72px] bottom-0 border-r border-border bg-basebg p-4 overflow-y-auto"></aside>
 
   <aside id="email-lista" class="w-80 fixed left-60 top-[72px] bottom-0 border-r border-border bg-basebg overflow-y-auto">
-    <div class="p-4 border-b border-border">
+    <div class="p-4 border-b border-border space-y-2">
       <button id="btn-escrever-email" class="w-full text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2.5 transition-colors">
         <i class="fa-solid fa-pen"></i> Enviar e-mail
       </button>
+      <div class="flex gap-2">
+        <button data-caixa="recebidos" class="btn-trocar-caixa flex-1 text-xs font-semibold rounded-lg px-3 py-2 transition-colors">
+          <i class="fa-solid fa-inbox"></i> Caixa de Entrada
+        </button>
+        <button data-caixa="enviados" class="btn-trocar-caixa flex-1 text-xs font-semibold rounded-lg px-3 py-2 transition-colors">
+          <i class="fa-solid fa-paper-plane"></i> Enviados
+        </button>
+      </div>
     </div>
     <div id="lista-emails" class="divide-y divide-border">
       <p class="text-sm text-muted p-4">Carregando…</p>
@@ -30,7 +38,7 @@
 
   <main class="ml-[35rem] min-h-screen flex flex-col">
     <div class="flex-1 min-w-0 px-6 py-8">
-      <div id="conteudo-principal" class="max-w-2xl">
+      <div id="conteudo-principal" class="h-full">
         <p class="text-sm text-muted">Selecione um e-mail na lista ao lado, ou escreva um novo.</p>
       </div>
     </div>
@@ -40,10 +48,14 @@
 <script src="/assets/api.js"></script>
 <script src="/assets/footer.js"></script>
 <script src="/assets/layout.js"></script>
+<script src="/assets/editor-html.js"></script>
 <script src="/assets/seletor-usuarios.js"></script>
 <script>
   let meAtual = null;
   let emailsCache = [];
+  let caixaAtual = 'recebidos';
+  let emailSelecionadoId = null;
+  const figurasPorNick = {};
 
   function tempoRelativoEmail(iso) {
     const diffMs = Date.now() - new Date(iso).getTime();
@@ -57,76 +69,128 @@
     return new Date(iso).toLocaleDateString('pt-BR');
   }
 
+  async function buscarFiguraEmail(nick) {
+    if (!nick) return null;
+    if (nick in figurasPorNick) return figurasPorNick[nick];
+    try {
+      const r = await apiFetch(`/usuarios/nick/${encodeURIComponent(nick)}`);
+      figurasPorNick[nick] = r.ok ? (await r.json()).figure : null;
+    } catch { figurasPorNick[nick] = null; }
+    return figurasPorNick[nick];
+  }
+
   function renderItemLista(email) {
-    const naoLido = !email.lido_em;
+    const naoLido = caixaAtual === 'recebidos' && !email.lido_em;
+    const nomeExibido = caixaAtual === 'recebidos' ? email.remetente_nick : (email.destinatarios_nicks || '—');
+    const selecionado = email.id === emailSelecionadoId;
+    const figura = figurasPorNick[caixaAtual === 'recebidos' ? email.remetente_nick : (email.destinatarios_nicks || '').split(',')[0]?.trim()];
+
     return `
-      <button data-abrir-email="${email.id}" class="w-full text-left px-4 py-3 hover:bg-basebg transition-colors ${naoLido ? 'bg-accent/5' : ''}">
-        <div class="flex items-center justify-between gap-2">
-          <p class="text-sm truncate ${naoLido ? 'font-bold' : 'font-medium'}">${email.remetente_nick}</p>
-          <p class="text-xs text-muted shrink-0">${tempoRelativoEmail(email.enviado_em)}</p>
+      <button data-abrir-email="${email.id}" class="w-full text-left px-4 py-3 flex items-center gap-3 transition-colors ${selecionado ? 'bg-accent/10' : naoLido ? 'bg-accent/5 hover:bg-accent/10' : 'hover:bg-basebg'}">
+        <span class="h-11 w-11 rounded-full bg-basebg border border-border overflow-hidden inline-block shrink-0">
+          ${figura ? `<img src="${avatarUrl(figura, 'mini', '2')}" class="w-full h-[190%] object-cover object-top -mt-3 transition-transform duration-300 hover:-translate-y-[8px]" alt="">` : `<span class="w-full h-full flex items-center justify-center text-xs font-bold">${(nomeExibido || '?').slice(0,2).toUpperCase()}</span>`}
+        </span>
+        <div class="min-w-0 flex-1">
+          <p class="text-sm truncate ${naoLido ? 'font-bold' : 'font-medium'}">${nomeExibido}</p>
+          <p class="text-xs ${naoLido ? 'font-semibold' : 'text-muted'} truncate mt-0.5">${email.assunto}</p>
         </div>
-        <p class="text-xs ${naoLido ? 'font-semibold' : 'text-muted'} truncate mt-0.5">${email.assunto}</p>
-        <p class="text-xs text-muted truncate mt-0.5">${email.corpo.replace(/<[^>]*>/g, '')}</p>
+        <p class="text-xs text-muted shrink-0 self-start">${tempoRelativoEmail(email.enviado_em)}</p>
       </button>
     `;
   }
 
   async function carregarLista() {
     const lista = document.getElementById('lista-emails');
-    const resp = await apiFetch(`/mensagens/usuario/${meAtual.id}`);
+    lista.innerHTML = '<p class="text-sm text-muted p-4">Carregando…</p>';
+
+    document.querySelectorAll('.btn-trocar-caixa').forEach((btn) => {
+      const ativo = btn.dataset.caixa === caixaAtual;
+      btn.className = `btn-trocar-caixa flex-1 text-xs font-semibold rounded-lg px-3 py-2 transition-colors ${ativo ? 'bg-accent text-white' : 'bg-card border border-border text-muted hover:bg-basebg'}`;
+    });
+
+    const resp = await apiFetch(`/mensagens/usuario/${meAtual.id}${caixaAtual === 'enviados' ? '/enviadas' : ''}`);
     emailsCache = resp.ok ? await resp.json() : [];
+
+    await Promise.all(emailsCache.map((email) => {
+      const nick = caixaAtual === 'recebidos' ? email.remetente_nick : (email.destinatarios_nicks || '').split(',')[0]?.trim();
+      return buscarFiguraEmail(nick);
+    }));
 
     lista.innerHTML = emailsCache.length
       ? emailsCache.map(renderItemLista).join('')
-      : '<p class="text-sm text-muted p-4">Caixa de entrada vazia.</p>';
+      : `<p class="text-sm text-muted p-4">${caixaAtual === 'recebidos' ? 'Caixa de entrada vazia.' : 'Nenhum e-mail enviado ainda.'}</p>`;
 
     lista.querySelectorAll('[data-abrir-email]').forEach((btn) => {
       btn.addEventListener('click', () => abrirEmail(Number(btn.dataset.abrirEmail)));
     });
   }
 
+  document.querySelectorAll('.btn-trocar-caixa').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (caixaAtual === btn.dataset.caixa) return;
+      caixaAtual = btn.dataset.caixa;
+      emailSelecionadoId = null;
+      carregarLista();
+    });
+  });
+
   async function abrirEmail(id) {
+    emailSelecionadoId = id;
     const email = emailsCache.find((e) => e.id === id);
     if (!email) return;
 
-    if (!email.lido_em) {
+    document.querySelectorAll('[data-abrir-email]').forEach((btn) => {
+      btn.classList.toggle('bg-accent/10', Number(btn.dataset.abrirEmail) === id);
+    });
+
+    if (caixaAtual === 'recebidos' && !email.lido_em) {
       await apiFetch(`/mensagens/${id}/lida`, { method: 'PATCH' });
       email.lido_em = new Date().toISOString();
       await carregarLista();
     }
 
+    const remetenteOuDestinatarios = caixaAtual === 'recebidos'
+      ? `De <b>${email.remetente_nick}</b>`
+      : `Para <b>${email.destinatarios_nicks || '—'}</b>`;
+
     document.getElementById('conteudo-principal').innerHTML = `
-      <div class="bg-card border border-border rounded-2xl shadow-sm p-5">
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5 h-full">
         <div class="flex items-start justify-between gap-3 mb-1">
           <h1 class="text-lg font-display font-bold">${email.assunto}</h1>
           <button id="btn-apagar-email" class="text-muted hover:text-red-600 transition-colors shrink-0" title="Excluir">
             <i class="fa-solid fa-trash"></i>
           </button>
         </div>
-        <p class="text-xs text-muted mb-4">De <b>${email.remetente_nick}</b> · ${new Date(email.enviado_em).toLocaleString('pt-BR')}</p>
+        <p class="text-xs text-muted mb-4">${remetenteOuDestinatarios} · ${new Date(email.enviado_em).toLocaleString('pt-BR')}</p>
         <div class="text-sm whitespace-pre-wrap">${email.corpo}</div>
-        <button id="btn-responder-email" class="mt-5 text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">
-          Responder
-        </button>
+        ${caixaAtual === 'recebidos' ? `
+          <button id="btn-responder-email" class="mt-5 text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">
+            Responder
+          </button>
+        ` : ''}
       </div>
     `;
 
     document.getElementById('btn-apagar-email').addEventListener('click', async () => {
       if (!confirm('Excluir esse e-mail da sua caixa de entrada?')) return;
       await apiFetch(`/mensagens/${id}`, { method: 'DELETE' });
+      emailSelecionadoId = null;
       document.getElementById('conteudo-principal').innerHTML = '<p class="text-sm text-muted">Selecione um e-mail na lista ao lado, ou escreva um novo.</p>';
       await carregarLista();
     });
 
-    document.getElementById('btn-responder-email').addEventListener('click', () => {
+    document.getElementById('btn-responder-email')?.addEventListener('click', () => {
       abrirFormularioEnvio({ destinatarioId: email.remetente_id, destinatarioNick: email.remetente_nick, assunto: `Re: ${email.assunto}` });
     });
   }
 
   function abrirFormularioEnvio(preenchimento) {
+    emailSelecionadoId = null;
+    document.querySelectorAll('[data-abrir-email]').forEach((btn) => btn.classList.remove('bg-accent/10'));
+
     const container = document.getElementById('conteudo-principal');
     container.innerHTML = `
-      <div class="bg-card border border-border rounded-2xl shadow-sm p-5">
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5 h-full">
         <h1 class="text-lg font-display font-bold mb-4">Novo e-mail</h1>
         <form id="form-enviar-email" class="space-y-3">
           <div>
@@ -139,13 +203,14 @@
           </div>
           <div>
             <label class="block text-xs text-muted mb-1">Mensagem</label>
-            <textarea id="email-corpo" rows="8" required class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></textarea>
+            ${htmlEditorHtml('email-corpo', '')}
           </div>
           <button type="submit" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-5 py-2 transition-colors">Enviar</button>
           <p id="erro-enviar-email" class="hidden text-xs text-red-500"></p>
         </form>
       </div>
     `;
+    ligarEditorHtml('email-corpo');
 
     ligarSeletorUsuarios('email-seletor-destinatarios', {
       excluirIds: [meAtual.id],
@@ -166,7 +231,7 @@
         body: JSON.stringify({
           destinatarios,
           assunto: document.getElementById('email-assunto').value.trim(),
-          corpo: document.getElementById('email-corpo').value.trim(),
+          corpo: document.getElementById('email-corpo-textarea').value,
         }),
       });
       if (!resp.ok) {

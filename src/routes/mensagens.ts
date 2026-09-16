@@ -75,7 +75,9 @@ mensagens.get('/usuario/:id/enviadas', async (c) => {
   }
 
   const { results } = await c.env.DB.prepare(
-    `SELECT * FROM mensagens WHERE remetente_id = ? AND apagado_pelo_remetente = 0 ORDER BY enviado_em DESC`
+    `SELECT m.*,
+      (SELECT GROUP_CONCAT(u.nick, ', ') FROM mensagem_destinatarios md JOIN usuarios u ON u.id = md.destinatario_id WHERE md.mensagem_id = m.id) AS destinatarios_nicks
+     FROM mensagens m WHERE m.remetente_id = ? AND m.apagado_pelo_remetente = 0 ORDER BY m.enviado_em DESC`
   ).bind(id).all()
   return c.json(results)
 })
