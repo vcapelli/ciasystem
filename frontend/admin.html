@@ -558,6 +558,22 @@
         <p class="text-sm text-muted p-4">Digite pra buscar.</p>
       </div>
       <div id="editor-usuario-admin"></div>
+
+      <div id="modal-excluir-usuario" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div class="bg-card rounded-2xl shadow-xl max-w-md w-full p-5">
+          <h2 class="text-sm font-bold text-red-600 mb-2"><i class="fa-solid fa-triangle-exclamation"></i> Excluir conta permanentemente</h2>
+          <p class="text-sm text-muted mb-3">
+            Isso apaga <b id="modal-excluir-nick"></b> e tudo relacionado a ela — posts, requerimentos abertos, memberships de grupo, medalhas recebidas, mensagens, notificações. <b>Não pode ser desfeito.</b>
+          </p>
+          <p class="text-xs text-muted mb-1">Digite o nick pra confirmar:</p>
+          <input id="modal-excluir-confirmacao" placeholder="" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-red-400">
+          <div class="flex justify-end gap-2">
+            <button id="modal-excluir-cancelar" class="text-sm font-semibold px-4 py-2 rounded-lg bg-basebg border border-border hover:bg-border/40 transition-colors">Cancelar</button>
+            <button id="modal-excluir-confirmar" disabled class="text-sm font-semibold px-4 py-2 rounded-lg bg-red-600 text-white opacity-40 cursor-not-allowed transition-colors">Excluir definitivamente</button>
+          </div>
+          <p id="modal-excluir-erro" class="hidden text-xs text-red-500 mt-2"></p>
+        </div>
+      </div>
     `;
 
     let debounce;
@@ -581,6 +597,9 @@
                 <input type="checkbox" data-toggle-admin="${u.id}" ${u.administrador_sistema ? 'checked' : ''}>
               </label>
               <button type="button" data-editar-usuario="${u.id}" class="text-xs font-semibold text-accent hover:underline">Editar</button>
+              <button type="button" data-excluir-usuario="${u.id}" data-nick="${u.nick}" class="text-muted hover:text-red-600 transition-colors" title="Excluir conta">
+                <i class="fa-solid fa-trash"></i>
+              </button>
             </div>
           </div>
         `).join('') : '<p class="text-sm text-muted p-4">Nenhum usuário encontrado.</p>';
@@ -602,8 +621,58 @@
         lista.querySelectorAll('[data-editar-usuario]').forEach((btn) => {
           btn.addEventListener('click', () => abrirEditorUsuario(btn.dataset.editarUsuario));
         });
+
+        lista.querySelectorAll('[data-excluir-usuario]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            // Primeira confirmação — direto no clique do botão.
+            if (!confirm(`Tem certeza que quer excluir a conta de ${btn.dataset.nick}? Essa ação é irreversível.`)) return;
+            abrirModalExcluirUsuario(btn.dataset.excluirUsuario, btn.dataset.nick);
+          });
+        });
       }, 250);
     });
+  }
+
+  // Segunda confirmação — modal pedindo pra digitar o nick de novo.
+  function abrirModalExcluirUsuario(id, nick) {
+    const modal = document.getElementById('modal-excluir-usuario');
+    const input = document.getElementById('modal-excluir-confirmacao');
+    const btnConfirmar = document.getElementById('modal-excluir-confirmar');
+    const erroEl = document.getElementById('modal-excluir-erro');
+
+    document.getElementById('modal-excluir-nick').textContent = nick;
+    input.placeholder = nick;
+    input.value = '';
+    erroEl.classList.add('hidden');
+    atualizarBotaoModal();
+    modal.classList.remove('hidden');
+
+    function atualizarBotaoModal() {
+      const habilitado = input.value.trim() === nick;
+      btnConfirmar.disabled = !habilitado;
+      btnConfirmar.className = `text-sm font-semibold px-4 py-2 rounded-lg text-white transition-colors ${habilitado ? 'bg-red-600 hover:bg-red-700 cursor-pointer' : 'bg-red-600 opacity-40 cursor-not-allowed'}`;
+    }
+
+    input.oninput = atualizarBotaoModal;
+
+    document.getElementById('modal-excluir-cancelar').onclick = () => modal.classList.add('hidden');
+
+    btnConfirmar.onclick = async () => {
+      if (input.value.trim() !== nick) return;
+      btnConfirmar.disabled = true;
+      btnConfirmar.textContent = 'Excluindo…';
+      const resp = await apiFetch(`/usuarios/${id}`, { method: 'DELETE' });
+      if (!resp.ok) {
+        const d = await resp.json().catch(() => ({}));
+        erroEl.textContent = d.erro || 'Não foi possível excluir.';
+        erroEl.classList.remove('hidden');
+        btnConfirmar.textContent = 'Excluir definitivamente';
+        atualizarBotaoModal();
+        return;
+      }
+      modal.classList.add('hidden');
+      document.getElementById('busca-usuario-admin').dispatchEvent(new Event('input'));
+    };
   }
 
   async function abrirEditorUsuario(id) {

@@ -317,4 +317,104 @@ usuarios.get('/nick/:nick', async (c) => {
   return c.json({ ...usuario, figure })
 })
 
+// DELETE /usuarios/:id — apaga a conta e tudo que é dela (posts,
+// requerimentos que ela abriu, memberships de grupo, notificações,
+// medalhas recebidas, mensagens, etc). Só admin do sistema, e nunca
+// a própria conta de quem está pedindo.
+//
+// O que NÃO é apagado, de propósito: registros institucionais onde
+// essa pessoa só aparece como "quem concedeu/criou" algo que pertence
+// a OUTRA pessoa ou ao sistema (ex: quem criou um cargo de grupo, quem
+// concedeu uma medalha a outro usuário, quem decidiu um requerimento
+// alheio) — apagar a linha toda apagaria histórico de terceiros só
+// porque o autor daquele ato foi excluído. Onde esse campo aceita
+// NULL, ele é zerado; onde é obrigatório, o registro institucional
+// fica de pé (só a referência ao autor original deixa de existir).
+usuarios.delete('/:id', async (c) => {
+  const usuarioAutenticado = c.get('usuarioId')
+  const alvoId = c.req.param('id')
+
+  if (!(await ehAdmin(c.env.DB, usuarioAutenticado))) {
+    return c.json({ erro: 'só administradores do sistema excluem contas' }, 403)
+  }
+  if (Number(alvoId) === usuarioAutenticado) {
+    return c.json({ erro: 'você não pode excluir a própria conta' }, 400)
+  }
+
+  const alvo = await c.env.DB.prepare(`SELECT id, nick FROM usuarios WHERE id = ?`).bind(alvoId).first<{ id: number; nick: string }>()
+  if (!alvo) return c.json({ erro: 'usuário não encontrado' }, 404)
+
+  const db = c.env.DB
+  const stmts = [
+    // --- Tweets (deles, e curtidas/enquetes ligadas) ---
+    db.prepare(`DELETE FROM tweet_enquete_votos WHERE usuario_id = ? OR opcao_id IN (SELECT id FROM tweet_enquete_opcoes WHERE enquete_id IN (SELECT id FROM tweet_enquetes WHERE tweet_id IN (SELECT id FROM tweets WHERE autor_id = ?)))`).bind(alvoId, alvoId),
+    db.prepare(`DELETE FROM tweet_enquete_opcoes WHERE enquete_id IN (SELECT id FROM tweet_enquetes WHERE tweet_id IN (SELECT id FROM tweets WHERE autor_id = ?))`).bind(alvoId),
+    db.prepare(`DELETE FROM tweet_enquetes WHERE tweet_id IN (SELECT id FROM tweets WHERE autor_id = ?)`).bind(alvoId),
+    db.prepare(`DELETE FROM tweet_midias WHERE tweet_id IN (SELECT id FROM tweets WHERE autor_id = ?)`).bind(alvoId),
+    db.prepare(`DELETE FROM tweet_curtidas WHERE usuario_id = ? OR tweet_id IN (SELECT id FROM tweets WHERE autor_id = ?)`).bind(alvoId, alvoId),
+    db.prepare(`DELETE FROM tweets WHERE autor_id = ?`).bind(alvoId),
+
+    // --- Mensagens (e-mails) ---
+    db.prepare(`DELETE FROM mensagem_destinatarios WHERE destinatario_id = ? OR mensagem_id IN (SELECT id FROM mensagens WHERE remetente_id = ?)`).bind(alvoId, alvoId),
+    db.prepare(`DELETE FROM mensagens WHERE remetente_id = ?`).bind(alvoId),
+
+    // --- Requerimentos que ela abriu (cascata cuida de alvos/anexos) ---
+    db.prepare(`DELETE FROM requerimentos WHERE autor_id = ?`).bind(alvoId),
+    // ...e onde ela só era um dos alvos de requerimento de outra pessoa
+    db.prepare(`DELETE FROM requerimento_alvos WHERE usuario_id = ?`).bind(alvoId),
+    db.prepare(`UPDATE requerimentos SET autorizado_por_id = NULL WHERE autorizado_por_id = ?`).bind(alvoId),
+    db.prepare(`UPDATE requerimentos SET decidido_por_id = NULL WHERE decidido_por_id = ?`).bind(alvoId),
+    db.prepare(`UPDATE requerimento_alvos SET decidido_por_id = NULL WHERE decidido_por_id = ?`).bind(alvoId),
+
+    // --- Grupos ---
+    db.prepare(`DELETE FROM usuario_grupos WHERE usuario_id = ?`).bind(alvoId),
+    db.prepare(`DELETE FROM grupo_registros WHERE usuario_id = ?`).bind(alvoId),
+    db.prepare(`UPDATE grupo_niveis SET criado_por_id = NULL WHERE criado_por_id = ?`).bind(alvoId),
+    db.prepare(`DELETE FROM grupo_aula_relatorio_alunos WHERE usuario_id = ?`).bind(alvoId),
+
+    // --- Documentos ---
+    db.prepare(`DELETE FROM documento_revisao_aprovadores WHERE usuario_id = ?`).bind(alvoId),
+    db.prepare(`UPDATE documento_revisoes SET agendado_por_id = NULL WHERE agendado_por_id = ?`).bind(alvoId),
+    db.prepare(`DELETE FROM documentos_permissoes WHERE usuario_id = ?`).bind(alvoId),
+
+    // --- Notícias (globais e de grupo) ---
+    db.prepare(`UPDATE noticias SET operado_por_id = NULL WHERE operado_por_id = ?`).bind(alvoId),
+    db.prepare(`DELETE FROM noticias_permissoes WHERE usuario_id = ?`).bind(alvoId),
+    db.prepare(`UPDATE grupo_noticias SET operado_por_id = NULL WHERE operado_por_id = ?`).bind(alvoId),
+
+    // --- Distinções recebidas por ela ---
+    db.prepare(`DELETE FROM medalhas WHERE usuario_id = ?`).bind(alvoId),
+    db.prepare(`DELETE FROM certificados WHERE usuario_id = ?`).bind(alvoId),
+    db.prepare(`DELETE FROM historico_cursos WHERE usuario_id = ?`).bind(alvoId),
+    db.prepare(`DELETE FROM soldo_pagamentos WHERE usuario_id = ?`).bind(alvoId),
+    db.prepare(`DELETE FROM usuario_emblemas WHERE usuario_id = ?`).bind(alvoId),
+    db.prepare(`DELETE FROM usuario_honrarias WHERE usuario_id = ?`).bind(alvoId),
+    db.prepare(`DELETE FROM usuario_conquistas WHERE usuario_id = ?`).bind(alvoId),
+
+    // --- Contas oficiais que ela operava ---
+    db.prepare(`DELETE FROM conta_oficial_operadores WHERE usuario_id = ?`).bind(alvoId),
+
+    // --- Fórum, sugestões, tickets ---
+    db.prepare(`DELETE FROM forum_posts WHERE autor_id = ?`).bind(alvoId),
+    db.prepare(`DELETE FROM forum_topicos WHERE autor_id = ?`).bind(alvoId),
+    db.prepare(`DELETE FROM sugestoes WHERE autor_id = ?`).bind(alvoId),
+    db.prepare(`UPDATE sugestoes SET decidido_por_id = NULL WHERE decidido_por_id = ?`).bind(alvoId),
+    db.prepare(`DELETE FROM ticket_mensagens WHERE ticket_id IN (SELECT id FROM tickets_suporte WHERE autor_id = ?) OR autor_id = ?`).bind(alvoId, alvoId),
+    db.prepare(`DELETE FROM tickets_suporte WHERE autor_id = ?`).bind(alvoId),
+
+    // --- Social, notificações, sessão ---
+    db.prepare(`DELETE FROM seguidores WHERE seguidor_id = ? OR seguido_id = ?`).bind(alvoId, alvoId),
+    db.prepare(`DELETE FROM notificacoes WHERE usuario_id = ?`).bind(alvoId),
+    db.prepare(`DELETE FROM refresh_tokens WHERE usuario_id = ?`).bind(alvoId),
+    db.prepare(`DELETE FROM logs_eventos WHERE usuario_id = ?`).bind(alvoId),
+
+    // --- Por fim, a própria conta ---
+    db.prepare(`DELETE FROM usuarios WHERE id = ?`).bind(alvoId),
+  ]
+
+  await db.batch(stmts)
+
+  return c.json({ ok: true, nick: alvo.nick })
+})
+
 export default usuarios
