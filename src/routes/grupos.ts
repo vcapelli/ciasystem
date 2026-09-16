@@ -23,15 +23,22 @@ async function pertenceAoGrupo(db: D1Database, usuarioId: number, grupoId: numbe
 
 // --- Leitura do hub ---
 
-// GET /grupos — lista todos os grupos ativos, com contagem de membros
-// (pra tela de listagem geral).
+// GET /grupos — lista os grupos ativos, com contagem de membros (pra
+// tela de listagem geral). Grupos ocultos só entram na lista pra quem
+// é admin do sistema ou já é membro deles.
 grupos.get('/', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  const admin = await ehAdmin(c.env.DB, usuarioId)
+
   const { results } = await c.env.DB.prepare(
     `SELECT g.*,
-       (SELECT COUNT(*) FROM usuario_grupos ug WHERE ug.grupo_id = g.id AND ug.ativo = 1) AS total_membros
+       (SELECT COUNT(*) FROM usuario_grupos ug WHERE ug.grupo_id = g.id AND ug.ativo = 1) AS total_membros,
+       (SELECT 1 FROM usuario_grupos ug WHERE ug.grupo_id = g.id AND ug.usuario_id = ? AND ug.ativo = 1) AS sou_membro
      FROM grupos g WHERE g.ativo = 1 ORDER BY g.tipo, g.nome`
-  ).all()
-  return c.json(results)
+  ).bind(usuarioId).all<{ oculto: number; sou_membro: number | null }>()
+
+  const visiveis = admin ? results : results.filter((g) => !g.oculto || g.sou_membro)
+  return c.json(visiveis)
 })
 
 // GET /grupos/todos-cursos — todas as aulas/cursos de todos os
@@ -66,16 +73,24 @@ grupos.get('/cursos-concluidos/:usuarioId', async (c) => {
 })
 
 grupos.get('/:slug', async (c) => {
+  const usuarioId = c.get('usuarioId')
   const slug = c.req.param('slug')
-  const grupo = await c.env.DB.prepare(`SELECT * FROM grupos WHERE slug = ? AND ativo = 1`).bind(slug).first()
+  const grupo = await c.env.DB.prepare(`SELECT * FROM grupos WHERE slug = ? AND ativo = 1`).bind(slug).first<{ id: number; oculto: number }>()
   if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
+  if (grupo.oculto && !(await pertenceAoGrupo(c.env.DB, usuarioId, grupo.id))) {
+    return c.json({ erro: 'grupo não encontrado' }, 404)
+  }
   return c.json(grupo)
 })
 
 grupos.get('/:slug/membros', async (c) => {
+  const usuarioId = c.get('usuarioId')
   const slug = c.req.param('slug')
-  const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
+  const grupo = await c.env.DB.prepare(`SELECT id, oculto FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number; oculto: number }>()
   if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
+  if (grupo.oculto && !(await pertenceAoGrupo(c.env.DB, usuarioId, grupo.id))) {
+    return c.json({ erro: 'grupo não encontrado' }, 404)
+  }
 
   const { results } = await c.env.DB.prepare(
     `SELECT u.id, u.nick, u.tag, ug.nivel_id, gn.nome AS nivel, gn.abreviacao AS nivel_abreviacao, ug.administrador_grupo, ug.data_ingresso
@@ -110,6 +125,7 @@ grupos.post('/', async (c) => {
     permite_aulas?: boolean
     imagem_url?: string
     cor?: string
+    oculto?: boolean
   }>()
 
   if (!(await ehAdmin(c.env.DB, usuarioId))) {
@@ -118,8 +134,8 @@ grupos.post('/', async (c) => {
 
   try {
     const { meta } = await c.env.DB.prepare(
-      `INSERT INTO grupos (codigo, nome, slug, tipo, permite_aulas, imagem_url, cor) VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).bind(body.codigo, body.nome, body.slug, body.tipo, body.permite_aulas ? 1 : 0, body.imagem_url ?? null, body.cor ?? null).run()
+      `INSERT INTO grupos (codigo, nome, slug, tipo, permite_aulas, imagem_url, cor, oculto) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(body.codigo, body.nome, body.slug, body.tipo, body.permite_aulas ? 1 : 0, body.imagem_url ?? null, body.cor ?? null, body.oculto ? 1 : 0).run()
     return c.json({ id: meta.last_row_id }, 201)
   } catch {
     return c.json({ erro: 'já existe um grupo com esse código ou slug' }, 409)
@@ -131,18 +147,18 @@ grupos.patch('/:slug', async (c) => {
   const slug = c.req.param('slug')
   const body = await c.req.json<{
     nome?: string; tipo?: string; permite_aulas?: boolean; ativo?: boolean
-    imagem_url?: string; banner_url?: string; cor?: string; slug?: string
+    imagem_url?: string; banner_url?: string; cor?: string; slug?: string; oculto?: boolean
   }>()
 
   const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
   if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
 
-  // Trocar de tipo ou desativar o grupo continua exclusivo do admin do
-  // sistema — o resto (nome, banner, logo, cor, aulas, slug) um admin
-  // do grupo já pode mexer.
+  // Trocar de tipo, ocultar/desocultar ou desativar o grupo continua
+  // exclusivo do admin do sistema — o resto (nome, banner, logo, cor,
+  // aulas, slug) um admin do grupo já pode mexer.
   const admin = await ehAdmin(c.env.DB, usuarioId)
-  if ((body.tipo !== undefined || body.ativo !== undefined) && !admin) {
-    return c.json({ erro: 'só administradores do sistema mudam o tipo ou desativam o grupo' }, 403)
+  if ((body.tipo !== undefined || body.ativo !== undefined || body.oculto !== undefined) && !admin) {
+    return c.json({ erro: 'só administradores do sistema mudam o tipo, ocultam ou desativam o grupo' }, 403)
   }
   if (!admin && !(await ehAdminDoGrupo(c.env.DB, usuarioId, grupo.id))) {
     return c.json({ erro: 'sem permissão de administrador neste grupo' }, 403)
@@ -157,7 +173,7 @@ grupos.patch('/:slug', async (c) => {
         nome = COALESCE(?, nome), tipo = COALESCE(?, tipo),
         permite_aulas = COALESCE(?, permite_aulas), ativo = COALESCE(?, ativo),
         imagem_url = COALESCE(?, imagem_url), banner_url = COALESCE(?, banner_url), cor = COALESCE(?, cor),
-        slug = COALESCE(?, slug)
+        slug = COALESCE(?, slug), oculto = COALESCE(?, oculto)
        WHERE id = ?`
     )
       .bind(
@@ -166,6 +182,7 @@ grupos.patch('/:slug', async (c) => {
         body.ativo === undefined ? null : (body.ativo ? 1 : 0),
         body.imagem_url ?? null, body.banner_url ?? null, body.cor ?? null,
         body.slug ?? null,
+        body.oculto === undefined ? null : (body.oculto ? 1 : 0),
         grupo.id
       )
       .run()
@@ -832,18 +849,28 @@ grupos.delete('/:slug/noticias/:noticiaId', async (c) => {
 // GET /grupos/usuario/:usuarioId — grupos que esse usuário integra
 // (pra página de perfil).
 grupos.get('/usuario/:usuarioId', async (c) => {
+  const visitanteId = c.get('usuarioId')
   const usuarioId = c.req.param('usuarioId')
+  const admin = await ehAdmin(c.env.DB, visitanteId)
 
   const { results } = await c.env.DB.prepare(
-    `SELECT g.id, g.codigo, g.nome, g.slug, g.tipo, g.imagem_url, gn.nome AS nivel_nome, gn.abreviacao AS nivel_abreviacao
+    `SELECT g.id, g.codigo, g.nome, g.slug, g.tipo, g.imagem_url, g.oculto, gn.nome AS nivel_nome, gn.abreviacao AS nivel_abreviacao
      FROM usuario_grupos ug
      JOIN grupos g ON g.id = ug.grupo_id
      JOIN grupo_niveis gn ON gn.id = ug.nivel_id
      WHERE ug.usuario_id = ? AND ug.ativo = 1
      ORDER BY g.nome`
-  ).bind(usuarioId).all()
+  ).bind(usuarioId).all<{ id: number; oculto: number }>()
 
-  return c.json(results)
+  // Grupo oculto não aparece no perfil de terceiros pra quem não é
+  // admin do sistema nem membro dele — senão o perfil vaza que o
+  // grupo existe pra qualquer visitante.
+  const visiveis = admin
+    ? results
+    : (await Promise.all(results.map(async (g) => ((!g.oculto || await pertenceAoGrupo(c.env.DB, visitanteId, g.id)) ? g : null))))
+        .filter((g): g is typeof results[number] => g !== null)
+
+  return c.json(visiveis)
 })
 
 export default grupos

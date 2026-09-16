@@ -820,7 +820,7 @@
     `;
   }
 
-  function renderConfigBasico(grupo) {
+  function renderConfigBasico(grupo, me) {
     return `
       <form id="form-config" class="bg-card border border-border rounded-2xl p-5 space-y-3 max-w-lg shadow-sm">
         <div>
@@ -860,6 +860,11 @@
         <label class="flex items-center gap-2 text-sm">
           <input id="gc-aulas" type="checkbox" ${grupo.permite_aulas ? 'checked' : ''}> Permite aulas
         </label>
+        ${me.administrador_sistema ? `
+          <label class="flex items-center gap-2 text-sm">
+            <input id="gc-oculto" type="checkbox" ${grupo.oculto ? 'checked' : ''}> Oculto (só admin do sistema e membros veem que existe)
+          </label>
+        ` : ''}
         <button type="submit" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Salvar</button>
         <p id="form-config-erro" class="hidden text-xs text-red-400"></p>
       </form>
@@ -966,7 +971,7 @@
     });
   }
 
-  function ligarConfigTabs(grupo) {
+  function ligarConfigTabs(grupo, me) {
     document.querySelectorAll('[data-subaba-config]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         subAbaConfig = btn.dataset.subabaConfig;
@@ -978,7 +983,7 @@
     });
   }
 
-  function ligarFormBasico(grupo) {
+  function ligarFormBasico(grupo, me) {
     document.getElementById('form-config').addEventListener('submit', async (e) => {
       e.preventDefault();
       const erroEl = document.getElementById('form-config-erro');
@@ -989,11 +994,12 @@
         body: JSON.stringify({
           nome: document.getElementById('gc-nome').value.trim(),
           slug: novoSlug,
-          tipo: document.getElementById('gc-tipo').value,
+          tipo: me.administrador_sistema ? document.getElementById('gc-tipo').value : undefined,
           imagem_url: document.getElementById('gc-imagem').value.trim() || undefined,
           banner_url: document.getElementById('gc-banner').value.trim() || undefined,
           cor: document.getElementById('gc-cor').value,
           permite_aulas: document.getElementById('gc-aulas').checked,
+          oculto: me.administrador_sistema ? document.getElementById('gc-oculto').checked : undefined,
         }),
       });
       if (!resposta.ok) {
@@ -1069,8 +1075,8 @@
       await montarAulas(grupo, souAdminDoGrupo);
     } else if (aba === 'configuracoes' && souAdminDoGrupo) {
       conteudoPrincipal.innerHTML = renderConfigTabs();
-      ligarConfigTabs(grupo);
-      if (subAbaConfig === 'basico') { document.getElementById('config-conteudo').innerHTML = renderConfigBasico(grupo); ligarFormBasico(grupo); }
+      ligarConfigTabs(grupo, me);
+      if (subAbaConfig === 'basico') { document.getElementById('config-conteudo').innerHTML = renderConfigBasico(grupo, me); ligarFormBasico(grupo, me); }
       else montarConfigHierarquia(grupo);
     } else {
       conteudoPrincipal.innerHTML = '<p class="text-sm text-muted">Você não tem acesso a essa aba.</p>';

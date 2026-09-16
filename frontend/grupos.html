@@ -50,7 +50,7 @@
             ${g.imagem_url ? `<img src="${g.imagem_url}" class="max-w-full max-h-full object-contain" alt="">` : g.codigo}
           </span>
           <div>
-            <p class="text-sm font-semibold">${g.nome}</p>
+            <p class="text-sm font-semibold">${g.nome}${g.oculto ? ' <i class="fa-solid fa-eye-slash text-xs text-muted" title="Oculto — só admin do sistema e membros veem"></i>' : ''}</p>
             <p class="text-xs text-muted">${g.total_membros} membro${g.total_membros === 1 ? '' : 's'}</p>
           </div>
         </div>
@@ -83,6 +83,9 @@
           </label>
           <label class="flex items-center gap-2 text-sm sm:col-span-2">
             <input id="g-aulas" type="checkbox"> Permite aulas
+          </label>
+          <label class="flex items-center gap-2 text-sm sm:col-span-2">
+            <input id="g-oculto" type="checkbox"> Oculto (só admin do sistema e membros veem que existe)
           </label>
           <button type="submit" class="sm:col-span-2 bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">
             Criar
@@ -141,6 +144,7 @@
             permite_aulas: document.getElementById('g-aulas').checked,
             imagem_url: document.getElementById('g-imagem').value.trim() || undefined,
             cor: document.getElementById('g-cor').value,
+            oculto: document.getElementById('g-oculto').checked,
           }),
         });
 
