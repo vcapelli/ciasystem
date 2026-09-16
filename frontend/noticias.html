@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIASystem — Notícias</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="/assets/tailwind-config.js"></script>
+<link href="https://kit-pro.fontawesome.com/releases/v7.3.1/css/pro.min.css" rel="stylesheet">
+<link rel="stylesheet" href="/assets/theme.css">
+</head>
+<body class="bg-basebg text-dark font-sans min-h-screen">
+
+  <div class="fixed inset-0 -z-10 habbo-floor-bg"></div>
+
+  <aside id="layout-sidebar" class="w-60 fixed left-0 top-[72px] bottom-0 border-r border-border bg-basebg p-4 overflow-y-auto"></aside>
+
+  <main class="ml-60 min-h-screen flex flex-col">
+    <div class="flex-1 min-w-0 px-6 py-8">
+      <div class="max-w-2xl mx-auto">
+        <div class="flex items-center justify-between mb-5">
+          <h1 class="text-lg font-display font-bold flex items-center gap-2">
+            <i class="fa-solid fa-bullhorn text-accent"></i> Notícias
+          </h1>
+          <div class="flex items-center gap-2">
+            <button id="btn-ver-rascunhos" class="hidden text-xs font-semibold px-3 py-2 rounded-lg bg-card border border-border text-muted hover:bg-basebg transition-colors">
+              Rascunhos pendentes
+            </button>
+            <button id="btn-nova-noticia" class="hidden text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">
+              <i class="fa-solid fa-plus"></i> Nova notícia
+            </button>
+          </div>
+        </div>
+
+        <div id="form-nova-noticia-wrap" class="hidden mb-5"></div>
+
+        <div id="lista-noticias" class="space-y-4">
+          <p class="text-sm text-muted">Carregando…</p>
+        </div>
+      </div>
+    </div>
+    <div id="layout-footer"></div>
+  </main>
+
+<script src="/assets/api.js"></script>
+<script src="/assets/footer.js"></script>
+<script src="/assets/layout.js"></script>
+<script src="/assets/editor-html.js"></script>
+<script>
+  let permissoes = { pode_escrever: false, pode_publicar: false };
+  let mostrandoRascunhos = false;
+
+  function formatarDataNoticia(iso) {
+    return new Date(iso).toLocaleString('pt-BR');
+  }
+
+  function renderCardNoticia(n) {
+    return `
+      <div class="bg-card border border-border rounded-2xl shadow-sm overflow-hidden" data-noticia-id="${n.id}">
+        ${n.imagem_capa_url ? `<img src="${n.imagem_capa_url}" class="w-full h-44 object-cover" alt="">` : ''}
+        <div class="p-5">
+          ${n.status === 'rascunho' ? '<span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 mb-2 inline-block">Rascunho</span>' : ''}
+          <h2 class="text-base font-display font-bold">${n.titulo}</h2>
+          ${n.resumo ? `<p class="text-sm text-muted mt-1">${n.resumo}</p>` : ''}
+          <div class="text-sm mt-3">${n.conteudo}</div>
+          <div class="flex items-center justify-between mt-4 pt-3 border-t border-border text-xs text-muted">
+            <p>por ${n.autor_nick} · ${formatarDataNoticia(n.publicado_em || n.criado_em)}</p>
+            ${n.status === 'rascunho' && permissoes.pode_publicar ? `<button data-publicar-noticia="${n.id}" class="text-xs font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-3 py-1.5 transition-colors">Publicar</button>` : ''}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  async function carregarLista() {
+    const lista = document.getElementById('lista-noticias');
+    lista.innerHTML = '<p class="text-sm text-muted">Carregando…</p>';
+
+    const resp = await apiFetch(`/noticias?status=${mostrandoRascunhos ? 'rascunho' : 'publicada'}`);
+    const noticias = resp.ok ? await resp.json() : [];
+
+    lista.innerHTML = noticias.length
+      ? noticias.map(renderCardNoticia).join('')
+      : `<p class="text-sm text-muted">${mostrandoRascunhos ? 'Nenhum rascunho pendente.' : 'Nenhuma notícia publicada ainda.'}</p>`;
+
+    lista.querySelectorAll('[data-publicar-noticia]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        await apiFetch(`/noticias/${btn.dataset.publicarNoticia}/publicar`, { method: 'POST' });
+        carregarLista();
+      });
+    });
+  }
+
+  document.getElementById('btn-ver-rascunhos').addEventListener('click', () => {
+    mostrandoRascunhos = !mostrandoRascunhos;
+    document.getElementById('btn-ver-rascunhos').textContent = mostrandoRascunhos ? 'Ver publicadas' : 'Rascunhos pendentes';
+    carregarLista();
+  });
+
+  document.getElementById('btn-nova-noticia').addEventListener('click', () => {
+    const wrap = document.getElementById('form-nova-noticia-wrap');
+    const abrindo = wrap.classList.contains('hidden');
+    wrap.classList.add('hidden');
+    if (!abrindo) return;
+    wrap.classList.remove('hidden');
+
+    wrap.innerHTML = `
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Nova notícia</h2>
+        <form id="form-noticia" class="space-y-3">
+          <input id="not-titulo" placeholder="Título" required class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <input id="not-resumo" placeholder="Resumo (opcional)" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <input id="not-imagem" placeholder="URL da imagem de capa (opcional)" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <div>
+            <label class="block text-xs text-muted mb-1">Conteúdo</label>
+            ${htmlEditorHtml('not-conteudo', '')}
+          </div>
+          <button type="submit" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">
+            ${permissoes.pode_publicar ? 'Publicar' : 'Salvar como rascunho'}
+          </button>
+          <p id="not-erro" class="hidden text-xs text-red-500"></p>
+        </form>
+      </div>
+    `;
+    ligarEditorHtml('not-conteudo');
+
+    document.getElementById('form-noticia').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const erroEl = document.getElementById('not-erro');
+      const resp = await apiFetch('/noticias', {
+        method: 'POST',
+        body: JSON.stringify({
+          titulo: document.getElementById('not-titulo').value.trim(),
+          resumo: document.getElementById('not-resumo').value.trim() || undefined,
+          conteudo: document.getElementById('not-conteudo-textarea').value,
+          imagem_capa_url: document.getElementById('not-imagem').value.trim() || undefined,
+        }),
+      });
+      if (!resp.ok) {
+        const d = await resp.json().catch(() => ({}));
+        erroEl.textContent = d.erro || 'Não foi possível salvar.';
+        erroEl.classList.remove('hidden');
+        return;
+      }
+      if (permissoes.pode_publicar) {
+        const { id } = await resp.json();
+        await apiFetch(`/noticias/${id}/publicar`, { method: 'POST' });
+      }
+      wrap.classList.add('hidden');
+      mostrandoRascunhos = false;
+      await carregarLista();
+    });
+  });
+
+  montarLayout('/noticias.html').then(async (me) => {
+    if (!me) return;
+
+    const resp = await apiFetch('/noticias/permissoes/minhas');
+    permissoes = resp.ok ? await resp.json() : { pode_escrever: false, pode_publicar: false };
+
+    if (permissoes.pode_escrever) document.getElementById('btn-nova-noticia').classList.remove('hidden');
+    if (permissoes.pode_publicar) document.getElementById('btn-ver-rascunhos').classList.remove('hidden');
+
+    carregarLista();
+  });
+</script>
+</body>
+</html>

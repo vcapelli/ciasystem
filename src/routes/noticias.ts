@@ -7,6 +7,17 @@ type Variables = { usuarioId: number }
 
 const noticias = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
+// GET /noticias/permissoes/minhas — o que o usuário atual pode fazer
+// com notícias globais (pra decidir o que mostrar no frontend).
+noticias.get('/permissoes/minhas', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  const [podeEscrever, podePublicar] = await Promise.all([
+    podeGerirNoticia(c.env.DB, usuarioId, 'escrever'),
+    podeGerirNoticia(c.env.DB, usuarioId, 'publicar'),
+  ])
+  return c.json({ pode_escrever: podeEscrever, pode_publicar: podePublicar })
+})
+
 noticias.post('/', async (c) => {
   const usuarioId = c.get('usuarioId')
   const body = await c.req.json<{
@@ -49,15 +60,21 @@ noticias.post('/:id/publicar', async (c) => {
 
 noticias.get('/', async (c) => {
   const status = c.req.query('status')
+  const base = `
+    SELECT n.*, u.nick AS autor_nick
+    FROM noticias n JOIN usuarios u ON u.id = n.autor_id
+  `
   const query = status
-    ? c.env.DB.prepare(`SELECT * FROM noticias WHERE status = ? ORDER BY criado_em DESC`).bind(status)
-    : c.env.DB.prepare(`SELECT * FROM noticias ORDER BY criado_em DESC`)
+    ? c.env.DB.prepare(`${base} WHERE n.status = ? ORDER BY n.criado_em DESC`).bind(status)
+    : c.env.DB.prepare(`${base} ORDER BY n.criado_em DESC`)
   const { results } = await query.all()
   return c.json(results)
 })
 
 noticias.get('/:id', async (c) => {
-  const noticia = await c.env.DB.prepare(`SELECT * FROM noticias WHERE id = ?`).bind(c.req.param('id')).first()
+  const noticia = await c.env.DB.prepare(
+    `SELECT n.*, u.nick AS autor_nick FROM noticias n JOIN usuarios u ON u.id = n.autor_id WHERE n.id = ?`
+  ).bind(c.req.param('id')).first()
   if (!noticia) return c.json({ erro: 'não encontrada' }, 404)
   return c.json(noticia)
 })

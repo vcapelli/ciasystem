@@ -45,6 +45,25 @@ grupos.get('/', async (c) => {
 // grupos, pra alimentar o requisito "Curso Concluído" no admin.
 // Precisa ficar declarado antes de GET /:slug pra não ser confundido
 // com um slug de grupo.
+// GET /grupos/onde-sou-admin — grupos onde o usuário autenticado é
+// admin (do grupo ou do sistema) — usado pra escolher em nome de qual
+// grupo publicar algo (ex: um decreto no Diário Oficial).
+grupos.get('/onde-sou-admin', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  const admin = await ehAdmin(c.env.DB, usuarioId)
+
+  const { results } = await c.env.DB.prepare(
+    admin
+      ? `SELECT id, codigo, nome, slug, imagem_url FROM grupos WHERE ativo = 1 ORDER BY nome`
+      : `SELECT DISTINCT g.id, g.codigo, g.nome, g.slug, g.imagem_url
+         FROM usuario_grupos ug JOIN grupos g ON g.id = ug.grupo_id
+         WHERE ug.usuario_id = ? AND ug.ativo = 1 AND ug.administrador_grupo = 1 AND g.ativo = 1
+         ORDER BY g.nome`
+  ).bind(...(admin ? [] : [usuarioId])).all()
+
+  return c.json(results)
+})
+
 grupos.get('/todos-cursos', async (c) => {
   const { results } = await c.env.DB.prepare(
     `SELECT ga.id, ga.titulo, ga.abreviacao, g.nome AS grupo_nome

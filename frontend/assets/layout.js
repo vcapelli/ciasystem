@@ -14,6 +14,8 @@ const NAV_PRINCIPAL = [
   { titulo: 'Grupos', url: '/grupos.html', icone: 'fa-solid fa-building' },
   { titulo: 'Documentos', url: '/documentos.html', icone: 'fa-solid fa-file-lines' },
   { titulo: 'E-mail', url: '/email.html', icone: 'fa-solid fa-envelope' },
+  { titulo: 'Notícias', url: '/noticias.html', icone: 'fa-solid fa-bullhorn' },
+  { titulo: 'Diário Oficial', url: '/diario-oficial.html', icone: 'fa-solid fa-book-bookmark' },
   {
     titulo: 'Requerimentos', icone: 'fa-solid fa-file-pen', filhos: [
       { titulo: 'Instrução Inicial', url: '/requerimentos/instrucao-inicial.html' },

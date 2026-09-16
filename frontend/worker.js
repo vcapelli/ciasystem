@@ -13,6 +13,7 @@ const REESCRITAS = [
   { prefixo: '/perfil/', arquivo: '/perfil-dashboard' },
   { prefixo: '/grupos/', arquivo: '/grupos-dashboard' },
   { prefixo: '/documentos/', arquivo: '/documento-dashboard' },
+  { prefixo: '/diario-oficial/', arquivo: '/diario-oficial-detalhe' },
 ];
 
 export default {

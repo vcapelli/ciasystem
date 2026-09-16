@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIASystem — Diário Oficial</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="/assets/tailwind-config.js"></script>
+<link href="https://kit-pro.fontawesome.com/releases/v7.3.1/css/pro.min.css" rel="stylesheet">
+<link rel="stylesheet" href="/assets/theme.css">
+</head>
+<body class="bg-basebg text-dark font-sans min-h-screen">
+
+  <div class="fixed inset-0 -z-10 habbo-floor-bg"></div>
+
+  <aside id="layout-sidebar" class="w-60 fixed left-0 top-[72px] bottom-0 border-r border-border bg-basebg p-4 overflow-y-auto"></aside>
+
+  <main class="ml-60 min-h-screen flex flex-col">
+    <div class="flex-1 min-w-0 px-6 py-8">
+      <div class="max-w-5xl mx-auto">
+
+        <div class="bg-card border border-border rounded-2xl shadow-sm">
+          <div class="flex items-center justify-between px-5 py-4 border-b border-border">
+            <h1 class="text-lg font-display font-bold flex items-center gap-2">
+              <i class="fa-solid fa-book-bookmark text-accent"></i> Decretos
+            </h1>
+            <button id="btn-novo-decreto" class="hidden text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">
+              <i class="fa-solid fa-plus"></i> Novo decreto
+            </button>
+          </div>
+
+          <div id="form-novo-decreto-wrap" class="hidden border-b border-border p-5"></div>
+
+          <div id="lista-decretos" class="grid grid-cols-1 lg:grid-cols-2 gap-4 p-5">
+            <p class="text-sm text-muted">Carregando…</p>
+          </div>
+
+          <div class="flex items-center justify-center gap-3 py-4 border-t border-border">
+            <button id="btn-pagina-anterior" class="h-8 w-8 rounded-lg bg-basebg border border-border text-sm disabled:opacity-40 hover:bg-border/40 transition-colors"><i class="fa-solid fa-chevron-left"></i></button>
+            <span id="texto-paginacao" class="text-sm text-muted"></span>
+            <button id="btn-pagina-seguinte" class="h-8 w-8 rounded-lg bg-basebg border border-border text-sm disabled:opacity-40 hover:bg-border/40 transition-colors"><i class="fa-solid fa-chevron-right"></i></button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+    <div id="layout-footer"></div>
+  </main>
+
+<script src="/assets/api.js"></script>
+<script src="/assets/footer.js"></script>
+<script src="/assets/layout.js"></script>
+<script src="/assets/editor-html.js"></script>
+<script>
+  let meAtual = null;
+  let paginaAtual = 1;
+  let gruposOndeSouAdmin = [];
+
+  function formatarDataCurtaDecreto(iso) {
+    const d = new Date(iso);
+    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+  }
+
+  function renderCardDecreto(d) {
+    return `
+      <a href="/diario-oficial/${d.id}" class="block border border-border rounded-xl p-4 hover:border-accent transition-colors">
+        <div class="flex items-start gap-3">
+          <span class="h-9 w-9 rounded-lg bg-basebg border border-border flex items-center justify-center overflow-hidden shrink-0 p-1">
+            ${d.grupo_imagem_url ? `<img src="${d.grupo_imagem_url}" class="max-w-full max-h-full object-contain" alt="">` : `<i class="fa-solid fa-building text-muted text-xs"></i>`}
+          </span>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2 flex-wrap mb-1">
+              <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-basebg border border-border text-muted capitalize">${d.tipo}</span>
+              <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-accent/10 text-accent capitalize">${d.status}</span>
+              <span class="text-xs text-muted font-mono">DECRETO-${d.numero}/${d.ano}</span>
+            </div>
+            <p class="text-sm font-bold leading-snug">${d.titulo}</p>
+            <p class="text-xs text-muted mt-1 line-clamp-1">${d.resumo}</p>
+            <div class="flex items-center justify-between mt-2 flex-wrap gap-y-1">
+              <p class="text-xs text-muted">${d.grupo_nome}</p>
+              <div class="flex items-center gap-3 text-xs text-muted">
+                <span><i class="fa-regular fa-user"></i> por: ${d.autor_nick}</span>
+                <span><i class="fa-regular fa-clock"></i> ${formatarDataCurtaDecreto(d.criado_em)}</span>
+                <span><i class="fa-regular fa-eye"></i> ${d.visualizacoes}</span>
+              </div>
+            </div>
+          </div>
+          <i class="fa-solid fa-chevron-right text-muted text-xs mt-1"></i>
+        </div>
+      </a>
+    `;
+  }
+
+  async function carregarDecretos() {
+    const lista = document.getElementById('lista-decretos');
+    lista.innerHTML = '<p class="text-sm text-muted">Carregando…</p>';
+
+    const resp = await apiFetch(`/decretos?pagina=${paginaAtual}`);
+    const { decretos, total, por_pagina } = resp.ok ? await resp.json() : { decretos: [], total: 0, por_pagina: 10 };
+    const totalPaginas = Math.max(1, Math.ceil(total / por_pagina));
+
+    lista.innerHTML = decretos.length
+      ? decretos.map(renderCardDecreto).join('')
+      : '<p class="text-sm text-muted">Nenhum decreto publicado ainda.</p>';
+
+    document.getElementById('texto-paginacao').textContent = `Página ${paginaAtual} de ${totalPaginas}`;
+    document.getElementById('btn-pagina-anterior').disabled = paginaAtual === 1;
+    document.getElementById('btn-pagina-seguinte').disabled = paginaAtual >= totalPaginas;
+  }
+
+  document.getElementById('btn-pagina-anterior').addEventListener('click', () => { paginaAtual--; carregarDecretos(); });
+  document.getElementById('btn-pagina-seguinte').addEventListener('click', () => { paginaAtual++; carregarDecretos(); });
+
+  function abrirFormNovoDecreto() {
+    const wrap = document.getElementById('form-novo-decreto-wrap');
+    const abrindo = wrap.classList.contains('hidden');
+    wrap.classList.add('hidden');
+    if (!abrindo) return;
+    wrap.classList.remove('hidden');
+
+    wrap.innerHTML = `
+      <form id="form-decreto" class="space-y-3">
+        <div>
+          <label class="block text-xs text-muted mb-1">Publicar em nome de</label>
+          <select id="dec-grupo" required class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            ${gruposOndeSouAdmin.map((g) => `<option value="${g.id}">${g.nome}</option>`).join('')}
+          </select>
+        </div>
+        <input id="dec-titulo" placeholder="Título do decreto" required class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+        <input id="dec-resumo" placeholder="Resumo (uma linha)" required class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+        <div>
+          <label class="block text-xs text-muted mb-1">Conteúdo completo</label>
+          ${htmlEditorHtml('dec-conteudo', '')}
+        </div>
+        <button type="submit" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Publicar decreto</button>
+        <p id="dec-erro" class="hidden text-xs text-red-500"></p>
+      </form>
+    `;
+    ligarEditorHtml('dec-conteudo');
+
+    document.getElementById('form-decreto').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const erroEl = document.getElementById('dec-erro');
+      const resp = await apiFetch('/decretos', {
+        method: 'POST',
+        body: JSON.stringify({
+          grupo_id: Number(document.getElementById('dec-grupo').value),
+          titulo: document.getElementById('dec-titulo').value.trim(),
+          resumo: document.getElementById('dec-resumo').value.trim(),
+          conteudo: document.getElementById('dec-conteudo-textarea').value,
+        }),
+      });
+      if (!resp.ok) {
+        const d = await resp.json().catch(() => ({}));
+        erroEl.textContent = d.erro || 'Não foi possível publicar.';
+        erroEl.classList.remove('hidden');
+        return;
+      }
+      wrap.classList.add('hidden');
+      paginaAtual = 1;
+      await carregarDecretos();
+    });
+  }
+
+  document.getElementById('btn-novo-decreto').addEventListener('click', abrirFormNovoDecreto);
+
+  montarLayout('/diario-oficial.html').then(async (me) => {
+    if (!me) return;
+    meAtual = me;
+
+    const resp = await apiFetch('/grupos/onde-sou-admin');
+    gruposOndeSouAdmin = resp.ok ? await resp.json() : [];
+    if (gruposOndeSouAdmin.length) {
+      document.getElementById('btn-novo-decreto').classList.remove('hidden');
+    }
+
+    carregarDecretos();
+  });
+</script>
+</body>
+</html>

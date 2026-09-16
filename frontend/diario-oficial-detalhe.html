@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIASystem — Decreto</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="/assets/tailwind-config.js"></script>
+<link href="https://kit-pro.fontawesome.com/releases/v7.3.1/css/pro.min.css" rel="stylesheet">
+<link rel="stylesheet" href="/assets/theme.css">
+</head>
+<body class="bg-basebg text-dark font-sans min-h-screen">
+
+  <div class="fixed inset-0 -z-10 habbo-floor-bg"></div>
+
+  <aside id="layout-sidebar" class="w-60 fixed left-0 top-[72px] bottom-0 border-r border-border bg-basebg p-4 overflow-y-auto"></aside>
+
+  <main class="ml-60 min-h-screen flex flex-col">
+    <div class="flex-1 min-w-0 px-6 py-8">
+      <div class="max-w-3xl mx-auto">
+        <a href="/diario-oficial.html" class="text-sm text-muted hover:text-accent transition-colors mb-4 inline-block">
+          <i class="fa-solid fa-arrow-left"></i> Voltar ao Diário Oficial
+        </a>
+        <div id="conteudo-decreto" class="bg-card border border-border rounded-2xl shadow-sm p-6">
+          <p class="text-sm text-muted">Carregando…</p>
+        </div>
+      </div>
+    </div>
+    <div id="layout-footer"></div>
+  </main>
+
+<script src="/assets/api.js"></script>
+<script src="/assets/footer.js"></script>
+<script src="/assets/layout.js"></script>
+<script>
+  function formatarDataDecreto(iso) {
+    return new Date(iso).toLocaleString('pt-BR');
+  }
+
+  async function carregar() {
+    const id = location.pathname.split('/').filter(Boolean)[1];
+    const container = document.getElementById('conteudo-decreto');
+    const resp = await apiFetch(`/decretos/${id}`);
+    if (!resp.ok) {
+      container.innerHTML = '<p class="text-sm text-red-500">Decreto não encontrado.</p>';
+      return;
+    }
+    const d = await resp.json();
+
+    container.innerHTML = `
+      <div class="flex items-start gap-3 mb-4">
+        <span class="h-11 w-11 rounded-lg bg-basebg border border-border flex items-center justify-center overflow-hidden shrink-0 p-1.5">
+          ${d.grupo_imagem_url ? `<img src="${d.grupo_imagem_url}" class="max-w-full max-h-full object-contain" alt="">` : `<i class="fa-solid fa-building text-muted"></i>`}
+        </span>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2 flex-wrap mb-1">
+            <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-basebg border border-border text-muted capitalize">${d.tipo}</span>
+            <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-accent/10 text-accent capitalize">${d.status}</span>
+            <span class="text-xs text-muted font-mono">DECRETO-${d.numero}/${d.ano}</span>
+          </div>
+          <h1 class="text-xl font-display font-bold leading-snug">${d.titulo}</h1>
+          <p class="text-sm text-muted mt-1">${d.resumo}</p>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between text-xs text-muted border-y border-border py-2.5 mb-5">
+        <p>${d.grupo_nome}</p>
+        <div class="flex items-center gap-3">
+          <span><i class="fa-regular fa-user"></i> por: ${d.autor_nick}</span>
+          <span><i class="fa-regular fa-clock"></i> ${formatarDataDecreto(d.criado_em)}</span>
+          <span><i class="fa-regular fa-eye"></i> ${d.visualizacoes}</span>
+        </div>
+      </div>
+
+      <div class="text-sm whitespace-pre-wrap">${d.conteudo}</div>
+    `;
+  }
+
+  montarLayout('/diario-oficial.html').then((me) => {
+    if (!me) return;
+    carregar();
+  });
+</script>
+</body>
+</html>
