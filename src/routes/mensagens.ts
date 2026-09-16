@@ -56,8 +56,10 @@ mensagens.get('/usuario/:id', async (c) => {
   }
 
   const { results } = await c.env.DB.prepare(
-    `SELECT m.id, m.remetente_id, m.assunto, m.corpo, m.enviado_em, md.lido_em, md.arquivado
-     FROM mensagem_destinatarios md JOIN mensagens m ON m.id = md.mensagem_id
+    `SELECT md.id AS destinatario_registro_id, m.id, m.remetente_id, u.nick AS remetente_nick, m.assunto, m.corpo, m.enviado_em, md.lido_em, md.arquivado
+     FROM mensagem_destinatarios md
+     JOIN mensagens m ON m.id = md.mensagem_id
+     JOIN usuarios u ON u.id = m.remetente_id
      WHERE md.destinatario_id = ? AND md.apagado = 0
      ORDER BY m.enviado_em DESC`
   ).bind(id).all()
@@ -86,6 +88,19 @@ mensagens.patch('/:id/lida', async (c) => {
   await c.env.DB.prepare(
     `UPDATE mensagem_destinatarios SET lido_em = strftime('%Y-%m-%dT%H:%M:%SZ','now')
      WHERE mensagem_id = ? AND destinatario_id = ? AND lido_em IS NULL`
+  ).bind(mensagemId, destinatarioId).run()
+
+  return c.json({ ok: true })
+})
+
+// DELETE /mensagens/:id — apaga só da SUA caixa de entrada (o
+// remetente e outros destinatários continuam vendo normalmente).
+mensagens.delete('/:id', async (c) => {
+  const destinatarioId = c.get('usuarioId')
+  const mensagemId = c.req.param('id')
+
+  await c.env.DB.prepare(
+    `UPDATE mensagem_destinatarios SET apagado = 1 WHERE mensagem_id = ? AND destinatario_id = ?`
   ).bind(mensagemId, destinatarioId).run()
 
   return c.json({ ok: true })
