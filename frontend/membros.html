@@ -48,7 +48,11 @@
     return `
       <a href="/perfil/${u.nick}" class="flex items-center justify-between px-4 py-3 hover:bg-white/5 transition-colors">
         <div class="flex items-center gap-3">
-          <span class="h-9 w-9 rounded-full bg-border flex items-center justify-center text-xs font-semibold">${u.nick.slice(0,2).toUpperCase()}</span>
+          <span class="h-11 w-11 rounded-full bg-basebg border border-border overflow-hidden inline-block shrink-0">
+            ${u.figure
+              ? `<img src="${avatarUrl(u.figure, 'mini', '2')}" class="w-full h-[190%] object-cover object-top -mt-3 transition-transform duration-300 hover:-translate-y-[8px]" alt="">`
+              : `<span class="w-full h-full flex items-center justify-center text-xs font-semibold">${u.nick.slice(0,2).toUpperCase()}</span>`}
+          </span>
           <div>
             <p class="text-sm font-medium">${u.nick}${u.tag ? ` <span class="text-muted font-normal">[${u.tag}]</span>` : ''}</p>
             <p class="text-xs text-muted">${u.patente_nome || 'Conta institucional'}</p>
@@ -69,6 +73,14 @@
       return;
     }
     const membros = await resposta.json();
+
+    await Promise.all(membros.map(async (u) => {
+      try {
+        const r = await apiFetch(`/usuarios/nick/${encodeURIComponent(u.nick)}`);
+        u.figure = r.ok ? (await r.json()).figure : null;
+      } catch { u.figure = null; }
+    }));
+
     lista.innerHTML = membros.length
       ? membros.map(renderLinha).join('')
       : '<p class="text-sm text-muted p-4">Nenhum membro encontrado.</p>';
