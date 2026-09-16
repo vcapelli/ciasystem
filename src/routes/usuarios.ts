@@ -8,8 +8,12 @@ type Variables = { usuarioId: number }
 const usuarios = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
 /** Busca o `figure` (visual do avatar) direto na API do Habblet — nunca
- * derruba a resposta principal se essa chamada falhar, só devolve null. */
-async function figuraSegura(nick: string): Promise<string | null> {
+ * derruba a resposta principal se essa chamada falhar, só devolve null.
+ * Se a conta tiver um `figure_fixa` definido (caso de contas oficiais,
+ * que não têm personagem de verdade no jogo), ele sempre tem prioridade
+ * e nem chega a chamar a API do Habblet. */
+async function figuraSegura(nick: string, figureFixa?: string | null): Promise<string | null> {
+  if (figureFixa) return figureFixa
   try {
     const jogador = await buscarJogadorHabblet(nick)
     return jogador?.figure ?? null
@@ -32,20 +36,20 @@ usuarios.get('/me', async (c) => {
   const usuarioId = c.get('usuarioId')
 
   const usuario = await c.env.DB.prepare(
-    `SELECT u.id, u.nick, u.tag, u.corpo, u.status, u.administrador_sistema, u.biografia,
+    `SELECT u.id, u.nick, u.tag, u.tipo, u.corpo, u.status, u.administrador_sistema, u.biografia,
             u.cor_avatar_fundo, u.avatar_fundo_imagem_url, u.avatar_direction, u.avatar_head_direction, u.avatar_gesture,
-            u.banner_perfil_id, b.imagem_url AS banner_imagem_url,
+            u.banner_perfil_id, b.imagem_url AS banner_imagem_url, u.logo_url, u.figure_fixa,
             (u.senha_hash IS NOT NULL) AS tem_senha,
             p.nome AS patente_nome, p.ordem AS patente_ordem
      FROM usuarios u
      LEFT JOIN patentes p ON p.id = u.patente_atual_id
      LEFT JOIN banners_perfil b ON b.id = u.banner_perfil_id AND b.ativo = 1
      WHERE u.id = ?`
-  ).bind(usuarioId).first<{ nick: string }>()
+  ).bind(usuarioId).first<{ nick: string; figure_fixa: string | null }>()
 
   if (!usuario) return c.json({ erro: 'usuário não encontrado' }, 404)
 
-  const figure = await figuraSegura(usuario.nick)
+  const figure = await figuraSegura(usuario.nick, usuario.figure_fixa)
   return c.json({ ...usuario, figure })
 })
 
@@ -203,6 +207,32 @@ usuarios.get('/:id', async (c) => {
   return c.json(usuario)
 })
 
+// POST /usuarios — cria uma conta oficial (ex: "Administração", "Setor
+// Técnico"). Jogadores de verdade nunca passam por aqui — eles entram
+// pelo fluxo normal (instrução inicial/contratação, com verificação na
+// missão do Habblet). Só admin.
+usuarios.post('/', async (c) => {
+  const usuarioAtualId = c.get('usuarioId')
+  if (!(await ehAdmin(c.env.DB, usuarioAtualId))) return c.json({ erro: 'só administradores do sistema criam contas' }, 403)
+
+  const body = await c.req.json<{
+    nick: string; logo_url?: string; figure_fixa?: string; biografia?: string
+  }>()
+  if (!body.nick?.trim()) return c.json({ erro: 'nick é obrigatório' }, 400)
+
+  try {
+    const { meta } = await c.env.DB.prepare(
+      `INSERT INTO usuarios (nick, tipo, corpo, patente_atual_id, status, data_ingresso, logo_url, figure_fixa, biografia)
+       VALUES (?, 'conta_oficial', NULL, NULL, 'ativo', strftime('%Y-%m-%dT%H:%M:%SZ','now'), ?, ?, ?)`
+    ).bind(body.nick.trim(), body.logo_url ?? null, body.figure_fixa ?? null, body.biografia ?? null).run()
+    return c.json({ id: meta.last_row_id }, 201)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (msg.includes('UNIQUE')) return c.json({ erro: 'já existe um usuário com esse nick' }, 409)
+    return c.json({ erro: 'não foi possível criar — confira os dados' }, 400)
+  }
+})
+
 // PATCH /usuarios/:id — edição geral (nick, tag, tipo, corpo, patente,
 // status, datas, biografia, exoneração). Não mexe em senha nem no
 // flag administrador_sistema (isso continua só pelo /admin dedicado,
@@ -227,6 +257,8 @@ usuarios.patch('/:id', async (c) => {
     data_ultimo_ato_funcional?: string | null
     biografia?: string | null
     exoneracao_ate?: string | null
+    logo_url?: string | null
+    figure_fixa?: string | null
   }>()
 
   // Valida a mesma regra do CHECK constraint antes de tentar salvar,
@@ -255,6 +287,8 @@ usuarios.patch('/:id', async (c) => {
   if (body.data_ultimo_ato_funcional !== undefined) set('data_ultimo_ato_funcional', body.data_ultimo_ato_funcional)
   if (body.biografia !== undefined) set('biografia', body.biografia)
   if (body.exoneracao_ate !== undefined) set('exoneracao_ate', body.exoneracao_ate)
+  if (body.logo_url !== undefined) set('logo_url', body.logo_url)
+  if (body.figure_fixa !== undefined) set('figure_fixa', body.figure_fixa)
 
   if (!campos.length) return c.json({ ok: true })
 
@@ -301,19 +335,19 @@ usuarios.get('/nick/:nick', async (c) => {
   const nick = c.req.param('nick')
 
   const usuario = await c.env.DB.prepare(
-    `SELECT u.id, u.nick, u.tag, u.corpo, u.status, u.biografia, u.data_ingresso, u.data_ultimo_ato_funcional,
+    `SELECT u.id, u.nick, u.tag, u.tipo, u.corpo, u.status, u.biografia, u.data_ingresso, u.data_ultimo_ato_funcional,
             u.cor_avatar_fundo, u.avatar_fundo_imagem_url, u.avatar_direction, u.avatar_head_direction, u.avatar_gesture,
-            u.banner_perfil_id, b.imagem_url AS banner_imagem_url,
+            u.banner_perfil_id, b.imagem_url AS banner_imagem_url, u.logo_url, u.figure_fixa,
             p.nome AS patente_nome, p.ordem AS patente_ordem
      FROM usuarios u
      LEFT JOIN patentes p ON p.id = u.patente_atual_id
      LEFT JOIN banners_perfil b ON b.id = u.banner_perfil_id AND b.ativo = 1
      WHERE u.nick = ?`
-  ).bind(nick).first<{ nick: string }>()
+  ).bind(nick).first<{ nick: string; figure_fixa: string | null }>()
 
   if (!usuario) return c.json({ erro: 'usuário não encontrado' }, 404)
 
-  const figure = await figuraSegura(usuario.nick)
+  const figure = await figuraSegura(usuario.nick, usuario.figure_fixa)
   return c.json({ ...usuario, figure })
 })
 

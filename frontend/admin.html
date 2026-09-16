@@ -553,6 +553,37 @@
   async function carregarUsuarios() {
     const raiz = document.getElementById('conteudo-aba');
     raiz.innerHTML = `
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-5 max-w-lg">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-1">Nova conta oficial</h2>
+        <p class="text-xs text-muted mb-3">Contas tipo "Administração", "Setor Técnico" etc. — sem corpo/patente, não passam pela instrução inicial.</p>
+        <form id="form-nova-conta-oficial" class="space-y-3">
+          <input id="nco-nick" placeholder="Nome de exibição (ex: Administração)" required class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+
+          <div>
+            <label class="block text-xs text-muted mb-1">Logo (39×39, transparente)</label>
+            <div class="flex items-center gap-3">
+              <input id="nco-logo" placeholder="URL da imagem" class="flex-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+              <span id="nco-logo-preview" class="h-11 w-11 rounded-xl bg-basebg border border-border flex items-center justify-center overflow-hidden shrink-0"></span>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs text-muted mb-1">Figure do avatar (Habblet)</label>
+            <div class="flex items-center gap-3">
+              <input id="nco-figure" placeholder="ex: hd-180-1.hr-100-61.ch-210-66..." class="flex-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+              <span id="nco-figure-preview" class="h-11 w-11 rounded-full bg-basebg border border-border overflow-hidden shrink-0"></span>
+            </div>
+            <p class="text-xs text-muted mt-1">Usado como avatar ao postar requerimentos, notícias etc. em nome dessa conta — ela não tem personagem de verdade no jogo pra puxar isso automaticamente.</p>
+          </div>
+
+          <textarea id="nco-biografia" placeholder="Biografia (opcional)" rows="2" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></textarea>
+
+          <button type="submit" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Criar conta oficial</button>
+          <p id="nco-erro" class="hidden text-xs text-red-500"></p>
+          <p id="nco-sucesso" class="hidden text-xs text-green-600"></p>
+        </form>
+      </div>
+
       <input id="busca-usuario-admin" placeholder="Buscar por nick…" class="w-full bg-card border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent mb-4">
       <div id="lista-usuarios-admin" class="bg-card border border-border rounded-2xl divide-y divide-border overflow-hidden shadow-sm mb-5">
         <p class="text-sm text-muted p-4">Digite pra buscar.</p>
@@ -575,6 +606,45 @@
         </div>
       </div>
     `;
+
+    document.getElementById('nco-logo').addEventListener('input', (e) => {
+      const preview = document.getElementById('nco-logo-preview');
+      preview.innerHTML = e.target.value.trim() ? `<img src="${e.target.value.trim()}" class="max-w-full max-h-full object-contain" alt="">` : '';
+    });
+    document.getElementById('nco-figure').addEventListener('input', (e) => {
+      const preview = document.getElementById('nco-figure-preview');
+      const figure = e.target.value.trim();
+      preview.innerHTML = figure ? `<img src="${avatarUrl(figure, 'mini', '2')}" class="w-full h-[190%] object-cover object-top -mt-3" alt="">` : '';
+    });
+
+    document.getElementById('form-nova-conta-oficial').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const erroEl = document.getElementById('nco-erro');
+      const sucessoEl = document.getElementById('nco-sucesso');
+      erroEl.classList.add('hidden');
+      sucessoEl.classList.add('hidden');
+
+      const resp = await apiFetch('/usuarios', {
+        method: 'POST',
+        body: JSON.stringify({
+          nick: document.getElementById('nco-nick').value.trim(),
+          logo_url: document.getElementById('nco-logo').value.trim() || undefined,
+          figure_fixa: document.getElementById('nco-figure').value.trim() || undefined,
+          biografia: document.getElementById('nco-biografia').value.trim() || undefined,
+        }),
+      });
+      if (!resp.ok) {
+        const d = await resp.json().catch(() => ({}));
+        erroEl.textContent = d.erro || 'Não foi possível criar.';
+        erroEl.classList.remove('hidden');
+        return;
+      }
+      sucessoEl.textContent = 'Conta oficial criada!';
+      sucessoEl.classList.remove('hidden');
+      document.getElementById('form-nova-conta-oficial').reset();
+      document.getElementById('nco-logo-preview').innerHTML = '';
+      document.getElementById('nco-figure-preview').innerHTML = '';
+    });
 
     let debounce;
     document.getElementById('busca-usuario-admin').addEventListener('input', (e) => {
@@ -745,6 +815,19 @@
             <textarea data-campo="biografia" rows="3" class="w-full mt-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">${u.biografia || ''}</textarea>
           </label>
 
+          <label class="text-xs text-muted" data-campo-conta-oficial>Logo (39×39, transparente)
+            <div class="flex items-center gap-3 mt-1">
+              <input data-campo="logo_url" value="${u.logo_url || ''}" placeholder="URL da imagem" class="flex-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+              <span id="editar-logo-preview" class="h-11 w-11 rounded-xl bg-basebg border border-border flex items-center justify-center overflow-hidden shrink-0">${u.logo_url ? `<img src="${u.logo_url}" class="max-w-full max-h-full object-contain" alt="">` : ''}</span>
+            </div>
+          </label>
+          <label class="text-xs text-muted" data-campo-conta-oficial>Figure do avatar (Habblet)
+            <div class="flex items-center gap-3 mt-1">
+              <input data-campo="figure_fixa" value="${u.figure_fixa || ''}" placeholder="ex: hd-180-1.hr-100-61..." class="flex-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+              <span id="editar-figure-preview" class="h-11 w-11 rounded-full bg-basebg border border-border overflow-hidden shrink-0">${u.figure_fixa ? `<img src="${avatarUrl(u.figure_fixa, 'mini', '2')}" class="w-full h-[190%] object-cover object-top -mt-3" alt="">` : ''}</span>
+            </div>
+          </label>
+
           <div class="sm:col-span-2 flex items-center gap-3 mt-1">
             <button type="submit" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-5 py-2 text-sm transition-colors">Salvar</button>
             <p id="msg-editar-usuario" class="hidden text-xs"></p>
@@ -760,16 +843,28 @@
     const campoCorpoWrap = form.querySelector('[data-campo-corpo]');
     const campoPatenteWrap = form.querySelector('[data-campo-patente]');
     const campoExoneracaoWrap = form.querySelector('[data-campo-exoneracao]');
+    const camposContaOficial = form.querySelectorAll('[data-campo-conta-oficial]');
 
     function atualizarVisibilidade() {
       const ehConta = selectTipo.value === 'conta_oficial';
       campoCorpoWrap.classList.toggle('hidden', ehConta);
       campoPatenteWrap.classList.toggle('hidden', ehConta);
       campoExoneracaoWrap.classList.toggle('hidden', form.querySelector('[data-campo="status"]').value !== 'exonerado');
+      camposContaOficial.forEach((el) => el.classList.toggle('hidden', !ehConta));
     }
     selectTipo.addEventListener('change', atualizarVisibilidade);
     form.querySelector('[data-campo="status"]').addEventListener('change', atualizarVisibilidade);
     atualizarVisibilidade();
+
+    form.querySelector('[data-campo="logo_url"]').addEventListener('input', (e) => {
+      const preview = document.getElementById('editar-logo-preview');
+      preview.innerHTML = e.target.value.trim() ? `<img src="${e.target.value.trim()}" class="max-w-full max-h-full object-contain" alt="">` : '';
+    });
+    form.querySelector('[data-campo="figure_fixa"]').addEventListener('input', (e) => {
+      const preview = document.getElementById('editar-figure-preview');
+      const figure = e.target.value.trim();
+      preview.innerHTML = figure ? `<img src="${avatarUrl(figure, 'mini', '2')}" class="w-full h-[190%] object-cover object-top -mt-3" alt="">` : '';
+    });
 
     selectCorpo.addEventListener('change', () => {
       selectPatente.innerHTML = opcoesPatente(selectCorpo.value);
@@ -800,6 +895,8 @@
           data_ultimo_ato_funcional: form.querySelector('[data-campo="data_ultimo_ato_funcional"]').value || null,
           exoneracao_ate: statusValor === 'exonerado' ? (exoneracaoValor || null) : null,
           biografia: form.querySelector('[data-campo="biografia"]').value.trim() || null,
+          logo_url: form.querySelector('[data-campo="logo_url"]').value.trim() || null,
+          figure_fixa: form.querySelector('[data-campo="figure_fixa"]').value.trim() || null,
         }),
       });
 
