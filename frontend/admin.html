@@ -28,6 +28,7 @@
   </main>
 
 <script src="/assets/api.js"></script>
+<script src="/assets/seletor-usuarios.js"></script>
 <script src="/assets/footer.js"></script>
 <script src="/assets/editor-html.js"></script>
 <script src="/assets/layout.js"></script>
@@ -50,6 +51,7 @@
       { id: 'permissoes', label: 'Permissões' },
       { id: 'documentos', label: 'Documentos' },
       { id: 'footer', label: 'Footer' },
+      { id: 'medalhas', label: 'Medalhas' },
       { id: 'sugestoes', label: 'Sugestões' },
       { id: 'banners', label: 'Banners' },
       { id: 'infracoes', label: 'Infrações' },
@@ -767,6 +769,164 @@
     `;
   }
 
+  // ---------- Medalhas (emblemas, honrarias, conquistas) ----------
+  const TIPOS_MEDALHA = {
+    emblemas: { label: 'Emblemas' },
+    honrarias: { label: 'Honrarias' },
+    conquistas: { label: 'Conquistas' },
+  };
+  let subAbaMedalha = 'emblemas';
+
+  async function carregarMedalhas() {
+    const raiz = document.getElementById('conteudo-aba');
+    raiz.innerHTML = `
+      <div class="flex gap-2 mb-4">
+        ${Object.entries(TIPOS_MEDALHA).map(([id, cfg]) => `
+          <button data-subaba-medalha="${id}" class="text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${subAbaMedalha === id ? 'bg-accent text-white' : 'bg-card border border-border text-muted'}">${cfg.label}</button>
+        `).join('')}
+      </div>
+      <div id="medalha-conteudo"><p class="text-sm text-muted">Carregando…</p></div>
+    `;
+    raiz.querySelectorAll('[data-subaba-medalha]').forEach((btn) => {
+      btn.addEventListener('click', () => { subAbaMedalha = btn.dataset.subabaMedalha; carregarMedalhas(); });
+    });
+    await montarListaMedalhas(subAbaMedalha);
+  }
+
+  async function montarListaMedalhas(tipo) {
+    const container = document.getElementById('medalha-conteudo');
+    const [itensResp, gruposResp] = await Promise.all([apiFetch(`/${tipo}`), apiFetch('/grupos')]);
+    const itens = itensResp.ok ? await itensResp.json() : [];
+    const grupos = gruposResp.ok ? await gruposResp.json() : [];
+
+    container.innerHTML = `
+      <div class="space-y-3 mb-5">
+        ${itens.length ? itens.map((item) => `
+          <div class="bg-card border border-border rounded-2xl shadow-sm p-4">
+            <div class="flex items-center gap-3">
+              <img src="${item.imagem_url}" class="h-12 w-12 rounded-lg object-cover border border-border shrink-0" alt="">
+              <div class="flex-1 min-w-0">
+                <p class="text-sm font-semibold truncate">${item.titulo}</p>
+                ${item.descricao ? `<p class="text-xs text-muted truncate">${item.descricao}</p>` : ''}
+              </div>
+              <button data-distribuir="${item.id}" class="text-xs font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-3 py-1.5 transition-colors">Distribuir</button>
+              <button data-excluir-medalha="${item.id}" class="text-muted hover:text-red-600 px-1"><i class="fa-solid fa-trash"></i></button>
+            </div>
+            <div id="distribuir-${item.id}" class="hidden mt-3 pt-3 border-t border-border"></div>
+          </div>
+        `).join('') : '<p class="text-sm text-muted">Nenhuma cadastrada ainda.</p>'}
+      </div>
+
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5 max-w-lg">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Nova ${TIPOS_MEDALHA[tipo].label.toLowerCase().replace(/s$/, '')}</h2>
+        <form id="form-nova-medalha" class="space-y-2">
+          <input id="medalha-titulo" placeholder="Título" required class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <input id="medalha-imagem" placeholder="URL da imagem" required class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <textarea id="medalha-descricao" placeholder="Descrição (opcional)" rows="2" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></textarea>
+          <button type="submit" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Criar</button>
+          <p id="erro-nova-medalha" class="hidden text-xs text-red-500"></p>
+        </form>
+      </div>
+    `;
+
+    container.querySelectorAll('[data-excluir-medalha]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Excluir? Quem já recebeu continua com ela — só some do catálogo pra novas distribuições.')) return;
+        await apiFetch(`/${tipo}/${btn.dataset.excluirMedalha}`, { method: 'DELETE' });
+        montarListaMedalhas(tipo);
+      });
+    });
+
+    container.querySelectorAll('[data-distribuir]').forEach((btn) => {
+      btn.addEventListener('click', () => abrirFormDistribuir(tipo, btn.dataset.distribuir, grupos));
+    });
+
+    document.getElementById('form-nova-medalha').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const resp = await apiFetch(`/${tipo}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          titulo: document.getElementById('medalha-titulo').value.trim(),
+          imagem_url: document.getElementById('medalha-imagem').value.trim(),
+          descricao: document.getElementById('medalha-descricao').value.trim() || undefined,
+        }),
+      });
+      if (!resp.ok) {
+        const d = await resp.json().catch(() => ({}));
+        const erroEl = document.getElementById('erro-nova-medalha');
+        erroEl.textContent = d.erro || 'Não foi possível criar.';
+        erroEl.classList.remove('hidden');
+        return;
+      }
+      montarListaMedalhas(tipo);
+    });
+  }
+
+  async function abrirFormDistribuir(tipo, itemId, grupos) {
+    const container = document.getElementById(`distribuir-${itemId}`);
+    const abrindo = container.classList.contains('hidden');
+    document.querySelectorAll('[id^="distribuir-"]').forEach((el) => el.classList.add('hidden'));
+    if (!abrindo) return;
+    container.classList.remove('hidden');
+
+    const cursosResp = await apiFetch('/grupos/todos-cursos');
+    const cursos = cursosResp.ok ? await cursosResp.json() : [];
+
+    container.innerHTML = `
+      <label class="block text-xs text-muted mb-1">Critério de distribuição</label>
+      <select id="distrib-criterio-${itemId}" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-accent">
+        <option value="todos_atuais">Todos que têm conta agora (exceto exonerados/desligados desonrosos)</option>
+        <option value="grupo">Ser membro de um grupo</option>
+        <option value="dias_na_policia">Estar há X dias na polícia</option>
+        <option value="curso_concluido">Ter concluído um curso</option>
+        <option value="manual">Selecionar manualmente</option>
+      </select>
+      <div id="distrib-campos-${itemId}" class="mb-2"></div>
+      <button data-confirmar-distribuir="${itemId}" class="text-xs font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-3 py-2 transition-colors">Distribuir agora</button>
+      <p id="distrib-resultado-${itemId}" class="hidden text-xs mt-2"></p>
+    `;
+
+    function repintarCampos() {
+      const criterio = document.getElementById(`distrib-criterio-${itemId}`).value;
+      const campos = document.getElementById(`distrib-campos-${itemId}`);
+      if (criterio === 'grupo') {
+        campos.innerHTML = `<select id="distrib-grupo-${itemId}" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">${grupos.map((g) => `<option value="${g.id}">${g.nome}</option>`).join('')}</select>`;
+      } else if (criterio === 'dias_na_policia') {
+        campos.innerHTML = `<input id="distrib-dias-${itemId}" type="number" min="1" placeholder="Quantidade de dias" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">`;
+      } else if (criterio === 'curso_concluido') {
+        campos.innerHTML = `<select id="distrib-curso-${itemId}" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">${cursos.map((cu) => `<option value="${cu.id}">${cu.titulo} — ${cu.grupo_nome}</option>`).join('')}</select>`;
+      } else if (criterio === 'manual') {
+        campos.innerHTML = seletorUsuariosHtml(`distrib-manual-${itemId}`, 'Buscar por nick…');
+        ligarSeletorUsuarios(`distrib-manual-${itemId}`, {});
+      } else {
+        campos.innerHTML = '';
+      }
+    }
+    document.getElementById(`distrib-criterio-${itemId}`).addEventListener('change', repintarCampos);
+    repintarCampos();
+
+    document.querySelector(`[data-confirmar-distribuir="${itemId}"]`).addEventListener('click', async () => {
+      const criterio = document.getElementById(`distrib-criterio-${itemId}`).value;
+      const corpo = { criterio };
+      if (criterio === 'grupo') corpo.grupo_id = Number(document.getElementById(`distrib-grupo-${itemId}`).value);
+      else if (criterio === 'dias_na_policia') corpo.dias = Number(document.getElementById(`distrib-dias-${itemId}`).value);
+      else if (criterio === 'curso_concluido') corpo.aula_id = Number(document.getElementById(`distrib-curso-${itemId}`).value);
+      else if (criterio === 'manual') corpo.usuario_ids = obterSelecionados(`distrib-manual-${itemId}`);
+
+      const resp = await apiFetch(`/${tipo}/${itemId}/distribuir`, { method: 'POST', body: JSON.stringify(corpo) });
+      const resultadoEl = document.getElementById(`distrib-resultado-${itemId}`);
+      resultadoEl.classList.remove('hidden');
+      if (resp.ok) {
+        const d = await resp.json();
+        resultadoEl.textContent = `Distribuído pra ${d.concedidos} pessoa(s) (de ${d.alvos_encontrados} encontradas).`;
+        resultadoEl.className = 'text-xs mt-2 text-green-600';
+      } else {
+        resultadoEl.textContent = 'Não foi possível distribuir.';
+        resultadoEl.className = 'text-xs mt-2 text-red-500';
+      }
+    });
+  }
+
   // ---------- Footer ----------
   async function carregarFooterAdmin() {
     const raiz = document.getElementById('conteudo-aba');
@@ -1406,6 +1566,7 @@
     permissoes: carregarPermissoes,
     documentos: carregarPermissoesDocumentos,
     footer: carregarFooterAdmin,
+    medalhas: carregarMedalhas,
     sugestoes: carregarSugestoes,
     banners: carregarBanners,
     infracoes: carregarInfracoes,

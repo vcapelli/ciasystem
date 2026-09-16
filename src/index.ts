@@ -11,6 +11,8 @@ import menu from './routes/menu'
 import paginas from './routes/paginas'
 import { criarRotaDistincao } from './routes/distincoes'
 import conquistas from './routes/conquistas'
+import emblemas from './routes/emblemas'
+import honrarias from './routes/honrarias'
 import medalhas from './routes/medalhas'
 import cursos from './routes/cursos'
 import grupos from './routes/grupos'
@@ -94,6 +96,8 @@ protegido.route('/paginas', paginas)
 protegido.route('/emblemas', criarRotaDistincao('emblemas'))
 protegido.route('/honrarias', criarRotaDistincao('honrarias'))
 protegido.route('/conquistas', conquistas)
+protegido.route('/emblemas', emblemas)
+protegido.route('/honrarias', honrarias)
 protegido.route('/medalhas', medalhas)
 protegido.route('/cursos', cursos)
 protegido.route('/grupos', grupos)
