@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { buscarJogadorHabblet } from '../services/habblet'
+import { hashSenha } from '../services/senha'
 
 type Bindings = { DB: D1Database }
 type Variables = { usuarioId: number }
@@ -142,6 +143,27 @@ usuarios.patch('/me', async (c) => {
   await c.env.DB.prepare(
     `UPDATE usuarios SET ${campos.join(', ')}, atualizado_em = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
   ).bind(...valores, usuarioId).run()
+
+  return c.json({ ok: true })
+})
+
+// POST /usuarios/alterar-senha — só pra quem JÁ tem senha definida e
+// já está logado: como a sessão autenticada já prova quem é a pessoa,
+// não precisa do código na missão de novo (isso só é exigido a
+// primeira vez, em /auth/definir-senha, quando ainda não há senha
+// nenhuma pra provar identidade).
+usuarios.post('/alterar-senha', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  const body = await c.req.json<{ senha: string }>()
+
+  if (!body.senha || body.senha.length < 6) {
+    return c.json({ erro: 'a senha precisa ter pelo menos 6 caracteres' }, 400)
+  }
+
+  const hash = await hashSenha(body.senha)
+  await c.env.DB.prepare(
+    `UPDATE usuarios SET senha_hash = ?, senha_atualizada_em = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
+  ).bind(hash, usuarioId).run()
 
   return c.json({ ok: true })
 })

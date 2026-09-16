@@ -81,17 +81,69 @@
     if (!btnIniciar) return;
     const fluxo = document.getElementById('fluxo-senha');
 
-    btnIniciar.addEventListener('click', () => {
+    function renderFormularioSenha(codigo) {
+      fluxo.innerHTML = `
+        ${codigo ? `
+          <div class="bg-basebg border border-border rounded-lg p-4 mb-3">
+            <p class="text-xs text-muted mb-1">Coloque esse código na sua missão do Habblet:</p>
+            <p class="text-lg font-bold font-mono tracking-wide">${codigo.valor}</p>
+            <p class="text-xs text-muted mt-1">${codigo.instrucao}</p>
+          </div>
+        ` : ''}
+        <form id="form-definir-senha" class="space-y-2">
+          <input id="nova-senha" type="password" placeholder="${dados.tem_senha ? 'Nova senha' : 'Senha'} (mín. 6 caracteres)" required minlength="6" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <input id="confirmar-senha" type="password" placeholder="Confirme a ${dados.tem_senha ? 'nova ' : ''}senha" required minlength="6" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <button type="submit" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Confirmar e salvar senha</button>
+          <p id="msg-definir-senha" class="hidden text-xs mt-2"></p>
+        </form>
+      `;
+
+      document.getElementById('form-definir-senha').addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const msg = document.getElementById('msg-definir-senha');
+        const senha = document.getElementById('nova-senha').value;
+        const confirmar = document.getElementById('confirmar-senha').value;
+
+        msg.classList.remove('hidden');
+        if (senha !== confirmar) {
+          msg.textContent = 'As senhas não coincidem.';
+          msg.className = 'text-xs mt-2 text-red-500';
+          return;
+        }
+
+        // Já tendo senha, a sessão logada já prova quem você é — não
+        // precisa passar pela missão de novo, só na primeira vez.
+        const respSenha = dados.tem_senha
+          ? await apiFetch('/usuarios/alterar-senha', { method: 'POST', body: JSON.stringify({ senha }) })
+          : await apiFetch('/auth/definir-senha', { method: 'POST', body: JSON.stringify({ nick: dados.nick, codigo: codigo.valor, senha }) });
+
+        if (respSenha.ok) {
+          msg.textContent = dados.tem_senha ? 'Senha alterada!' : 'Senha salva! Já pode entrar com nick e senha da próxima vez.';
+          msg.className = 'text-xs mt-2 text-green-600';
+        } else {
+          const d = await respSenha.json().catch(() => ({}));
+          msg.textContent = d.erro || 'Não foi possível salvar a senha.';
+          msg.className = 'text-xs mt-2 text-red-500';
+        }
+      });
+    }
+
+    btnIniciar.addEventListener('click', async () => {
       const abrindo = fluxo.classList.contains('hidden');
       fluxo.classList.add('hidden');
       if (!abrindo) return;
       fluxo.classList.remove('hidden');
+
+      if (dados.tem_senha) {
+        renderFormularioSenha(null);
+        return;
+      }
+
       fluxo.innerHTML = `
         <form id="form-solicitar-codigo-senha">
           <button type="submit" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Enviar código pra minha missão</button>
         </form>
       `;
-
       document.getElementById('form-solicitar-codigo-senha').addEventListener('submit', async (e) => {
         e.preventDefault();
         const resp = await apiFetch('/auth/solicitar-codigo', {
@@ -103,48 +155,7 @@
           return;
         }
         const { codigo, instrucao } = await resp.json();
-
-        fluxo.innerHTML = `
-          <div class="bg-basebg border border-border rounded-lg p-4 mb-3">
-            <p class="text-xs text-muted mb-1">Coloque esse código na sua missão do Habblet:</p>
-            <p class="text-lg font-bold font-mono tracking-wide">${codigo}</p>
-            <p class="text-xs text-muted mt-1">${instrucao}</p>
-          </div>
-          <form id="form-definir-senha" class="space-y-2">
-            <input id="nova-senha" type="password" placeholder="Nova senha (mín. 6 caracteres)" required minlength="6" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
-            <input id="confirmar-senha" type="password" placeholder="Confirme a nova senha" required minlength="6" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
-            <button type="submit" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Confirmar e salvar senha</button>
-            <p id="msg-definir-senha" class="hidden text-xs mt-2"></p>
-          </form>
-        `;
-
-        document.getElementById('form-definir-senha').addEventListener('submit', async (ev) => {
-          ev.preventDefault();
-          const msg = document.getElementById('msg-definir-senha');
-          const senha = document.getElementById('nova-senha').value;
-          const confirmar = document.getElementById('confirmar-senha').value;
-
-          msg.classList.remove('hidden');
-          if (senha !== confirmar) {
-            msg.textContent = 'As senhas não coincidem.';
-            msg.className = 'text-xs mt-2 text-red-500';
-            return;
-          }
-
-          const respSenha = await apiFetch('/auth/definir-senha', {
-            method: 'POST',
-            body: JSON.stringify({ nick: dados.nick, codigo, senha }),
-          });
-
-          if (respSenha.ok) {
-            msg.textContent = 'Senha salva! Já pode entrar com nick e senha da próxima vez.';
-            msg.className = 'text-xs mt-2 text-green-600';
-          } else {
-            const d = await respSenha.json().catch(() => ({}));
-            msg.textContent = d.erro || 'Não foi possível salvar a senha — o código pode ter expirado, tenta de novo.';
-            msg.className = 'text-xs mt-2 text-red-500';
-          }
-        });
+        renderFormularioSenha({ valor: codigo, instrucao });
       });
     });
   }
