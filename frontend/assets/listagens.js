@@ -44,7 +44,7 @@ function renderLinhaMembro(u, formatoExoneracao, tipo) {
     identificacao = `${u.nick} [${u.tag || '---'}] [${u.ultimo_autor_tag || '---'}] {${u.crime_nome || ''}} - ${formatarDataCurtaReq(u.ultimo_requerimento_em)} até ${u.exoneracao_ate ? formatarDataCurtaReq(u.exoneracao_ate) : 'Indeterminado'}`;
   } else {
     identificacao = u.ultimo_requerimento_em
-      ? `${u.nick} [${(PREFIXO_IDENTIFICACAO_REQ[u.ultimo_tipo] ?? '')}${u.ultimo_autor_tag || u.tag || '---'}] ${formatarDataCurtaReq(u.ultimo_requerimento_em)}`
+      ? `${u.nick} [${(PREFIXO_IDENTIFICACAO_REQ[u.ultimo_tipo] ?? '')}${u.ultimo_autor_tag || u.tag || '---'}] ${formatarDataCurtaReq(u.ultimo_requerimento_em)}${u.apendiceAdvertencias || ''}`
       : `${u.nick}${u.tag ? ` [${u.tag}]` : ' [---]'}`;
   }
 
@@ -54,13 +54,12 @@ function renderLinhaMembro(u, formatoExoneracao, tipo) {
   }
 
   return `
-    <a href="/perfil/${u.nick}" class="flex items-center gap-3 px-4 py-3 hover:bg-basebg transition-colors">
+    <div class="flex items-center gap-3 px-4 py-3">
       <span class="h-11 w-11 rounded-full bg-basebg border border-border overflow-hidden inline-block shrink-0">
         ${u.figure ? `<img src="${avatarUrl(u.figure, 'mini', '2')}" class="w-full h-[190%] object-cover object-top -mt-3" alt="">` : `<span class="w-full h-full flex items-center justify-center text-sm font-bold">${u.nick.slice(0,2).toUpperCase()}</span>`}
       </span>
-      <span class="text-base text-muted">▸</span>
       <span class="text-base">${identificacao}</span>
-    </a>
+    </div>
   `;
 }
 
@@ -108,12 +107,12 @@ async function montarListagem(tipo) {
       <div class="bg-card border border-border rounded-2xl shadow-sm divide-y divide-border overflow-hidden">
         ${dados.itens.length
           ? dados.itens.map((u) => `
-              <a href="/perfil/${u.nick}" class="flex items-center gap-3 px-4 py-3 text-base hover:bg-basebg transition-colors">
+              <div class="flex items-center gap-3 px-4 py-3 text-base">
                 <span class="h-11 w-11 rounded-full bg-basebg border border-border overflow-hidden inline-block shrink-0">
                   ${u.figure ? `<img src="${avatarUrl(u.figure, 'mini', '2')}" class="w-full h-[190%] object-cover object-top -mt-3" alt="">` : `<span class="w-full h-full flex items-center justify-center text-sm font-bold">${u.nick.slice(0,2).toUpperCase()}</span>`}
                 </span>
                 <span>${u.nick} <span class="text-muted">[${u.tag}]</span></span>
-              </a>
+              </div>
             `).join('')
           : '<p class="text-sm text-muted p-4">Nenhum registro encontrado.</p>'}
       </div>
@@ -126,6 +125,9 @@ async function montarListagem(tipo) {
   // uma tela só carregada sob demanda, então tudo bem). Nas listagens
   // de oficiais e executivo, busca também os grupos de cada um, pra
   // mostrar a abreviação do cargo interno ao lado da identificação.
+  // Também busca advertências ativas, pra montar o apêndice
+  // "{1 ADV: ... até ...}" — não se aplica ao formato de exoneração,
+  // que já tem seu próprio bracket.
   const todosMembros = dados.grupos.flatMap((g) => g.itens);
   const buscarGrupos = tipo === 'corpo-de-oficiais' || tipo === 'corpo-executivo';
   await Promise.all(
@@ -135,6 +137,9 @@ async function montarListagem(tipo) {
       if (buscarGrupos && u.id) {
         const rg = await apiFetch(`/grupos/usuario/${u.id}`);
         u.grupos = rg.ok ? await rg.json() : [];
+      }
+      if (!dados.formatoExoneracao && u.id) {
+        u.apendiceAdvertencias = await buscarApendiceAdvertencias(u.id);
       }
     })
   );

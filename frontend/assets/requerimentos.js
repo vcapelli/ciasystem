@@ -23,6 +23,26 @@ function formatarDataCurtaReq(iso) {
   return `${String(d.getDate()).padStart(2,'0')} ${MESES[d.getMonth()]} ${d.getFullYear()}`;
 }
 
+// Apêndice de identificação com advertências escritas ainda ativas
+// (dentro dos 30 dias), ex: " - {1 ADV: 16 Set 2026 até 16 Out 2026}".
+// Some sozinho depois que a advertência expira. Usado no card de
+// requerimento e nas listagens — de propósito NÃO usado no perfil.
+function formatarApendiceAdvertencias(advertencias) {
+  if (!advertencias?.length) return '';
+  const partes = advertencias.map((a, i) => `${i + 1} ADV: ${formatarDataCurtaReq(a.inicio)} até ${formatarDataCurtaReq(a.fim)}`);
+  return ` - {${partes.join(' / ')}}`;
+}
+
+async function buscarApendiceAdvertencias(usuarioId) {
+  if (!usuarioId) return '';
+  try {
+    const r = await apiFetch(`/requerimentos/advertencias-ativas/${usuarioId}`);
+    return formatarApendiceAdvertencias(r.ok ? await r.json() : []);
+  } catch {
+    return '';
+  }
+}
+
 /**
  * Card completo de um requerimento — usado tanto na lista "Recentes"
  * das páginas de requerimento quanto na linha do tempo do perfil, pra
@@ -30,7 +50,7 @@ function formatarDataCurtaReq(iso) {
  * `patentesMapa` = { id: nome } de todas as patentes.
  * `meAtual` = usuário logado (pra saber se mostra o apêndice de admin).
  */
-function renderCardRequerimento(r, patentesMapa, meAtual) {
+function renderCardRequerimento(r, patentesMapa, meAtual, apendiceAdvertencias = '') {
   const cor = COR_STATUS_REQ[r.status] || COR_STATUS_REQ.pendente;
   const alvos = r.alvos_json ? JSON.parse(r.alvos_json) : [];
   const alvoPrincipal = alvos[0];
@@ -45,7 +65,7 @@ function renderCardRequerimento(r, patentesMapa, meAtual) {
   const tagUsada = dadosEspecificos.tag_utilizada || r.autor_tag || '—';
   const identificacao = r.tipo === 'exoneracao'
     ? (alvoPrincipal ? `${alvoPrincipal.nick} [${alvoPrincipal.tag || '---'}] [${tagUsada}] {${r.crime_nome || r.fundamentacao || ''}} - ${formatarDataCurtaReq(r.criado_em)} até ${dadosEspecificos.exoneracao_ate ? formatarDataCurtaReq(dadosEspecificos.exoneracao_ate) : 'Indeterminado'}` : null)
-    : (alvoPrincipal ? `${alvoPrincipal.nick} [${prefixoId}${tagUsada}] ${formatarDataCurtaReq(r.criado_em)}` : null);
+    : (alvoPrincipal ? `${alvoPrincipal.nick} [${prefixoId}${tagUsada}] ${formatarDataCurtaReq(r.criado_em)}${apendiceAdvertencias}` : null);
 
   const linhasExtras = [];
   linhasExtras.push(`<b>${ehInstrucaoInicial ? 'Nick e TAG do Instrutor' : 'Requerido por'}:</b> ${r.autor_nick || '—'}${r.autor_tag ? ` [${r.autor_tag}]` : ''}`);
@@ -696,8 +716,10 @@ async function montarFormularioRequerimento(config) {
   atualizarCamposCondicionais();
   atualizarOpcaoVoltaLicenca();
 
-  function renderCardRecente(r) {
-    return renderCardRequerimento(r, patentesMapa, meAtual);
+  async function renderCardRecente(r) {
+    const alvos = r.alvos_json ? JSON.parse(r.alvos_json) : [];
+    const apendice = await buscarApendiceAdvertencias(alvos[0]?.usuario_id);
+    return renderCardRequerimento(r, patentesMapa, meAtual, apendice);
   }
 
   async function carregarRecentes() {
@@ -711,7 +733,7 @@ async function montarFormularioRequerimento(config) {
     const filtrados = todos.filter((r) => valoresTipos.includes(r.tipo)).slice(0, 10);
 
     container.innerHTML = filtrados.length
-      ? filtrados.map(renderCardRecente).join('')
+      ? (await Promise.all(filtrados.map(renderCardRecente))).join('')
       : '<p class="text-sm text-muted">Nenhum requerimento deste tipo ainda.</p>';
   }
   carregarRecentes();

@@ -271,6 +271,7 @@ const BASE_QUERY_REQUERIMENTOS = `
     (
       SELECT json_group_array(json_object(
         'id', ra.id,
+        'usuario_id', ra.usuario_id,
         'nick', COALESCE(ra.nick_alvo, ua.nick),
         'tag', ua.tag,
         'status', ra.status,
@@ -534,6 +535,34 @@ requerimentos.get('/alvo/:usuarioId', async (c) => {
   )
 
   return c.json(comFigure)
+})
+
+// GET /requerimentos/advertencias-ativas/:usuarioId — advertências
+// escritas ainda dentro dos 30 dias de duração (mais recente por
+// último). Usado só pra montar o apêndice de identificação — não
+// mexe em status/rebaixamento automático, isso é outra história.
+requerimentos.get('/advertencias-ativas/:usuarioId', async (c) => {
+  const usuarioId = c.req.param('usuarioId')
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT ra.decidido_em AS inicio
+     FROM requerimento_alvos ra
+     JOIN requerimentos r ON r.id = ra.requerimento_id
+     WHERE r.tipo = 'advertencia' AND ra.usuario_id = ? AND ra.status = 'aprovado' AND ra.decidido_em IS NOT NULL
+     ORDER BY ra.decidido_em ASC`
+  ).bind(usuarioId).all<{ inicio: string }>()
+
+  const agora = Date.now()
+  const ativas = results
+    .map((r) => {
+      const inicio = new Date(r.inicio)
+      const fim = new Date(inicio.getTime() + 30 * 24 * 60 * 60 * 1000)
+      return { inicio: inicio.toISOString(), fim: fim.toISOString(), fimMs: fim.getTime() }
+    })
+    .filter((a) => a.fimMs >= agora)
+    .map(({ inicio, fim }) => ({ inicio, fim }))
+
+  return c.json(ativas)
 })
 
 export default requerimentos
