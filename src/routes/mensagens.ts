@@ -95,17 +95,76 @@ mensagens.patch('/:id/lida', async (c) => {
   return c.json({ ok: true })
 })
 
-// DELETE /mensagens/:id — apaga só da SUA caixa de entrada (o
-// remetente e outros destinatários continuam vendo normalmente).
+// DELETE /mensagens/:id?direcao=recebido|enviado — manda pra
+// lixeira (não apaga de vez). "recebido" (padrão) marca só na SUA
+// caixa de entrada; "enviado" marca só na SUA visão de enviados —
+// nos dois casos o resto de quem participa da mensagem continua
+// vendo normalmente.
 mensagens.delete('/:id', async (c) => {
-  const destinatarioId = c.get('usuarioId')
+  const usuarioId = c.get('usuarioId')
   const mensagemId = c.req.param('id')
+  const direcao = c.req.query('direcao') === 'enviado' ? 'enviado' : 'recebido'
 
-  await c.env.DB.prepare(
-    `UPDATE mensagem_destinatarios SET apagado = 1 WHERE mensagem_id = ? AND destinatario_id = ?`
-  ).bind(mensagemId, destinatarioId).run()
+  if (direcao === 'enviado') {
+    await c.env.DB.prepare(
+      `UPDATE mensagens SET apagado_pelo_remetente = 1 WHERE id = ? AND remetente_id = ?`
+    ).bind(mensagemId, usuarioId).run()
+  } else {
+    await c.env.DB.prepare(
+      `UPDATE mensagem_destinatarios SET apagado = 1 WHERE mensagem_id = ? AND destinatario_id = ?`
+    ).bind(mensagemId, usuarioId).run()
+  }
 
   return c.json({ ok: true })
+})
+
+// POST /mensagens/:id/restaurar?direcao=recebido|enviado — tira da lixeira
+mensagens.post('/:id/restaurar', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  const mensagemId = c.req.param('id')
+  const direcao = c.req.query('direcao') === 'enviado' ? 'enviado' : 'recebido'
+
+  if (direcao === 'enviado') {
+    await c.env.DB.prepare(
+      `UPDATE mensagens SET apagado_pelo_remetente = 0 WHERE id = ? AND remetente_id = ?`
+    ).bind(mensagemId, usuarioId).run()
+  } else {
+    await c.env.DB.prepare(
+      `UPDATE mensagem_destinatarios SET apagado = 0 WHERE mensagem_id = ? AND destinatario_id = ?`
+    ).bind(mensagemId, usuarioId).run()
+  }
+
+  return c.json({ ok: true })
+})
+
+// GET /mensagens/usuario/:id/lixeira — tudo que essa conta apagou,
+// recebido e enviado juntos, mais recente primeiro.
+mensagens.get('/usuario/:id/lixeira', async (c) => {
+  const usuarioAutenticado = c.get('usuarioId')
+  const id = c.req.param('id')
+
+  if (Number(id) !== usuarioAutenticado && !(await ehAdmin(c.env.DB, usuarioAutenticado))) {
+    return c.json({ erro: 'só é possível ver a própria lixeira' }, 403)
+  }
+
+  const { results: recebidos } = await c.env.DB.prepare(
+    `SELECT m.id, m.remetente_id, u.nick AS remetente_nick, m.assunto, m.corpo, m.enviado_em, md.lido_em, 'recebido' AS direcao
+     FROM mensagem_destinatarios md
+     JOIN mensagens m ON m.id = md.mensagem_id
+     JOIN usuarios u ON u.id = m.remetente_id
+     WHERE md.destinatario_id = ? AND md.apagado = 1
+     ORDER BY m.enviado_em DESC`
+  ).bind(id).all()
+
+  const { results: enviados } = await c.env.DB.prepare(
+    `SELECT m.*,
+      (SELECT GROUP_CONCAT(u.nick, ', ') FROM mensagem_destinatarios md JOIN usuarios u ON u.id = md.destinatario_id WHERE md.mensagem_id = m.id) AS destinatarios_nicks,
+      'enviado' AS direcao
+     FROM mensagens m WHERE m.remetente_id = ? AND m.apagado_pelo_remetente = 1 ORDER BY m.enviado_em DESC`
+  ).bind(id).all()
+
+  const todos = [...recebidos, ...enviados].sort((a: any, b: any) => (a.enviado_em < b.enviado_em ? 1 : -1))
+  return c.json(todos)
 })
 
 export default mensagens

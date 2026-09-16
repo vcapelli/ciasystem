@@ -30,6 +30,9 @@
           <i class="fa-solid fa-paper-plane"></i> Enviados
         </button>
       </div>
+      <button data-caixa="lixeira" class="btn-trocar-caixa w-full text-xs font-semibold rounded-lg px-3 py-2 transition-colors mt-2">
+        <i class="fa-solid fa-trash"></i> Lixeira
+      </button>
     </div>
     <div id="lista-emails" class="divide-y divide-border">
       <p class="text-sm text-muted p-4">Carregando…</p>
@@ -80,22 +83,30 @@
   }
 
   function renderItemLista(email) {
+    const direcao = email.direcao || caixaAtual === 'enviados' ? 'enviado' : 'recebido';
     const naoLido = caixaAtual === 'recebidos' && !email.lido_em;
-    const nomeExibido = caixaAtual === 'recebidos' ? email.remetente_nick : (email.destinatarios_nicks || '—');
+    const nomeExibido = direcao === 'recebido' ? email.remetente_nick : (email.destinatarios_nicks || '—');
     const selecionado = email.id === emailSelecionadoId;
-    const figura = figurasPorNick[caixaAtual === 'recebidos' ? email.remetente_nick : (email.destinatarios_nicks || '').split(',')[0]?.trim()];
+    const figura = figurasPorNick[direcao === 'recebido' ? email.remetente_nick : (email.destinatarios_nicks || '').split(',')[0]?.trim()];
+    const iconeAcao = caixaAtual === 'lixeira' ? 'fa-arrow-rotate-left' : 'fa-trash';
+    const tituloAcao = caixaAtual === 'lixeira' ? 'Restaurar' : 'Excluir';
 
     return `
-      <button data-abrir-email="${email.id}" class="w-full text-left px-4 py-3 flex items-center gap-3 transition-colors ${selecionado ? 'bg-accent/10' : naoLido ? 'bg-accent/5 hover:bg-accent/10' : 'hover:bg-basebg'}">
+      <div data-item-email="${email.id}" class="w-full text-left px-4 py-3 flex items-center gap-3 transition-colors cursor-pointer ${selecionado ? 'bg-accent/10' : naoLido ? 'bg-accent/5 hover:bg-accent/10' : 'hover:bg-basebg'}">
         <span class="h-11 w-11 rounded-full bg-basebg border border-border overflow-hidden inline-block shrink-0">
           ${figura ? `<img src="${avatarUrl(figura, 'mini', '2')}" class="w-full h-[190%] object-cover object-top -mt-3 transition-transform duration-300 hover:-translate-y-[8px]" alt="">` : `<span class="w-full h-full flex items-center justify-center text-xs font-bold">${(nomeExibido || '?').slice(0,2).toUpperCase()}</span>`}
         </span>
-        <div class="min-w-0 flex-1">
+        <button data-abrir-email="${email.id}" class="min-w-0 flex-1 text-left">
           <p class="text-sm truncate ${naoLido ? 'font-bold' : 'font-medium'}">${nomeExibido}</p>
           <p class="text-xs ${naoLido ? 'font-semibold' : 'text-muted'} truncate mt-0.5">${email.assunto}</p>
+        </button>
+        <div class="flex flex-col items-end gap-1.5 shrink-0 self-start">
+          <p class="text-xs text-muted">${tempoRelativoEmail(email.enviado_em)}</p>
+          <button data-acao-lista="${email.id}" data-direcao="${direcao}" title="${tituloAcao}" class="text-muted hover:text-accent transition-colors px-0.5">
+            <i class="fa-solid ${iconeAcao} text-xs"></i>
+          </button>
         </div>
-        <p class="text-xs text-muted shrink-0 self-start">${tempoRelativoEmail(email.enviado_em)}</p>
-      </button>
+      </div>
     `;
   }
 
@@ -105,23 +116,43 @@
 
     document.querySelectorAll('.btn-trocar-caixa').forEach((btn) => {
       const ativo = btn.dataset.caixa === caixaAtual;
-      btn.className = `btn-trocar-caixa flex-1 text-xs font-semibold rounded-lg px-3 py-2 transition-colors ${ativo ? 'bg-accent text-white' : 'bg-card border border-border text-muted hover:bg-basebg'}`;
+      btn.className = `btn-trocar-caixa ${btn.dataset.caixa === 'lixeira' ? 'w-full mt-2' : 'flex-1'} text-xs font-semibold rounded-lg px-3 py-2 transition-colors ${ativo ? 'bg-accent text-white' : 'bg-card border border-border text-muted hover:bg-basebg'}`;
     });
 
-    const resp = await apiFetch(`/mensagens/usuario/${meAtual.id}${caixaAtual === 'enviados' ? '/enviadas' : ''}`);
+    const sufixo = caixaAtual === 'enviados' ? '/enviadas' : caixaAtual === 'lixeira' ? '/lixeira' : '';
+    const resp = await apiFetch(`/mensagens/usuario/${meAtual.id}${sufixo}`);
     emailsCache = resp.ok ? await resp.json() : [];
 
     await Promise.all(emailsCache.map((email) => {
-      const nick = caixaAtual === 'recebidos' ? email.remetente_nick : (email.destinatarios_nicks || '').split(',')[0]?.trim();
+      const direcao = email.direcao || (caixaAtual === 'enviados' ? 'enviado' : 'recebido');
+      const nick = direcao === 'recebido' ? email.remetente_nick : (email.destinatarios_nicks || '').split(',')[0]?.trim();
       return buscarFiguraEmail(nick);
     }));
 
     lista.innerHTML = emailsCache.length
       ? emailsCache.map(renderItemLista).join('')
-      : `<p class="text-sm text-muted p-4">${caixaAtual === 'recebidos' ? 'Caixa de entrada vazia.' : 'Nenhum e-mail enviado ainda.'}</p>`;
+      : `<p class="text-sm text-muted p-4">${caixaAtual === 'recebidos' ? 'Caixa de entrada vazia.' : caixaAtual === 'enviados' ? 'Nenhum e-mail enviado ainda.' : 'Lixeira vazia.'}</p>`;
 
     lista.querySelectorAll('[data-abrir-email]').forEach((btn) => {
       btn.addEventListener('click', () => abrirEmail(Number(btn.dataset.abrirEmail)));
+    });
+
+    lista.querySelectorAll('[data-acao-lista]').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = Number(btn.dataset.acaoLista);
+        const direcao = btn.dataset.direcao;
+        if (caixaAtual === 'lixeira') {
+          await apiFetch(`/mensagens/${id}/restaurar?direcao=${direcao}`, { method: 'POST' });
+        } else {
+          await apiFetch(`/mensagens/${id}?direcao=${direcao}`, { method: 'DELETE' });
+        }
+        if (emailSelecionadoId === id) {
+          emailSelecionadoId = null;
+          document.getElementById('conteudo-principal').innerHTML = '<p class="text-sm text-muted">Selecione um e-mail na lista ao lado, ou escreva um novo.</p>';
+        }
+        carregarLista();
+      });
     });
   }
 
@@ -138,32 +169,35 @@
     emailSelecionadoId = id;
     const email = emailsCache.find((e) => e.id === id);
     if (!email) return;
+    const direcao = email.direcao || (caixaAtual === 'enviados' ? 'enviado' : 'recebido');
 
-    document.querySelectorAll('[data-abrir-email]').forEach((btn) => {
-      btn.classList.toggle('bg-accent/10', Number(btn.dataset.abrirEmail) === id);
+    document.querySelectorAll('[data-item-email]').forEach((el) => {
+      el.classList.toggle('bg-accent/10', Number(el.dataset.itemEmail) === id);
     });
 
-    if (caixaAtual === 'recebidos' && !email.lido_em) {
+    if (direcao === 'recebido' && !email.lido_em) {
       await apiFetch(`/mensagens/${id}/lida`, { method: 'PATCH' });
       email.lido_em = new Date().toISOString();
       await carregarLista();
     }
 
-    const remetenteOuDestinatarios = caixaAtual === 'recebidos'
+    const remetenteOuDestinatarios = direcao === 'recebido'
       ? `De <b>${email.remetente_nick}</b>`
       : `Para <b>${email.destinatarios_nicks || '—'}</b>`;
+
+    const naLixeira = caixaAtual === 'lixeira';
 
     document.getElementById('conteudo-principal').innerHTML = `
       <div class="bg-card border border-border rounded-2xl shadow-sm p-5 h-full">
         <div class="flex items-start justify-between gap-3 mb-1">
           <h1 class="text-lg font-display font-bold">${email.assunto}</h1>
-          <button id="btn-apagar-email" class="text-muted hover:text-red-600 transition-colors shrink-0" title="Excluir">
-            <i class="fa-solid fa-trash"></i>
+          <button id="btn-acao-email" title="${naLixeira ? 'Restaurar' : 'Excluir'}" class="text-muted hover:${naLixeira ? 'text-accent' : 'text-red-600'} transition-colors shrink-0">
+            <i class="fa-solid ${naLixeira ? 'fa-arrow-rotate-left' : 'fa-trash'}"></i>
           </button>
         </div>
         <p class="text-xs text-muted mb-4">${remetenteOuDestinatarios} · ${new Date(email.enviado_em).toLocaleString('pt-BR')}</p>
         <div class="text-sm whitespace-pre-wrap">${email.corpo}</div>
-        ${caixaAtual === 'recebidos' ? `
+        ${direcao === 'recebido' && !naLixeira ? `
           <button id="btn-responder-email" class="mt-5 text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">
             Responder
           </button>
@@ -171,9 +205,13 @@
       </div>
     `;
 
-    document.getElementById('btn-apagar-email').addEventListener('click', async () => {
-      if (!confirm('Excluir esse e-mail da sua caixa de entrada?')) return;
-      await apiFetch(`/mensagens/${id}`, { method: 'DELETE' });
+    document.getElementById('btn-acao-email').addEventListener('click', async () => {
+      if (naLixeira) {
+        await apiFetch(`/mensagens/${id}/restaurar?direcao=${direcao}`, { method: 'POST' });
+      } else {
+        if (!confirm('Mover esse e-mail pra lixeira?')) return;
+        await apiFetch(`/mensagens/${id}?direcao=${direcao}`, { method: 'DELETE' });
+      }
       emailSelecionadoId = null;
       document.getElementById('conteudo-principal').innerHTML = '<p class="text-sm text-muted">Selecione um e-mail na lista ao lado, ou escreva um novo.</p>';
       await carregarLista();
@@ -186,7 +224,7 @@
 
   function abrirFormularioEnvio(preenchimento) {
     emailSelecionadoId = null;
-    document.querySelectorAll('[data-abrir-email]').forEach((btn) => btn.classList.remove('bg-accent/10'));
+    document.querySelectorAll('[data-item-email]').forEach((el) => el.classList.remove('bg-accent/10'));
 
     const container = document.getElementById('conteudo-principal');
     container.innerHTML = `
