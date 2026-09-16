@@ -42,4 +42,6 @@ export interface CriarRequerimentoInput {
   autorizado_por_id?: number
   tag_aplicada?: string
   anexos?: string[]             // URLs de prova/imagem
+  postar_com_tag_grupo_id?: number  // posta usando a TAG (código) de um grupo de Órgão de Topo/Setor de Inteligência do qual é membro
+  postar_como_conta_id?: number     // posta em nome de uma conta institucional — só admin do sistema
 }

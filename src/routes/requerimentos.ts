@@ -122,20 +122,57 @@ requerimentos.post('/', async (c) => {
 
   const tagRequerimento = gerarTagRequerimento(body.tipo)
 
+  // TAG de grupo: só membro ATIVO de um grupo de Órgão de Topo ou
+  // Setor de Inteligência pode postar usando o código do grupo em vez
+  // da própria TAG pessoal (ex: COR em vez de vca).
+  let tagGrupoOverride: string | null = null
+  if (body.postar_com_tag_grupo_id) {
+    const grupo = await c.env.DB.prepare(`SELECT codigo, tipo FROM grupos WHERE id = ? AND ativo = 1`)
+      .bind(body.postar_com_tag_grupo_id).first<{ codigo: string; tipo: string }>()
+    if (!grupo || !['orgao_topo', 'setor_inteligencia'].includes(grupo.tipo)) {
+      return c.json({ erro: 'esse grupo não pode ser usado pra postar com a TAG dele' }, 400)
+    }
+    const membro = await c.env.DB.prepare(
+      `SELECT 1 FROM usuario_grupos WHERE usuario_id = ? AND grupo_id = ? AND ativo = 1`
+    ).bind(autorId, body.postar_com_tag_grupo_id).first()
+    if (!membro) return c.json({ erro: 'você não é membro ativo desse grupo' }, 403)
+    tagGrupoOverride = grupo.codigo
+  }
+
+  // Conta institucional: só admin do sistema, e só de fato numa conta
+  // com tipo = 'conta_oficial'. O autor registrado vira a conta, com
+  // operado_por_id sempre guardando quem apertou o botão de verdade.
+  let autorRegistradoId = autorId
+  let operadoPorId: number | null = null
+  if (body.postar_como_conta_id) {
+    if (!autor.administrador_sistema) {
+      return c.json({ erro: 'só administradores do sistema postam em nome de uma conta institucional' }, 403)
+    }
+    const conta = await c.env.DB.prepare(`SELECT tipo FROM usuarios WHERE id = ?`)
+      .bind(body.postar_como_conta_id).first<{ tipo: string }>()
+    if (!conta || conta.tipo !== 'conta_oficial') {
+      return c.json({ erro: 'essa conta não é institucional' }, 400)
+    }
+    autorRegistradoId = body.postar_como_conta_id
+    operadoPorId = autorId
+  }
+
   const { meta } = await c.env.DB.prepare(
     `INSERT INTO requerimentos
-      (tipo, autor_id, tag_requerimento, dados_especificos, crime_id, fundamentacao, autorizado_por_id, tag_aplicada)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      (tipo, autor_id, tag_requerimento, dados_especificos, crime_id, fundamentacao, autorizado_por_id, tag_aplicada, tag_grupo_override, operado_por_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       body.tipo,
-      autorId,
+      autorRegistradoId,
       tagRequerimento,
       body.dados_especificos ? JSON.stringify(body.dados_especificos) : null,
       body.crime_id ?? null,
       body.fundamentacao ?? null,
       body.autorizado_por_id ?? null,
-      body.tag_aplicada ?? null
+      body.tag_aplicada ?? null,
+      tagGrupoOverride,
+      operadoPorId
     )
     .run()
 
@@ -222,7 +259,7 @@ requerimentos.post('/', async (c) => {
 })
 
 const BASE_QUERY_REQUERIMENTOS = `
-  SELECT r.*, u.nick AS autor_nick, u.tag AS autor_tag, p.nome AS autor_patente_nome, cr.nome AS crime_nome,
+  SELECT r.*, u.nick AS autor_nick, COALESCE(r.tag_grupo_override, u.tag) AS autor_tag, p.nome AS autor_patente_nome, cr.nome AS crime_nome,
     (
       SELECT json_group_array(json_object(
         'id', ra.id,

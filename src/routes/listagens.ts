@@ -31,7 +31,7 @@ async function anexarIdentificacao(db: D1Database, membros: MembroBase[]): Promi
   const ids = membros.map((m) => m.id)
   const placeholders = ids.map(() => '?').join(',')
   const { results } = await db.prepare(
-    `SELECT ra.usuario_id, r.tipo, r.criado_em, au.tag AS autor_tag
+    `SELECT ra.usuario_id, r.tipo, r.criado_em, COALESCE(r.tag_grupo_override, au.tag) AS autor_tag
      FROM requerimento_alvos ra
      JOIN requerimentos r ON r.id = ra.requerimento_id
      LEFT JOIN usuarios au ON au.id = r.autor_id
@@ -68,7 +68,7 @@ async function anexarIdentificacaoExoneracao(db: D1Database, membros: MembroBase
   const ids = membros.map((m) => m.id)
   const placeholders = ids.map(() => '?').join(',')
   const { results } = await db.prepare(
-    `SELECT ra.usuario_id, r.tipo, r.criado_em, r.dados_especificos, au.tag AS autor_tag, cr.nome AS crime_nome
+    `SELECT ra.usuario_id, r.tipo, r.criado_em, r.dados_especificos, COALESCE(r.tag_grupo_override, au.tag) AS autor_tag, cr.nome AS crime_nome
      FROM requerimento_alvos ra
      JOIN requerimentos r ON r.id = ra.requerimento_id
      LEFT JOIN usuarios au ON au.id = r.autor_id

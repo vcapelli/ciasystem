@@ -251,8 +251,16 @@ async function montarFormularioRequerimento(config) {
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label class="block text-xs text-muted mb-1">Sua TAG</label>
-                <input id="req-tag-autor" maxlength="10" placeholder="TAG"
-                  class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                <select id="req-tag-autor-select" class="hidden w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></select>
+                <input id="req-tag-autor" maxlength="10" placeholder="TAG" disabled
+                  class="w-full bg-border/40 border border-border rounded-lg px-3 py-2 text-sm text-muted cursor-not-allowed">
+              </div>
+
+              <div id="req-campo-postar-como" class="hidden">
+                <label class="block text-xs text-muted mb-1">Postar em nome de</label>
+                <select id="req-postar-como" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                  <option value="">Eu mesmo</option>
+                </select>
               </div>
 
               ${config.tipos.length > 1 ? `
@@ -348,11 +356,41 @@ async function montarFormularioRequerimento(config) {
 
   const inputAlvo = document.getElementById('req-alvo');
   const inputTagAutor = document.getElementById('req-tag-autor');
+  const selectTagAutor = document.getElementById('req-tag-autor-select');
+  const campoPostarComo = document.getElementById('req-campo-postar-como');
+  const selectPostarComo = document.getElementById('req-postar-como');
   let meAtual = null;
   const promessaMe = apiFetch('/usuarios/me').then(async (r) => {
-    if (r.ok) {
-      meAtual = await r.json();
-      if (meAtual.tag) inputTagAutor.value = meAtual.tag;
+    if (!r.ok) return;
+    meAtual = await r.json();
+    if (meAtual.tag) inputTagAutor.value = meAtual.tag;
+
+    // Se for membro ativo de algum grupo de Órgão de Topo/Setor de
+    // Inteligência, pode escolher postar com a TAG (código) do grupo
+    // em vez da própria — troca o input fixo por um seletor.
+    const gruposResp = await apiFetch(`/grupos/usuario/${meAtual.id}`);
+    const grupos = gruposResp.ok ? await gruposResp.json() : [];
+    const gruposComTag = grupos.filter((g) => g.tipo === 'orgao_topo' || g.tipo === 'setor_inteligencia');
+    if (gruposComTag.length) {
+      selectTagAutor.innerHTML = `
+        <option value="">Minha TAG${meAtual.tag ? ` (${meAtual.tag})` : ''}</option>
+        ${gruposComTag.map((g) => `<option value="${g.id}">${g.codigo} (${g.nome})</option>`).join('')}
+      `;
+      selectTagAutor.classList.remove('hidden');
+      inputTagAutor.classList.add('hidden');
+    }
+
+    // Admin do sistema pode postar em nome de uma conta institucional.
+    if (meAtual.administrador_sistema) {
+      const contasResp = await apiFetch('/usuarios?tipo=conta_oficial');
+      const contas = contasResp.ok ? await contasResp.json() : [];
+      if (contas.length) {
+        selectPostarComo.innerHTML = `
+          <option value="">Eu mesmo</option>
+          ${contas.map((cta) => `<option value="${cta.id}">${cta.nick}</option>`).join('')}
+        `;
+        campoPostarComo.classList.remove('hidden');
+      }
     }
   });
   const sugestoesEl = document.getElementById('req-alvo-sugestoes');
@@ -683,8 +721,11 @@ async function montarFormularioRequerimento(config) {
     if ((config.tiposComPatente || []).includes(tipo)) {
       dadosEspecificos.patente_destino_id = Number(document.getElementById('req-patente').value);
     }
-    if (inputTagAutor.value.trim()) {
-      dadosEspecificos.tag_utilizada = inputTagAutor.value.trim();
+    const grupoTagEscolhidoId = !selectTagAutor.classList.contains('hidden') && selectTagAutor.value ? Number(selectTagAutor.value) : null;
+    if (grupoTagEscolhidoId) {
+      dadosEspecificos.tag_utilizada = selectTagAutor.selectedOptions[0].textContent.split(' ')[0];
+    } else if (meAtual?.tag) {
+      dadosEspecificos.tag_utilizada = meAtual.tag;
     }
     if ((config.tiposComCrime || []).includes(tipo) && document.getElementById('req-provas').value.trim()) {
       dadosEspecificos.provas = document.getElementById('req-provas').value.trim();
@@ -713,6 +754,8 @@ async function montarFormularioRequerimento(config) {
         ? document.getElementById('req-tag').value.trim() : undefined,
       autorizado_por_id: (config.tiposComPermissao || []).includes(tipo) && permissaoSelecionadaId
         ? permissaoSelecionadaId : undefined,
+      postar_com_tag_grupo_id: grupoTagEscolhidoId || undefined,
+      postar_como_conta_id: selectPostarComo.value ? Number(selectPostarComo.value) : undefined,
     };
 
     const resposta = await apiFetch('/requerimentos', { method: 'POST', body: JSON.stringify(body) });

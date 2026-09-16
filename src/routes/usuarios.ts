@@ -311,18 +311,20 @@ usuarios.patch('/:id', async (c) => {
 usuarios.get('/', async (c) => {
   const busca = c.req.query('busca')
   const apenasAdmin = c.req.query('apenas_admin') === '1'
+  const tipo = c.req.query('tipo')
   const filtroAdmin = apenasAdmin ? `AND u.administrador_sistema = 1` : ''
+  const filtroTipo = tipo ? `AND u.tipo = '${tipo === 'conta_oficial' ? 'conta_oficial' : 'jogador'}'` : ''
 
   const query = busca
     ? c.env.DB.prepare(
         `SELECT u.id, u.nick, u.tag, u.corpo, u.status, u.administrador_sistema, p.nome AS patente_nome
          FROM usuarios u LEFT JOIN patentes p ON p.id = u.patente_atual_id
-         WHERE u.nick LIKE ? ${filtroAdmin} ORDER BY u.nick LIMIT 20`
+         WHERE u.nick LIKE ? ${filtroAdmin} ${filtroTipo} ORDER BY u.nick LIMIT 20`
       ).bind(`%${busca}%`)
     : c.env.DB.prepare(
         `SELECT u.id, u.nick, u.tag, u.corpo, u.status, u.administrador_sistema, p.nome AS patente_nome
          FROM usuarios u LEFT JOIN patentes p ON p.id = u.patente_atual_id
-         WHERE 1=1 ${filtroAdmin} ORDER BY p.ordem DESC LIMIT 100`
+         WHERE 1=1 ${filtroAdmin} ${filtroTipo} ORDER BY p.ordem DESC LIMIT 100`
       )
 
   const { results } = await query.all()
