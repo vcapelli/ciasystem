@@ -122,20 +122,27 @@ requerimentos.post('/', async (c) => {
 
   const tagRequerimento = gerarTagRequerimento(body.tipo)
 
-  // TAG de grupo: só membro ATIVO de um grupo de Órgão de Topo ou
-  // Setor de Inteligência pode postar usando o código do grupo em vez
-  // da própria TAG pessoal (ex: COR em vez de vca).
+  // TAG de grupo: membro ATIVO de um grupo de Órgão de Topo ou Setor
+  // de Inteligência pode postar usando o código do grupo em vez da
+  // própria TAG pessoal (ex: COR em vez de vca). Admin do sistema tem
+  // via livre: qualquer grupo (sem checar tipo/membership), ou até uma
+  // TAG totalmente livre digitada à mão.
   let tagGrupoOverride: string | null = null
-  if (body.postar_com_tag_grupo_id) {
+  if (body.tag_customizada?.trim() && autor.administrador_sistema) {
+    tagGrupoOverride = body.tag_customizada.trim().slice(0, 10)
+  } else if (body.postar_com_tag_grupo_id) {
     const grupo = await c.env.DB.prepare(`SELECT codigo, tipo FROM grupos WHERE id = ? AND ativo = 1`)
       .bind(body.postar_com_tag_grupo_id).first<{ codigo: string; tipo: string }>()
-    if (!grupo || !['orgao_topo', 'setor_inteligencia'].includes(grupo.tipo)) {
-      return c.json({ erro: 'esse grupo não pode ser usado pra postar com a TAG dele' }, 400)
+    if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 400)
+    if (!autor.administrador_sistema) {
+      if (!['orgao_topo', 'setor_inteligencia'].includes(grupo.tipo)) {
+        return c.json({ erro: 'esse grupo não pode ser usado pra postar com a TAG dele' }, 400)
+      }
+      const membro = await c.env.DB.prepare(
+        `SELECT 1 FROM usuario_grupos WHERE usuario_id = ? AND grupo_id = ? AND ativo = 1`
+      ).bind(autorId, body.postar_com_tag_grupo_id).first()
+      if (!membro) return c.json({ erro: 'você não é membro ativo desse grupo' }, 403)
     }
-    const membro = await c.env.DB.prepare(
-      `SELECT 1 FROM usuario_grupos WHERE usuario_id = ? AND grupo_id = ? AND ativo = 1`
-    ).bind(autorId, body.postar_com_tag_grupo_id).first()
-    if (!membro) return c.json({ erro: 'você não é membro ativo desse grupo' }, 403)
     tagGrupoOverride = grupo.codigo
   }
 
@@ -260,6 +267,7 @@ requerimentos.post('/', async (c) => {
 
 const BASE_QUERY_REQUERIMENTOS = `
   SELECT r.*, u.nick AS autor_nick, COALESCE(r.tag_grupo_override, u.tag) AS autor_tag, p.nome AS autor_patente_nome, cr.nome AS crime_nome,
+    u.tipo AS autor_tipo, u.figure_fixa AS autor_figure_fixa,
     (
       SELECT json_group_array(json_object(
         'id', ra.id,
@@ -290,19 +298,29 @@ const BASE_QUERY_REQUERIMENTOS = `
 // paralelo — usado tanto na listagem geral quanto na de um alvo
 // específico, pra sempre devolver exatamente o mesmo formato (o
 // frontend usa um único componente de card pros dois casos).
+//
+// Conta institucional não tem personagem de verdade no Habblet — se
+// tiver um `figure_fixa` definido, ele sempre tem prioridade e nem
+// chega a chamar a API do Habblet (mesma regra de `figuraSegura` em
+// usuarios.ts).
 async function buscarRequerimentosComFigure(db: D1Database, whereEOrdenacao: string, params: unknown[] = []) {
   const { results } = await db.prepare(`${BASE_QUERY_REQUERIMENTOS} ${whereEOrdenacao}`)
-    .bind(...params).all<{ autor_nick: string | null }>()
+    .bind(...params).all<{ autor_nick: string | null; autor_figure_fixa: string | null }>()
 
-  const nicksUnicos = [...new Set(results.map((r) => r.autor_nick).filter(Boolean))] as string[]
+  const nicksParaBuscar = [...new Set(
+    results.filter((r) => r.autor_nick && !r.autor_figure_fixa).map((r) => r.autor_nick)
+  )] as string[]
   const figurasPorNick: Record<string, string | null> = {}
   await Promise.all(
-    nicksUnicos.map(async (nick) => {
+    nicksParaBuscar.map(async (nick) => {
       figurasPorNick[nick] = await buscarJogadorHabblet(nick).then((j) => j?.figure ?? null).catch(() => null)
     })
   )
 
-  return results.map((r) => ({ ...r, autor_figure: r.autor_nick ? figurasPorNick[r.autor_nick] ?? null : null }))
+  return results.map((r) => ({
+    ...r,
+    autor_figure: r.autor_figure_fixa || (r.autor_nick ? figurasPorNick[r.autor_nick] ?? null : null),
+  }))
 }
 
 requerimentos.get('/', async (c) => {

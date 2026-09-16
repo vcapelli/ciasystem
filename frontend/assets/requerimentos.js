@@ -40,6 +40,7 @@ function renderCardRequerimento(r, patentesMapa, meAtual) {
 
   const ehInstrucaoInicial = r.tipo === 'instrucao_inicial';
   const avatarAutor = r.autor_figure ? avatarUrl(r.autor_figure, 'mini', '2') : null;
+  const autorPatenteTexto = r.autor_patente_nome || (r.autor_tipo === 'conta_oficial' ? 'Conta institucional' : '—');
   const prefixoId = PREFIXO_IDENTIFICACAO_REQ[r.tipo] ?? '';
   const tagUsada = dadosEspecificos.tag_utilizada || r.autor_tag || '—';
   const identificacao = r.tipo === 'exoneracao'
@@ -80,11 +81,11 @@ function renderCardRequerimento(r, patentesMapa, meAtual) {
           </span>
           <p class="text-sm font-semibold mt-1.5">${r.autor_nick || '—'}</p>
           <p class="text-[0.65rem] text-muted mt-2">Patente/Cargo:</p>
-          <p class="text-xs font-semibold">${r.autor_patente_nome || '—'}</p>
+          <p class="text-xs font-semibold">${autorPatenteTexto}</p>
         </div>
 
         <div class="flex-1 text-sm space-y-1.5 min-w-0">
-          <p class="text-muted">${r.autor_patente_nome || ''} <b class="text-dark">${r.autor_nick || ''}</b> escreveu:</p>
+          <p class="text-muted">${r.autor_patente_nome || (r.autor_tipo === 'conta_oficial' ? 'Conta institucional' : '')} <b class="text-dark">${r.autor_nick || ''}</b> escreveu:</p>
           ${linhasExtras.map((l) => `<p>${l}</p>`).join('')}
           ${identificacao ? `<p class="font-semibold">• ${identificacao}</p>` : ''}
           <p class="flex items-center gap-1.5 text-green-600 pt-1"><i class="fa-solid fa-circle-check"></i> Li e concordo com as normas de ${tituloTipoReq(r.tipo).toLowerCase()}.</p>
@@ -233,6 +234,9 @@ async function montarFormularioRequerimento(config) {
   let patentesCacheCompleta = [];
 
   raiz.innerHTML = `
+    <div id="req-aviso-postar-como" class="hidden mb-3 flex items-center gap-2 bg-accent/10 border border-accent/30 text-accent text-sm font-semibold rounded-xl px-4 py-2.5">
+      <i class="fa-solid fa-user-shield"></i> <span id="req-aviso-postar-como-texto"></span>
+    </div>
     <div class="bg-card border border-border rounded-2xl shadow-sm overflow-hidden">
       <div class="grid grid-cols-1 md:grid-cols-[300px_1fr]">
         <div id="req-alvo-preview" class="border-b md:border-b-0 md:border-r border-border p-5 flex flex-col items-center text-center justify-center min-h-[220px]">
@@ -252,6 +256,7 @@ async function montarFormularioRequerimento(config) {
               <div>
                 <label class="block text-xs text-muted mb-1">Sua TAG</label>
                 <select id="req-tag-autor-select" class="hidden w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></select>
+                <input id="req-tag-customizada" placeholder="Digite a TAG" maxlength="10" class="hidden w-full mt-2 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
                 <input id="req-tag-autor" maxlength="10" placeholder="TAG" disabled
                   class="w-full bg-border/40 border border-border rounded-lg px-3 py-2 text-sm text-muted cursor-not-allowed">
               </div>
@@ -357,6 +362,7 @@ async function montarFormularioRequerimento(config) {
   const inputAlvo = document.getElementById('req-alvo');
   const inputTagAutor = document.getElementById('req-tag-autor');
   const selectTagAutor = document.getElementById('req-tag-autor-select');
+  const inputTagCustomizada = document.getElementById('req-tag-customizada');
   const campoPostarComo = document.getElementById('req-campo-postar-como');
   const selectPostarComo = document.getElementById('req-postar-como');
   let meAtual = null;
@@ -365,19 +371,27 @@ async function montarFormularioRequerimento(config) {
     meAtual = await r.json();
     if (meAtual.tag) inputTagAutor.value = meAtual.tag;
 
-    // Se for membro ativo de algum grupo de Órgão de Topo/Setor de
-    // Inteligência, pode escolher postar com a TAG (código) do grupo
-    // em vez da própria — troca o input fixo por um seletor.
-    const gruposResp = await apiFetch(`/grupos/usuario/${meAtual.id}`);
+    // Membro ativo de um grupo de Órgão de Topo/Setor de Inteligência
+    // pode postar com a TAG (código) do grupo em vez da própria.
+    // Admin do sistema tem via livre: qualquer grupo, de qualquer
+    // tipo, e ainda pode digitar uma TAG totalmente livre.
+    const gruposResp = await apiFetch(meAtual.administrador_sistema ? '/grupos' : `/grupos/usuario/${meAtual.id}`);
     const grupos = gruposResp.ok ? await gruposResp.json() : [];
-    const gruposComTag = grupos.filter((g) => g.tipo === 'orgao_topo' || g.tipo === 'setor_inteligencia');
-    if (gruposComTag.length) {
+    const gruposComTag = meAtual.administrador_sistema
+      ? grupos
+      : grupos.filter((g) => g.tipo === 'orgao_topo' || g.tipo === 'setor_inteligencia');
+
+    if (gruposComTag.length || meAtual.administrador_sistema) {
       selectTagAutor.innerHTML = `
         <option value="">Minha TAG${meAtual.tag ? ` (${meAtual.tag})` : ''}</option>
         ${gruposComTag.map((g) => `<option value="${g.id}">${g.codigo} (${g.nome})</option>`).join('')}
+        ${meAtual.administrador_sistema ? '<option value="customizada">Outra TAG (digitar)</option>' : ''}
       `;
       selectTagAutor.classList.remove('hidden');
       inputTagAutor.classList.add('hidden');
+      selectTagAutor.addEventListener('change', () => {
+        inputTagCustomizada.classList.toggle('hidden', selectTagAutor.value !== 'customizada');
+      });
     }
 
     // Admin do sistema pode postar em nome de uma conta institucional.
@@ -387,9 +401,10 @@ async function montarFormularioRequerimento(config) {
       if (contas.length) {
         selectPostarComo.innerHTML = `
           <option value="">Eu mesmo</option>
-          ${contas.map((cta) => `<option value="${cta.id}">${cta.nick}</option>`).join('')}
+          ${contas.map((cta) => `<option value="${cta.id}" data-nick="${cta.nick}">${cta.nick}</option>`).join('')}
         `;
         campoPostarComo.classList.remove('hidden');
+        selectPostarComo.addEventListener('change', atualizarAvisoPostarComo);
       }
     }
   });
@@ -408,6 +423,18 @@ async function montarFormularioRequerimento(config) {
   document.getElementById('req-exoneracao-tipo')?.addEventListener('change', (e) => {
     document.getElementById('req-campo-exoneracao-data').classList.toggle('hidden', e.target.value !== 'temporaria');
   });
+
+  function atualizarAvisoPostarComo() {
+    const aviso = document.getElementById('req-aviso-postar-como');
+    const opcaoSelecionada = selectPostarComo.selectedOptions[0];
+    if (selectPostarComo.value && opcaoSelecionada) {
+      document.getElementById('req-aviso-postar-como-texto').textContent =
+        `Este requerimento será postado em nome da conta institucional "${opcaoSelecionada.dataset.nick}".`;
+      aviso.classList.remove('hidden');
+    } else {
+      aviso.classList.add('hidden');
+    }
+  }
 
   function renderPreviewCarregando() {
     previewEl.innerHTML = '<p class="text-sm text-muted">Carregando…</p>';
@@ -721,9 +748,12 @@ async function montarFormularioRequerimento(config) {
     if ((config.tiposComPatente || []).includes(tipo)) {
       dadosEspecificos.patente_destino_id = Number(document.getElementById('req-patente').value);
     }
-    const grupoTagEscolhidoId = !selectTagAutor.classList.contains('hidden') && selectTagAutor.value ? Number(selectTagAutor.value) : null;
+    const grupoTagEscolhidoId = !selectTagAutor.classList.contains('hidden') && selectTagAutor.value && selectTagAutor.value !== 'customizada' ? Number(selectTagAutor.value) : null;
+    const tagCustomizadaEscolhida = !selectTagAutor.classList.contains('hidden') && selectTagAutor.value === 'customizada' ? inputTagCustomizada.value.trim() : null;
     if (grupoTagEscolhidoId) {
       dadosEspecificos.tag_utilizada = selectTagAutor.selectedOptions[0].textContent.split(' ')[0];
+    } else if (tagCustomizadaEscolhida) {
+      dadosEspecificos.tag_utilizada = tagCustomizadaEscolhida;
     } else if (meAtual?.tag) {
       dadosEspecificos.tag_utilizada = meAtual.tag;
     }
@@ -755,6 +785,7 @@ async function montarFormularioRequerimento(config) {
       autorizado_por_id: (config.tiposComPermissao || []).includes(tipo) && permissaoSelecionadaId
         ? permissaoSelecionadaId : undefined,
       postar_com_tag_grupo_id: grupoTagEscolhidoId || undefined,
+      tag_customizada: tagCustomizadaEscolhida || undefined,
       postar_como_conta_id: selectPostarComo.value ? Number(selectPostarComo.value) : undefined,
     };
 
