@@ -26,12 +26,23 @@
             <h1 class="text-lg font-display font-bold flex items-center gap-2">
               <i class="fa-solid fa-book-bookmark text-accent"></i> Decretos
             </h1>
-            <button id="btn-novo-decreto" class="hidden text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">
-              <i class="fa-solid fa-plus"></i> Novo decreto
-            </button>
+            <div class="flex items-center gap-2">
+              <button id="btn-gerenciar-categorias" class="hidden text-xs font-semibold px-3 py-2 rounded-lg bg-basebg border border-border text-muted hover:bg-border/40 transition-colors">
+                <i class="fa-solid fa-tags"></i> Categorias
+              </button>
+              <button id="btn-novo-decreto" class="hidden text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">
+                <i class="fa-solid fa-plus"></i> Novo decreto
+              </button>
+            </div>
           </div>
 
+          <div id="gerenciar-categorias-wrap" class="hidden border-b border-border p-5"></div>
           <div id="form-novo-decreto-wrap" class="hidden border-b border-border p-5"></div>
+
+          <div class="flex items-center gap-2 flex-wrap px-5 pt-4">
+            <span class="text-xs text-muted">Categoria:</span>
+            <div id="filtro-categorias" class="flex items-center gap-2 flex-wrap"></div>
+          </div>
 
           <div id="lista-decretos" class="grid grid-cols-1 lg:grid-cols-2 gap-4 p-5">
             <p class="text-sm text-muted">Carregando…</p>
@@ -56,7 +67,9 @@
 <script>
   let meAtual = null;
   let paginaAtual = 1;
+  let categoriaAtualFiltro = null;
   let gruposOndeSouAdmin = [];
+  let categorias = [];
 
   function formatarDataCurtaDecreto(iso) {
     const d = new Date(iso);
@@ -74,6 +87,7 @@
             <div class="flex items-center gap-2 flex-wrap mb-1">
               <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-basebg border border-border text-muted capitalize">${d.tipo}</span>
               <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-accent/10 text-accent capitalize">${d.status}</span>
+              <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-basebg border border-border text-muted">${d.categoria_nome}</span>
               <span class="text-xs text-muted font-mono">DECRETO-${d.numero}/${d.ano}</span>
             </div>
             <p class="text-sm font-bold leading-snug">${d.titulo}</p>
@@ -93,11 +107,30 @@
     `;
   }
 
+  function renderFiltroCategorias() {
+    const container = document.getElementById('filtro-categorias');
+    container.innerHTML = `
+      <button data-filtro-categoria="" class="text-xs font-semibold px-2.5 py-1 rounded-full transition-colors ${categoriaAtualFiltro === null ? 'bg-accent text-white' : 'bg-basebg border border-border text-muted hover:bg-border/40'}">Todas</button>
+      ${categorias.map((cat) => `
+        <button data-filtro-categoria="${cat.id}" class="text-xs font-semibold px-2.5 py-1 rounded-full transition-colors ${categoriaAtualFiltro === cat.id ? 'bg-accent text-white' : 'bg-basebg border border-border text-muted hover:bg-border/40'}">${cat.nome}</button>
+      `).join('')}
+    `;
+    container.querySelectorAll('[data-filtro-categoria]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        categoriaAtualFiltro = btn.dataset.filtroCategoria ? Number(btn.dataset.filtroCategoria) : null;
+        paginaAtual = 1;
+        renderFiltroCategorias();
+        carregarDecretos();
+      });
+    });
+  }
+
   async function carregarDecretos() {
     const lista = document.getElementById('lista-decretos');
     lista.innerHTML = '<p class="text-sm text-muted">Carregando…</p>';
 
-    const resp = await apiFetch(`/decretos?pagina=${paginaAtual}`);
+    const filtro = categoriaAtualFiltro ? `&categoria_id=${categoriaAtualFiltro}` : '';
+    const resp = await apiFetch(`/decretos?pagina=${paginaAtual}${filtro}`);
     const { decretos, total, por_pagina } = resp.ok ? await resp.json() : { decretos: [], total: 0, por_pagina: 10 };
     const totalPaginas = Math.max(1, Math.ceil(total / por_pagina));
 
@@ -122,11 +155,19 @@
 
     wrap.innerHTML = `
       <form id="form-decreto" class="space-y-3">
-        <div>
-          <label class="block text-xs text-muted mb-1">Publicar em nome de</label>
-          <select id="dec-grupo" required class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
-            ${gruposOndeSouAdmin.map((g) => `<option value="${g.id}">${g.nome}</option>`).join('')}
-          </select>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-muted mb-1">Publicar em nome de</label>
+            <select id="dec-grupo" required class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+              ${gruposOndeSouAdmin.map((g) => `<option value="${g.id}">${g.nome}</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-muted mb-1">Categoria</label>
+            <select id="dec-categoria" required class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+              ${categorias.map((cat) => `<option value="${cat.id}">${cat.nome}</option>`).join('')}
+            </select>
+          </div>
         </div>
         <input id="dec-titulo" placeholder="Título do decreto" required class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
         <input id="dec-resumo" placeholder="Resumo (uma linha)" required class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
@@ -147,6 +188,7 @@
         method: 'POST',
         body: JSON.stringify({
           grupo_id: Number(document.getElementById('dec-grupo').value),
+          categoria_id: Number(document.getElementById('dec-categoria').value),
           titulo: document.getElementById('dec-titulo').value.trim(),
           resumo: document.getElementById('dec-resumo').value.trim(),
           conteudo: document.getElementById('dec-conteudo-textarea').value,
@@ -166,16 +208,97 @@
 
   document.getElementById('btn-novo-decreto').addEventListener('click', abrirFormNovoDecreto);
 
+  async function abrirGerenciarCategorias() {
+    const wrap = document.getElementById('gerenciar-categorias-wrap');
+    const abrindo = wrap.classList.contains('hidden');
+    wrap.classList.add('hidden');
+    if (!abrindo) return;
+    wrap.classList.remove('hidden');
+    await renderGerenciarCategorias();
+  }
+
+  async function renderGerenciarCategorias() {
+    const wrap = document.getElementById('gerenciar-categorias-wrap');
+    wrap.innerHTML = `
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Categorias</h2>
+      <div class="space-y-1.5 mb-3">
+        ${categorias.map((cat) => `
+          <div class="flex items-center gap-2 bg-basebg border border-border rounded-lg p-2">
+            <input data-cat-nome="${cat.id}" value="${cat.nome}" class="flex-1 bg-card border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">
+            <button data-salvar-cat="${cat.id}" class="text-xs font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-2.5 py-1.5">Salvar</button>
+            ${cat.id !== 1 ? `<button data-excluir-cat="${cat.id}" class="text-muted hover:text-red-600 px-1"><i class="fa-solid fa-trash"></i></button>` : ''}
+          </div>
+        `).join('')}
+      </div>
+      <form id="form-nova-categoria" class="flex gap-2">
+        <input id="nova-cat-nome" placeholder="Nome da categoria" required class="flex-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+        <button type="submit" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Adicionar</button>
+      </form>
+      <p id="cat-erro" class="hidden text-xs text-red-500 mt-2"></p>
+    `;
+
+    wrap.querySelectorAll('[data-salvar-cat]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.salvarCat;
+        await apiFetch(`/decretos/categorias/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ nome: wrap.querySelector(`[data-cat-nome="${id}"]`).value.trim() }),
+        });
+        await recarregarCategorias();
+        await renderGerenciarCategorias();
+      });
+    });
+    wrap.querySelectorAll('[data-excluir-cat]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Excluir essa categoria?')) return;
+        const resp = await apiFetch(`/decretos/categorias/${btn.dataset.excluirCat}`, { method: 'DELETE' });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          document.getElementById('cat-erro').textContent = d.erro || 'Não foi possível excluir.';
+          document.getElementById('cat-erro').classList.remove('hidden');
+          return;
+        }
+        await recarregarCategorias();
+        await renderGerenciarCategorias();
+      });
+    });
+    document.getElementById('form-nova-categoria').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await apiFetch('/decretos/categorias', {
+        method: 'POST',
+        body: JSON.stringify({ nome: document.getElementById('nova-cat-nome').value.trim() }),
+      });
+      await recarregarCategorias();
+      await renderGerenciarCategorias();
+    });
+  }
+
+  async function recarregarCategorias() {
+    const resp = await apiFetch('/decretos/categorias');
+    categorias = resp.ok ? await resp.json() : [];
+    renderFiltroCategorias();
+  }
+
+  document.getElementById('btn-gerenciar-categorias').addEventListener('click', abrirGerenciarCategorias);
+
   montarLayout('/diario-oficial.html').then(async (me) => {
     if (!me) return;
     meAtual = me;
 
-    const resp = await apiFetch('/grupos/onde-sou-admin');
-    gruposOndeSouAdmin = resp.ok ? await resp.json() : [];
+    const [gruposResp, categoriasResp] = await Promise.all([
+      apiFetch('/grupos/onde-sou-admin'), apiFetch('/decretos/categorias'),
+    ]);
+    gruposOndeSouAdmin = gruposResp.ok ? await gruposResp.json() : [];
+    categorias = categoriasResp.ok ? await categoriasResp.json() : [];
+
     if (gruposOndeSouAdmin.length) {
       document.getElementById('btn-novo-decreto').classList.remove('hidden');
     }
+    if (me.administrador_sistema) {
+      document.getElementById('btn-gerenciar-categorias').classList.remove('hidden');
+    }
 
+    renderFiltroCategorias();
     carregarDecretos();
   });
 </script>
