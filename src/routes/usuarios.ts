@@ -476,6 +476,7 @@ usuarios.delete('/:id', async (c) => {
     db.prepare(`DELETE FROM notificacoes WHERE usuario_id = ?`).bind(id),
     db.prepare(`DELETE FROM refresh_tokens WHERE usuario_id = ?`).bind(id),
     db.prepare(`DELETE FROM logs_eventos WHERE usuario_id = ?`).bind(id),
+    db.prepare(`DELETE FROM ip_listagem_permissoes WHERE usuario_id = ? OR definido_por_id = ?`).bind(id, id),
 
     // --- Por fim, a própria conta ---
     db.prepare(`DELETE FROM usuarios WHERE id = ?`).bind(id),

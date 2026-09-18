@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIASystem — IPs dos usuários</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="/assets/tailwind-config.js"></script>
+<link href="https://kit-pro.fontawesome.com/releases/v7.3.1/css/pro.min.css" rel="stylesheet">
+<link rel="stylesheet" href="/assets/theme.css">
+</head>
+<body class="bg-basebg text-dark font-sans min-h-screen">
+
+  <div class="fixed inset-0 -z-10 habbo-floor-bg"></div>
+
+  <aside id="layout-sidebar" class="w-60 fixed left-0 top-[72px] bottom-0 border-r border-border bg-basebg p-4 overflow-y-auto"></aside>
+
+  <main class="ml-60 min-h-screen flex flex-col">
+    <div class="flex-1 min-w-0 px-6 py-8">
+      <div class="max-w-4xl mx-auto">
+        <h1 class="text-lg font-display font-bold flex items-center gap-2 mb-1">
+          <i class="fa-solid fa-network-wired text-accent"></i> IPs dos usuários
+        </h1>
+        <p class="text-sm text-muted mb-5">Último IP visto por conta, a partir dos logs de ação.</p>
+
+        <div id="area-alertas"></div>
+
+        <input id="busca-ip-usuario" placeholder="Buscar por nick ou IP…" class="w-full bg-card border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent mb-4">
+
+        <div id="lista-ips" class="bg-card border border-border rounded-2xl divide-y divide-border overflow-hidden shadow-sm">
+          <p class="text-sm text-muted p-4">Carregando…</p>
+        </div>
+      </div>
+    </div>
+    <div id="layout-footer"></div>
+  </main>
+
+<script src="/assets/api.js"></script>
+<script src="/assets/footer.js"></script>
+<script src="/assets/layout.js"></script>
+<script>
+  let todosUsuarios = [];
+  let ipsSuspeitos = new Set();
+
+  function formatarDataIp(iso) {
+    if (!iso) return 'nunca';
+    return new Date(iso).toLocaleString('pt-BR');
+  }
+
+  function renderLinha(u) {
+    const suspeito = u.ultimo_ip && ipsSuspeitos.has(u.ultimo_ip);
+    return `
+      <div class="flex items-center justify-between px-4 py-3 ${suspeito ? 'bg-red-500/5' : ''}">
+        <div>
+          <p class="text-sm font-semibold">${u.nick}${u.tag ? ` <span class="text-muted font-normal">[${u.tag}]</span>` : ''}</p>
+          <p class="text-xs text-muted">${u.patente_nome || '—'} · último acesso ${formatarDataIp(u.ultimo_acesso_em)}</p>
+        </div>
+        <div class="text-right">
+          <p class="text-sm font-mono ${suspeito ? 'text-red-600 font-bold' : ''}">${u.ultimo_ip || '—'}</p>
+          <p class="text-xs text-muted">${u.total_ips_distintos || 0} IP${u.total_ips_distintos === 1 ? '' : 's'} distinto${u.total_ips_distintos === 1 ? '' : 's'}</p>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderAlertas(alertas) {
+    const area = document.getElementById('area-alertas');
+    if (!alertas.length) { area.innerHTML = ''; return; }
+    area.innerHTML = `
+      <div class="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 mb-5">
+        <p class="text-sm font-bold text-red-600 mb-2"><i class="fa-solid fa-triangle-exclamation"></i> IPs repetidos entre contas diferentes</p>
+        <div class="space-y-1.5">
+          ${alertas.map((a) => `
+            <p class="text-xs text-red-700">
+              <span class="font-mono font-semibold">${a.ip}</span> —
+              ${a.contas.map((c) => c.nick).join(', ')}
+            </p>
+          `).join('')}
+        </div>
+        <p class="text-xs text-red-600/80 mt-2">Pode ser rede/wifi compartilhada por coincidência — não é prova automática de multi-conta.</p>
+      </div>
+    `;
+  }
+
+  function filtrarERenderizar() {
+    const termo = document.getElementById('busca-ip-usuario').value.trim().toLowerCase();
+    const lista = document.getElementById('lista-ips');
+    const filtrados = termo
+      ? todosUsuarios.filter((u) => u.nick.toLowerCase().includes(termo) || (u.ultimo_ip || '').includes(termo))
+      : todosUsuarios;
+
+    lista.innerHTML = filtrados.length
+      ? filtrados.map(renderLinha).join('')
+      : '<p class="text-sm text-muted p-4">Nenhum usuário encontrado.</p>';
+  }
+
+  document.getElementById('busca-ip-usuario').addEventListener('input', filtrarERenderizar);
+
+  montarLayout('/ips-usuarios.html').then(async (me) => {
+    if (!me) return;
+
+    const resp = await apiFetch('/ip-listagem');
+    if (!resp.ok) {
+      const d = await resp.json().catch(() => ({}));
+      document.getElementById('lista-ips').innerHTML = `<p class="text-sm text-red-500 p-4">${d.erro || 'Sem permissão pra ver essa listagem.'}</p>`;
+      return;
+    }
+
+    const { usuarios, alertas } = await resp.json();
+    todosUsuarios = usuarios;
+    ipsSuspeitos = new Set(alertas.map((a) => a.ip));
+    renderAlertas(alertas);
+    filtrarERenderizar();
+  });
+</script>
+</body>
+</html>

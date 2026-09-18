@@ -383,9 +383,12 @@
     const raiz = document.getElementById('conteudo-aba');
     raiz.innerHTML = '<p class="text-sm text-muted">Carregando…</p>';
 
-    const [permResp, gruposResp] = await Promise.all([apiFetch('/permissoes-requerimentos'), apiFetch('/grupos')]);
+    const [permResp, gruposResp, permIpResp] = await Promise.all([
+      apiFetch('/permissoes-requerimentos'), apiFetch('/grupos'), apiFetch('/ip-listagem/permissoes'),
+    ]);
     const permissoesLista = permResp.ok ? await permResp.json() : [];
     const grupos = gruposResp.ok ? await gruposResp.json() : [];
+    const permissoesIp = permIpResp.ok ? await permIpResp.json() : [];
 
     raiz.innerHTML = `
       <div class="bg-card border border-border rounded-2xl shadow-sm divide-y divide-border overflow-hidden mb-5">
@@ -437,6 +440,24 @@
           <button type="submit" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Conceder</button>
           <p id="perm-erro" class="hidden text-xs text-red-500"></p>
         </form>
+      </div>
+
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mt-5">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-1">Quem pode ver a listagem de IPs</h2>
+        <p class="text-xs text-muted mb-3">Além de administradores do sistema, que sempre podem. Página em <a href="/ips-usuarios.html" class="text-accent hover:underline">/ips-usuarios.html</a>.</p>
+        <div class="space-y-1.5 mb-3">
+          ${permissoesIp.length ? permissoesIp.map((p) => `
+            <div class="flex items-center justify-between bg-basebg border border-border rounded-lg px-3 py-2">
+              <p class="text-sm">${p.usuario_nick} <span class="text-xs text-muted">· concedido por ${p.definido_por_nick || '—'}</span></p>
+              <button data-remover-permissao-ip="${p.id}" class="text-muted hover:text-red-600 px-1"><i class="fa-solid fa-trash"></i></button>
+            </div>
+          `).join('') : '<p class="text-sm text-muted">Ninguém além dos admins ainda.</p>'}
+        </div>
+        <div class="relative">
+          <input id="perm-ip-usuario-nick" placeholder="Buscar por nick pra dar acesso…" autocomplete="off" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <div id="perm-ip-usuario-sugestoes" class="hidden absolute z-10 mt-1 w-full bg-card border border-border rounded-lg shadow-md max-h-48 overflow-y-auto"></div>
+        </div>
+        <p id="perm-ip-erro" class="hidden text-xs text-red-500 mt-2"></p>
       </div>
     `;
 
@@ -512,6 +533,50 @@
         erroEl.classList.remove('hidden');
         return;
       }
+      carregarPermissoes();
+    });
+
+    raiz.querySelectorAll('[data-remover-permissao-ip]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Remover esse acesso à listagem de IPs?')) return;
+        await apiFetch(`/ip-listagem/permissoes/${btn.dataset.removerPermissaoIp}`, { method: 'DELETE' });
+        carregarPermissoes();
+      });
+    });
+
+    let debounceIp;
+    const inputNickIp = document.getElementById('perm-ip-usuario-nick');
+    const sugestoesIp = document.getElementById('perm-ip-usuario-sugestoes');
+    inputNickIp.addEventListener('input', () => {
+      clearTimeout(debounceIp);
+      const termo = inputNickIp.value.trim();
+      if (termo.length < 2) { sugestoesIp.classList.add('hidden'); return; }
+      debounceIp = setTimeout(async () => {
+        const r = await apiFetch(`/usuarios?busca=${encodeURIComponent(termo)}`);
+        const lista = r.ok ? await r.json() : [];
+        sugestoesIp.innerHTML = lista.length
+          ? lista.map((u) => `<button type="button" data-id="${u.id}" class="w-full text-left px-3 py-2 text-sm hover:bg-basebg transition-colors">${u.nick}</button>`).join('')
+          : '<p class="px-3 py-2 text-sm text-muted">Nenhum usuário encontrado.</p>';
+        sugestoesIp.classList.remove('hidden');
+      }, 250);
+    });
+    sugestoesIp.addEventListener('click', async (e) => {
+      const btn = e.target.closest('button[data-id]');
+      if (!btn) return;
+      sugestoesIp.classList.add('hidden');
+      inputNickIp.value = '';
+      const erroEl = document.getElementById('perm-ip-erro');
+      const resp = await apiFetch('/ip-listagem/permissoes', {
+        method: 'POST',
+        body: JSON.stringify({ usuario_id: Number(btn.dataset.id) }),
+      });
+      if (!resp.ok) {
+        const d = await resp.json().catch(() => ({}));
+        erroEl.textContent = d.erro || 'Não foi possível conceder.';
+        erroEl.classList.remove('hidden');
+        return;
+      }
+      erroEl.classList.add('hidden');
       carregarPermissoes();
     });
   }

@@ -3,17 +3,18 @@ import { cors } from 'hono/cors'
 import { reverterEfeitoAlvo } from './services/efeitos'
 import auth from './routes/auth'
 import { requireAuth } from './services/auth'
+import { registrarEvento } from './services/logs'
 import configuracoesPublico from './routes/configuracoes-publico'
 import configuracoesAdmin from './routes/configuracoes-admin'
 import requerimentos from './routes/requerimentos'
 import forum from './routes/forum'
 import menu from './routes/menu'
 import paginas from './routes/paginas'
-import { criarRotaDistincao } from './routes/distincoes'
 import conquistas from './routes/conquistas'
 import emblemas from './routes/emblemas'
 import honrarias from './routes/honrarias'
 import decretos from './routes/decretos'
+import ipListagem from './routes/ip-listagem'
 import medalhas from './routes/medalhas'
 import cursos from './routes/cursos'
 import grupos from './routes/grupos'
@@ -90,16 +91,41 @@ app.route('/configuracoes', configuracoesPublico)
 const protegido = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 protegido.use('*', requireAuth)
 
+// Log automático: toda ação (POST/PATCH/DELETE/PUT) autenticada gera
+// um registro em logs_eventos, com IP e user-agent — sem precisar
+// instrumentar rota por rota. GET fica de fora de propósito (só
+// leitura, e algumas páginas fazem polling — logar isso afogaria a
+// tabela sem agregar nada). Roda em waitUntil pra não atrasar a
+// resposta, e nunca deixa uma falha de log derrubar a request real.
+protegido.use('*', async (c, next) => {
+  await next()
+  const metodo = c.req.method
+  if (metodo === 'GET' || metodo === 'HEAD' || metodo === 'OPTIONS') return
+
+  const usuarioId = c.get('usuarioId') ?? null
+  const ip = c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || null
+  const userAgent = c.req.header('User-Agent') || null
+  const caminho = new URL(c.req.url).pathname
+  const status = c.res.status
+
+  c.executionCtx.waitUntil(
+    registrarEvento(c.env.DB, usuarioId, `${metodo} ${caminho}`, {
+      ip: ip ?? undefined,
+      userAgent: userAgent ?? undefined,
+      detalhes: { status },
+    }).catch(() => {})
+  )
+})
+
 protegido.route('/requerimentos', requerimentos)
 protegido.route('/forum', forum)
 protegido.route('/menu', menu)
 protegido.route('/paginas', paginas)
-protegido.route('/emblemas', criarRotaDistincao('emblemas'))
-protegido.route('/honrarias', criarRotaDistincao('honrarias'))
 protegido.route('/conquistas', conquistas)
 protegido.route('/emblemas', emblemas)
 protegido.route('/honrarias', honrarias)
 protegido.route('/decretos', decretos)
+protegido.route('/ip-listagem', ipListagem)
 protegido.route('/medalhas', medalhas)
 protegido.route('/cursos', cursos)
 protegido.route('/grupos', grupos)
