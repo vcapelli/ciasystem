@@ -77,8 +77,10 @@ async function buscarApendiceIdentificacao(usuarioId) {
  * ficarem idênticos nos dois lugares.
  * `patentesMapa` = { id: nome } de todas as patentes.
  * `meAtual` = usuário logado (pra saber se mostra o apêndice de admin).
+ * `mostrarApendices` = false no perfil, de propósito (ver comentário
+ * de `apendicePreviaLicenca` abaixo) — nos outros lugares fica true.
  */
-function renderCardRequerimento(r, patentesMapa, meAtual, apendiceExtra = '') {
+function renderCardRequerimento(r, patentesMapa, meAtual, apendiceExtra = '', mostrarApendices = true) {
   const cor = COR_STATUS_REQ[r.status] || COR_STATUS_REQ.pendente;
   const alvos = r.alvos_json ? JSON.parse(r.alvos_json) : [];
   const alvoPrincipal = alvos[0];
@@ -91,9 +93,24 @@ function renderCardRequerimento(r, patentesMapa, meAtual, apendiceExtra = '') {
   const autorPatenteTexto = r.autor_patente_nome || (r.autor_tipo === 'conta_oficial' ? 'Conta institucional' : '—');
   const prefixoId = PREFIXO_IDENTIFICACAO_REQ[r.tipo] ?? '';
   const tagUsada = dadosEspecificos.tag_utilizada || r.autor_tag || '—';
+  // Enquanto o requerimento de licença ainda está pendente, o
+  // apêndice "{Licença: ... até ...}" vindo do backend
+  // (buscarApendiceLicenca) ainda não existe — só passa a existir
+  // depois de aprovado, porque só aí `usuarios.status` vira 'licenca'.
+  // Pra já mostrar uma prévia de como vai ficar, monta esse mesmo
+  // trecho aqui na hora, usando os dados do próprio requerimento
+  // (data de criação + data de retorno preenchida no formulário). Uma
+  // vez aprovado, para de se auto-calcular e passa a confiar só no
+  // apendiceExtra (vindo do backend) — evita mostrar duplicado.
+  // Só entra em `mostrarApendices`, igual ao apêndice de advertências
+  // — no perfil nenhum dos dois aparece, de propósito.
+  const apendicePreviaLicenca = (mostrarApendices && r.tipo === 'licenca' && r.status === 'pendente' && dadosEspecificos.data_retorno)
+    ? ` - {Licença: ${formatarDataCurtaReq(r.criado_em)} até ${formatarDataCurtaReq(dadosEspecificos.data_retorno)}}`
+    : '';
+
   const identificacao = r.tipo === 'exoneracao'
     ? (alvoPrincipal ? `${alvoPrincipal.nick} [${alvoPrincipal.tag || '---'}] [${tagUsada}] {${r.crime_nome || r.fundamentacao || ''}} - ${formatarDataCurtaReq(r.criado_em)} até ${dadosEspecificos.exoneracao_ate ? formatarDataCurtaReq(dadosEspecificos.exoneracao_ate) : 'Indeterminado'}` : null)
-    : (alvoPrincipal ? `${alvoPrincipal.nick} [${prefixoId}${tagUsada}] ${formatarDataCurtaReq(r.criado_em)}${apendiceExtra}` : null);
+    : (alvoPrincipal ? `${alvoPrincipal.nick} [${prefixoId}${tagUsada}] ${formatarDataCurtaReq(r.criado_em)}${apendiceExtra}${apendicePreviaLicenca}` : null);
 
   const linhasExtras = [];
   linhasExtras.push(`<b>${ehInstrucaoInicial ? 'Nick e TAG do Instrutor' : 'Requerido por'}:</b> ${r.autor_nick || '—'}${r.autor_tag ? ` [${r.autor_tag}]` : ''}`);
@@ -108,8 +125,8 @@ function renderCardRequerimento(r, patentesMapa, meAtual, apendiceExtra = '') {
   if (r.tag_aplicada) linhasExtras.push(`<b>Nova TAG:</b> ${r.tag_aplicada}`);
   if (r.crime_nome) linhasExtras.push(`<b>Infração:</b> ${r.crime_nome}`);
   if (dadosEspecificos.provas) linhasExtras.push(`<b>Provas:</b> ${dadosEspecificos.provas}`);
-  if (dadosEspecificos.data_retorno) linhasExtras.push(`<b>Data de retorno:</b> ${dadosEspecificos.data_retorno}`);
-  if (dadosEspecificos.exoneracao_ate) linhasExtras.push(`<b>Exoneração até:</b> ${dadosEspecificos.exoneracao_ate}`);
+  if (dadosEspecificos.data_retorno) linhasExtras.push(`<b>Data de retorno:</b> ${formatarDataCurtaReq(dadosEspecificos.data_retorno)}`);
+  if (dadosEspecificos.exoneracao_ate) linhasExtras.push(`<b>Exoneração até:</b> ${formatarDataCurtaReq(dadosEspecificos.exoneracao_ate)}`);
   if (r.fundamentacao) linhasExtras.push(`<b>Motivo:</b> ${r.fundamentacao}`);
 
   return `
