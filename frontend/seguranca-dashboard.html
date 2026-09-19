@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIASystem — Dashboard de Segurança</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="/assets/tailwind-config.js"></script>
+<link href="https://kit-pro.fontawesome.com/releases/v7.3.1/css/pro.min.css" rel="stylesheet">
+<link rel="stylesheet" href="/assets/theme.css">
+</head>
+<body class="bg-basebg text-dark font-sans min-h-screen">
+
+  <div class="fixed inset-0 -z-10 habbo-floor-bg"></div>
+
+  <aside id="layout-sidebar" class="w-60 fixed left-0 top-[72px] bottom-0 border-r border-border bg-basebg p-4 overflow-y-auto"></aside>
+
+  <main class="ml-60 min-h-screen flex flex-col">
+    <div class="flex-1 min-w-0 px-6 py-8">
+      <div class="max-w-5xl mx-auto">
+
+        <div class="flex items-start justify-between mb-1">
+          <h1 class="text-lg font-display font-bold flex items-center gap-2">
+            <i class="fa-solid fa-shield-halved text-accent"></i> Dashboard de Segurança
+          </h1>
+          <a href="/ips-usuarios.html" class="text-xs text-accent hover:underline whitespace-nowrap mt-1">
+            Ver listagem de IPs por usuário <i class="fa-solid fa-arrow-right"></i>
+          </a>
+        </div>
+        <p class="text-sm text-muted mb-5">Resumo dos logs de ação — de onde vem o volume, quem mais agiu e onde olhar primeiro.</p>
+
+        <!-- Seletor de janela — preenchido via JS em renderSeletorJanela() -->
+        <div class="flex items-center gap-2 mb-5" id="seletor-janela"></div>
+
+        <div id="area-dashboard">
+          <p class="text-sm text-muted">Carregando…</p>
+        </div>
+
+      </div>
+    </div>
+    <div id="layout-footer"></div>
+  </main>
+
+<script src="/assets/api.js"></script>
+<script src="/assets/footer.js"></script>
+<script src="/assets/layout.js"></script>
+<script>
+  const JANELAS = [7, 14, 30, 90];
+  let janelaAtual = 14;
+
+  function renderSeletorJanela() {
+    const host = document.getElementById('seletor-janela');
+    host.innerHTML = `
+      <span class="text-xs text-muted mr-1">Período:</span>
+      ${JANELAS.map((d) => `
+        <button data-dias="${d}" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+          d === janelaAtual ? 'bg-accent text-white' : 'bg-card border border-border text-muted hover:text-dark'
+        }">${d} dias</button>
+      `).join('')}
+    `;
+    host.querySelectorAll('button[data-dias]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        janelaAtual = Number(btn.dataset.dias);
+        carregarDashboard();
+      });
+    });
+  }
+
+  function cardTotal(icone, rotulo, valor, destaque = false) {
+    return `
+      <div class="bg-card border ${destaque ? 'border-red-500/40' : 'border-border'} rounded-2xl p-4 flex items-center gap-3">
+        <div class="h-10 w-10 rounded-xl ${destaque ? 'bg-red-500/10 text-red-600' : 'bg-accent/10 text-accent'} flex items-center justify-center shrink-0">
+          <i class="${icone}"></i>
+        </div>
+        <div>
+          <p class="text-xl font-bold leading-tight">${valor}</p>
+          <p class="text-xs text-muted">${rotulo}</p>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderGraficoDias(eventosPorDia) {
+    const max = Math.max(1, ...eventosPorDia.map((d) => d.total));
+    const mostrarRotulo = (i) => i === 0 || i === eventosPorDia.length - 1 || i % Math.ceil(eventosPorDia.length / 6) === 0;
+
+    return `
+      <div class="bg-card border border-border rounded-2xl p-5">
+        <p class="text-sm font-semibold mb-4">Eventos por dia</p>
+        <div class="flex items-end gap-1 h-32">
+          ${eventosPorDia.map((d) => `
+            <div class="flex-1 flex flex-col items-center justify-end h-full group relative" title="${formatarDiaCurto(d.dia)}: ${d.total} evento${d.total === 1 ? '' : 's'}">
+              <div class="w-full rounded-t bg-accent/70 group-hover:bg-accent transition-colors" style="height: ${(d.total / max) * 100}%; min-height: ${d.total > 0 ? '3px' : '0'}"></div>
+            </div>
+          `).join('')}
+        </div>
+        <div class="flex gap-1 mt-1.5">
+          ${eventosPorDia.map((d, i) => `<div class="flex-1 text-center text-[0.6rem] text-muted">${mostrarRotulo(i) ? formatarDiaCurto(d.dia) : ''}</div>`).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  function formatarDiaCurto(iso) {
+    const [, mes, dia] = iso.split('-');
+    return `${dia}/${mes}`;
+  }
+
+  function renderBarraLista(titulo, itens, rotulo, valor, iconeVazio = 'fa-solid fa-inbox') {
+    const max = Math.max(1, ...itens.map((i) => valor(i)));
+    return `
+      <div class="bg-card border border-border rounded-2xl p-5">
+        <p class="text-sm font-semibold mb-3">${titulo}</p>
+        ${itens.length ? `
+          <div class="space-y-2">
+            ${itens.map((item) => `
+              <div class="relative rounded-lg overflow-hidden bg-basebg">
+                <div class="absolute inset-y-0 left-0 bg-accent/15" style="width: ${(valor(item) / max) * 100}%"></div>
+                <div class="relative flex items-center justify-between px-3 py-2 text-sm">
+                  <span class="truncate pr-3">${rotulo(item)}</span>
+                  <span class="font-mono font-semibold shrink-0">${valor(item)}</span>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        ` : `<p class="text-sm text-muted flex items-center gap-2"><i class="${iconeVazio}"></i> Nada no período.</p>`}
+      </div>
+    `;
+  }
+
+  function corStatus(status) {
+    if (status >= 500) return 'bg-red-600/10 text-red-700 border-red-600/30';
+    if (status === 403 || status === 401) return 'bg-amber-500/10 text-amber-700 border-amber-500/30';
+    return 'bg-orange-500/10 text-orange-700 border-orange-500/30';
+  }
+
+  function renderErros(erros) {
+    return `
+      <div class="bg-card border border-border rounded-2xl p-5">
+        <p class="text-sm font-semibold mb-3">Erros por status (4xx/5xx)</p>
+        ${erros.length ? `
+          <div class="flex flex-wrap gap-2">
+            ${erros.map((e) => `
+              <span class="px-3 py-1.5 rounded-lg border text-xs font-semibold ${corStatus(e.status)}">
+                ${e.status} <span class="font-normal opacity-80">· ${e.total}</span>
+              </span>
+            `).join('')}
+          </div>
+        ` : `<p class="text-sm text-muted flex items-center gap-2"><i class="fa-solid fa-circle-check"></i> Nenhum erro registrado no período.</p>`}
+      </div>
+    `;
+  }
+
+  async function carregarDashboard() {
+    renderSeletorJanela();
+    const area = document.getElementById('area-dashboard');
+
+    const resp = await apiFetch(`/ip-listagem/dashboard?dias=${janelaAtual}`);
+    if (!resp.ok) {
+      const d = await resp.json().catch(() => ({}));
+      area.innerHTML = `<p class="text-sm text-red-500">${d.erro || 'Sem permissão pra ver esse dashboard.'}</p>`;
+      return;
+    }
+
+    const dados = await resp.json();
+    const { totais, eventos_por_dia, eventos_por_tipo, usuarios_mais_ativos, erros_por_status } = dados;
+
+    area.innerHTML = `
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+        ${cardTotal('fa-solid fa-bolt', `Eventos (${janelaAtual}d)`, totais.eventos)}
+        ${cardTotal('fa-solid fa-network-wired', 'IPs distintos', totais.ips_distintos)}
+        ${cardTotal('fa-solid fa-users', 'Usuários ativos', totais.usuarios_ativos)}
+        ${cardTotal('fa-solid fa-triangle-exclamation', 'Alertas de IP agora', totais.alertas_ip_ativos, totais.alertas_ip_ativos > 0)}
+      </div>
+
+      <div class="mb-5">
+        ${renderGraficoDias(eventos_por_dia)}
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-5 mb-5">
+        ${renderBarraLista('Tipos de ação mais comuns', eventos_por_tipo, (i) => `<span class="font-mono text-xs">${i.tipo_evento}</span>`, (i) => i.total)}
+        ${renderBarraLista('Usuários mais ativos', usuarios_mais_ativos, (i) => `${i.nick}${i.tag ? ` <span class="text-muted">[${i.tag}]</span>` : ''}`, (i) => i.total, 'fa-solid fa-user-slash')}
+      </div>
+
+      ${renderErros(erros_por_status)}
+
+      ${totais.alertas_ip_ativos > 0 ? `
+        <div class="mt-5 bg-red-500/10 border border-red-500/30 rounded-2xl p-4 text-sm text-red-700 flex items-center justify-between">
+          <span><i class="fa-solid fa-triangle-exclamation"></i> Há ${totais.alertas_ip_ativos} IP${totais.alertas_ip_ativos === 1 ? '' : 's'} em uso por mais de uma conta agora.</span>
+          <a href="/ips-usuarios.html" class="font-semibold hover:underline whitespace-nowrap ml-3">Ver detalhes →</a>
+        </div>
+      ` : ''}
+    `;
+  }
+
+  montarLayout('/seguranca-dashboard.html').then((me) => {
+    if (!me) return;
+    carregarDashboard();
+  });
+</script>
+</body>
+</html>

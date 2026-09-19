@@ -59,6 +59,104 @@ ipListagem.delete('/permissoes/:id', async (c) => {
   return c.json({ ok: true })
 })
 
+// --- Dashboard de segurança ---
+
+// GET /ip-listagem/dashboard?dias=14 — visão agregada dos logs de
+// eventos, com a mesma permissão da listagem de IP (admin do sistema
+// ou quem estiver em ip_listagem_permissoes). Não substitui a
+// listagem linha-a-linha nem a consulta em /logs — é o resumo pra
+// decidir o que vale a pena abrir primeiro: volume de ação por dia,
+// os tipos de ação mais comuns, quem mais agiu no período, erros
+// (4xx/5xx) e quantos IPs colidem AGORA entre contas diferentes.
+ipListagem.get('/dashboard', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  if (!(await podeVerListagemIp(c.env.DB, usuarioId))) {
+    return c.json({ erro: 'sem permissão pra ver essa listagem' }, 403)
+  }
+
+  // Clampado entre 1 e 90 dias — sem limite, uma janela absurda (ou
+  // negativa) faria um full scan de logs_eventos sem necessidade.
+  const dias = Math.min(Math.max(Number(c.req.query('dias')) || 14, 1), 90)
+  const desde = new Date(Date.now() - dias * 86400000).toISOString().slice(0, 19) + 'Z'
+
+  const [totais, porDia, porTipo, maisAtivos, porStatus, alertas] = await Promise.all([
+    c.env.DB.prepare(
+      `SELECT COUNT(*) AS total_eventos,
+              COUNT(DISTINCT ip) AS total_ips_distintos,
+              COUNT(DISTINCT usuario_id) AS total_usuarios_ativos
+         FROM logs_eventos WHERE criado_em >= ?`
+    ).bind(desde).first<{ total_eventos: number; total_ips_distintos: number; total_usuarios_ativos: number }>(),
+
+    c.env.DB.prepare(
+      `SELECT substr(criado_em, 1, 10) AS dia, COUNT(*) AS total
+         FROM logs_eventos WHERE criado_em >= ?
+         GROUP BY dia ORDER BY dia`
+    ).bind(desde).all<{ dia: string; total: number }>(),
+
+    c.env.DB.prepare(
+      `SELECT tipo_evento, COUNT(*) AS total
+         FROM logs_eventos WHERE criado_em >= ?
+         GROUP BY tipo_evento ORDER BY total DESC LIMIT 10`
+    ).bind(desde).all<{ tipo_evento: string; total: number }>(),
+
+    c.env.DB.prepare(
+      `SELECT le.usuario_id, u.nick, u.tag, COUNT(*) AS total
+         FROM logs_eventos le JOIN usuarios u ON u.id = le.usuario_id
+         WHERE le.criado_em >= ? AND le.usuario_id IS NOT NULL
+         GROUP BY le.usuario_id ORDER BY total DESC LIMIT 10`
+    ).bind(desde).all<{ usuario_id: number; nick: string; tag: string | null; total: number }>(),
+
+    c.env.DB.prepare(
+      `SELECT CAST(json_extract(detalhes, '$.status') AS INTEGER) AS status, COUNT(*) AS total
+         FROM logs_eventos
+         WHERE criado_em >= ? AND CAST(json_extract(detalhes, '$.status') AS INTEGER) >= 400
+         GROUP BY status ORDER BY total DESC`
+    ).bind(desde).all<{ status: number; total: number }>(),
+
+    // Mesma lógica de colisão da listagem principal (último IP visto
+    // por conta), mas só a contagem — não precisa da lista de contas
+    // aqui, só o número pro card de totais.
+    c.env.DB.prepare(
+      `SELECT COUNT(*) AS total_alertas FROM (
+         SELECT ultimo_ip FROM (
+           SELECT (
+             SELECT le.ip FROM logs_eventos le
+             WHERE le.usuario_id = u.id AND le.ip IS NOT NULL
+             ORDER BY le.criado_em DESC LIMIT 1
+           ) AS ultimo_ip
+           FROM usuarios u WHERE u.tipo = 'jogador'
+         )
+         WHERE ultimo_ip IS NOT NULL
+         GROUP BY ultimo_ip HAVING COUNT(*) > 1
+       )`
+    ).first<{ total_alertas: number }>(),
+  ])
+
+  // Preenche os dias sem nenhum evento com 0 — sem isso o gráfico
+  // "pula" dias silenciosamente em vez de mostrar o vazio de verdade,
+  // e o eixo do gráfico fica com espaçamento irregular.
+  const porDiaMapa = new Map((porDia.results ?? []).map((r) => [r.dia, r.total]))
+  const eventosPorDia: { dia: string; total: number }[] = []
+  for (let i = dias - 1; i >= 0; i--) {
+    const dia = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10)
+    eventosPorDia.push({ dia, total: porDiaMapa.get(dia) ?? 0 })
+  }
+
+  return c.json({
+    janela_dias: dias,
+    totais: {
+      eventos: totais?.total_eventos ?? 0,
+      ips_distintos: totais?.total_ips_distintos ?? 0,
+      usuarios_ativos: totais?.total_usuarios_ativos ?? 0,
+      alertas_ip_ativos: alertas?.total_alertas ?? 0,
+    },
+    eventos_por_dia: eventosPorDia,
+    eventos_por_tipo: porTipo.results ?? [],
+    usuarios_mais_ativos: maisAtivos.results ?? [],
+    erros_por_status: porStatus.results ?? [],
+  })
+})
+
 // --- Listagem em si ---
 
 // GET /ip-listagem — todo usuário com o último IP visto (via

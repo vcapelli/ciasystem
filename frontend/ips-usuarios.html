@@ -20,9 +20,14 @@
   <main class="ml-60 min-h-screen flex flex-col">
     <div class="flex-1 min-w-0 px-6 py-8">
       <div class="max-w-4xl mx-auto">
-        <h1 class="text-lg font-display font-bold flex items-center gap-2 mb-1">
-          <i class="fa-solid fa-network-wired text-accent"></i> IPs dos usuários
-        </h1>
+        <div class="flex items-start justify-between mb-1">
+          <h1 class="text-lg font-display font-bold flex items-center gap-2">
+            <i class="fa-solid fa-network-wired text-accent"></i> IPs dos usuários
+          </h1>
+          <a href="/seguranca-dashboard.html" class="text-xs text-accent hover:underline whitespace-nowrap mt-1">
+            Ver dashboard de segurança <i class="fa-solid fa-arrow-right"></i>
+          </a>
+        </div>
         <p class="text-sm text-muted mb-5">Último IP visto por conta, a partir dos logs de ação.</p>
 
         <div id="area-alertas"></div>
