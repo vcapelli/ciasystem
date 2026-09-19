@@ -48,6 +48,76 @@ function iniciais(nick) {
   return (nick || '?').slice(0, 2).toUpperCase();
 }
 
+// ---------- Contenção de <iframe> em HTML de conteúdo ----------
+//
+// Documentos, notícias, e-mails, diário oficial etc. são escritos em
+// HTML puro (editor-html.js) e depois jogados direto num innerHTML pra
+// qualquer um ler. Isso abre brecha pra alguém colar algo como:
+//   <iframe src="..." style="position:fixed;z-index:99999999;
+//     width:100%;height:100%"></iframe>
+// e sequestrar a tela inteira (fake login, clickjacking, etc).
+//
+// Uma regra de CSS não resolve: `!important` no `style` inline do
+// próprio elemento tem prioridade sobre `!important` vindo de uma
+// folha de estilo externa (mesmo nível de importância, e o inline
+// sempre vence a comparação de especificidade/origem que vem depois).
+// Então em vez de tentar competir em CSS, a gente reescreve a MESMA
+// declaração inline via JS (`style.setProperty(prop, valor,
+// 'important')`) — não é mais uma disputa de cascata, é a gente
+// sobrescrevendo por último o que já está ali.
+//
+// Roda uma vez ao carregar a página e depois fica de olho via
+// MutationObserver (novos elementos inseridos + qualquer tentativa de
+// reescrever o `style` de um iframe já existente), então cobre
+// qualquer lugar que hoje ou no futuro jogue HTML de usuário num
+// innerHTML, sem precisar mexer em cada página uma por uma.
+const IFRAME_ESTILO_TRAVADO = {
+  position: 'static',
+  top: 'auto',
+  right: 'auto',
+  bottom: 'auto',
+  left: 'auto',
+  inset: 'auto',
+  'z-index': '0',
+  width: '100%',
+  'max-width': '100%',
+  height: '400px',
+  'max-height': '70vh',
+  transform: 'none',
+};
+
+function conterIframe(iframe) {
+  if (!(iframe instanceof HTMLIFrameElement)) return;
+  for (const [propriedade, valor] of Object.entries(IFRAME_ESTILO_TRAVADO)) {
+    iframe.style.setProperty(propriedade, valor, 'important');
+  }
+}
+
+function ativarProtecaoIframes() {
+  document.querySelectorAll('iframe').forEach(conterIframe);
+
+  const observer = new MutationObserver((mutacoes) => {
+    for (const mutacao of mutacoes) {
+      if (mutacao.type === 'attributes') {
+        conterIframe(mutacao.target);
+        continue;
+      }
+      mutacao.addedNodes.forEach((node) => {
+        if (!(node instanceof Element)) return;
+        if (node.tagName === 'IFRAME') conterIframe(node);
+        node.querySelectorAll?.('iframe').forEach(conterIframe);
+      });
+    }
+  });
+
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['style'],
+  });
+}
+
 function renderNavbar(me, logoUrl) {
   return `
     <nav class="sticky top-0 z-20 bg-dark text-white h-[72px] px-6 pr-28 flex items-center justify-between relative shadow-md">
@@ -208,6 +278,8 @@ function renderSidebar(itensExtras, paginaAtiva, souAdmin) {
  * destacado (inclusive dentro de submenus).
  */
 async function montarLayout(paginaAtiva) {
+  ativarProtecaoIframes();
+
   if (!Auth.estaLogado()) {
     window.location.href = '/login.html';
     return null;
