@@ -38,6 +38,13 @@
           <div id="home-ultimas-noticias" class="bg-card border border-border rounded-2xl shadow-sm divide-y divide-border overflow-hidden">
             <p class="text-sm text-muted p-4">Carregando…</p>
           </div>
+
+          <h2 class="text-sm font-bold uppercase tracking-wide text-muted mb-3 mt-5 flex items-center gap-2">
+            <i class="fa-solid fa-book-bookmark text-accent"></i> Diário Oficial
+          </h2>
+          <div id="home-diario-oficial" class="bg-card border border-border rounded-2xl shadow-sm divide-y divide-border overflow-hidden">
+            <p class="text-sm text-muted p-4">Carregando…</p>
+          </div>
         </div>
       </div>
     </div>
@@ -78,17 +85,17 @@
   function renderCardNovoMembro(u) {
     return `
       <a href="/perfil/${u.nick}" class="card-membro-fundo shrink-0 block hover:opacity-90 transition-opacity" title="${u.nick}">
-        ${u.figure ? `<img src="${avatarUrl(u.figure, 'card', '3')}" class="absolute inset-x-0 bottom-0 mx-auto h-[92%] w-auto object-contain pointer-events-none select-none" alt="">` : ''}
-        <span class="absolute bottom-2 inset-x-0 text-center text-white text-xs font-bold px-2 truncate" style="text-shadow: 0 1px 3px rgba(0,0,0,.8)">
+        <span class="absolute top-0 inset-x-0 text-center text-white text-xs font-bold px-2 py-1.5 truncate bg-gradient-to-b from-black/60 to-transparent">
           ${u.nick}${u.tag ? ` [${u.tag}]` : ''}
         </span>
+        ${u.figure ? `<img src="${avatarUrl(u.figure, 'card', '3')}" class="absolute inset-x-0 bottom-0 mx-auto h-[92%] w-auto object-contain pointer-events-none select-none" alt="">` : ''}
       </a>
     `;
   }
 
   async function carregarNovosMembros() {
     const raiz = document.getElementById('home-novos-membros');
-    const resp = await apiFetch('/usuarios/recentes?limite=3');
+    const resp = await apiFetch('/usuarios/recentes?limite=4');
     const membros = resp.ok ? await resp.json() : [];
     raiz.innerHTML = membros.length
       ? membros.map(renderCardNovoMembro).join('')
@@ -116,6 +123,30 @@
     raiz.innerHTML = noticias.length
       ? noticias.map(renderLinhaNoticiaHome).join('')
       : '<p class="text-sm text-muted p-4">Nenhuma notícia publicada ainda.</p>';
+  }
+
+  function renderLinhaDecretoHome(d) {
+    return `
+      <a href="/diario-oficial/${d.id}" class="flex items-center gap-3 px-4 py-3 hover:bg-basebg transition-colors">
+        <span class="h-10 w-10 rounded-lg bg-basebg border border-border flex items-center justify-center overflow-hidden shrink-0 p-1">
+          ${d.grupo_imagem_url ? `<img src="${d.grupo_imagem_url}" class="max-w-full max-h-full object-contain" alt="">` : '<i class="fa-solid fa-book-bookmark text-muted text-xs"></i>'}
+        </span>
+        <div class="min-w-0">
+          <p class="text-sm font-semibold truncate">${d.titulo}</p>
+          <p class="text-xs text-muted mt-0.5 font-mono">DECRETO-${d.numero}/${d.ano} · ${formatarDataCurtaHome(d.criado_em)}</p>
+        </div>
+      </a>
+    `;
+  }
+
+  async function carregarUltimosDecretos() {
+    const raiz = document.getElementById('home-diario-oficial');
+    const resp = await apiFetch('/decretos?pagina=1');
+    const dados = resp.ok ? await resp.json() : { decretos: [] };
+    const decretos = (dados.decretos || []).slice(0, 3);
+    raiz.innerHTML = decretos.length
+      ? decretos.map(renderLinhaDecretoHome).join('')
+      : '<p class="text-sm text-muted p-4">Nenhuma publicação no diário oficial ainda.</p>';
   }
 
   montarLayout('/index.html').then((me) => {
@@ -171,6 +202,7 @@
 
     carregarNovosMembros();
     carregarUltimasNoticias();
+    carregarUltimosDecretos();
   });
 </script>
 </body>
