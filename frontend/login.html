@@ -90,6 +90,20 @@
       }
       iconeLink.href = config.logo_url;
     }
+
+    // Fundo customizável via admin (aba Configurações). Sem valor
+    // configurado, mantém o fundo padrão definido em .cia-bg (theme.css).
+    if (config.login_fundo_url) {
+      document.body.style.backgroundImage = `url('${config.login_fundo_url}')`;
+      if (config.login_fundo_modo === 'repetir') {
+        document.body.style.backgroundRepeat = 'repeat';
+        document.body.style.backgroundSize = 'auto';
+      } else {
+        document.body.style.backgroundRepeat = 'no-repeat';
+        document.body.style.backgroundSize = 'cover';
+      }
+      document.body.style.backgroundPosition = 'center';
+    }
   });
 
   const tabSenha = document.getElementById('tab-senha');

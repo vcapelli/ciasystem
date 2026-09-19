@@ -599,6 +599,29 @@
         <button id="btn-salvar-logo" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Salvar</button>
         <p id="config-msg" class="hidden text-xs mt-2"></p>
       </div>
+
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5 max-w-lg mt-5">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-1">Fundo da tela de login</h2>
+        <p class="text-xs text-muted mb-3">Imagem de fundo mostrada atrás do card de login. Deixe em branco pra usar o fundo padrão.</p>
+        <div class="flex items-center gap-3 mb-3">
+          <span class="h-12 w-20 rounded-lg bg-basebg border border-border overflow-hidden flex items-center justify-center shrink-0">
+            ${config.login_fundo_url ? `<img src="${config.login_fundo_url}" class="w-full h-full object-cover" alt="Fundo atual">` : '<i class="fa-solid fa-image text-muted"></i>'}
+          </span>
+          <input id="config-login-fundo-url" value="${config.login_fundo_url || ''}" placeholder="https://…" class="flex-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+        </div>
+        <div class="flex flex-col gap-2 mb-3 text-sm">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="radio" name="config-login-fundo-modo" value="fixa" class="accent-current" ${config.login_fundo_modo !== 'repetir' ? 'checked' : ''}>
+            Imagem fixa (cobre a tela inteira, sem repetir)
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="radio" name="config-login-fundo-modo" value="repetir" class="accent-current" ${config.login_fundo_modo === 'repetir' ? 'checked' : ''}>
+            Repetir em mosaico (background-repeat, no tamanho original da imagem)
+          </label>
+        </div>
+        <button id="btn-salvar-login-fundo" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Salvar</button>
+        <p id="config-login-fundo-msg" class="hidden text-xs mt-2"></p>
+      </div>
     `;
 
     document.getElementById('btn-salvar-logo').addEventListener('click', async () => {
@@ -606,6 +629,22 @@
       const resp = await apiFetch('/configuracoes', {
         method: 'PATCH',
         body: JSON.stringify({ logo_url: document.getElementById('config-logo-url').value.trim() }),
+      });
+      msg.classList.remove('hidden');
+      msg.textContent = resp.ok ? 'Salvo!' : 'Não foi possível salvar.';
+      msg.className = `text-xs mt-2 ${resp.ok ? 'text-green-600' : 'text-red-500'}`;
+      if (resp.ok) carregarConfiguracoes();
+    });
+
+    document.getElementById('btn-salvar-login-fundo').addEventListener('click', async () => {
+      const msg = document.getElementById('config-login-fundo-msg');
+      const modo = document.querySelector('input[name="config-login-fundo-modo"]:checked').value;
+      const resp = await apiFetch('/configuracoes', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          login_fundo_url: document.getElementById('config-login-fundo-url').value.trim(),
+          login_fundo_modo: modo,
+        }),
       });
       msg.classList.remove('hidden');
       msg.textContent = resp.ok ? 'Salvo!' : 'Não foi possível salvar.';
