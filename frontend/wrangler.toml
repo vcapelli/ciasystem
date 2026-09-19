@@ -7,7 +7,20 @@ compatibility_date = "2026-01-01"
 # `not_found_handling = "404-page"` serve automaticamente o
 # `404.html` (na raiz desta pasta) pra qualquer caminho sem asset
 # correspondente — sem isso o runtime devolve um 404 em branco.
+#
+# `run_worker_first = true` é OBRIGATÓRIO aqui: por padrão (false), o
+# Cloudflare casa a URL com um asset ANTES de invocar o worker.js — e
+# se não achar nenhum asset com esse nome exato, ele já resolve com
+# `not_found_handling` (servindo o 404.html) sem nunca chegar a rodar
+# o worker.js. Isso quebra justamente as rotas dinâmicas do REESCRITAS
+# abaixo (/perfil/<nick>, /grupos/<id>, /documentos/<slug>,
+# /diario-oficial/<id>), que não existem como asset literal — só
+# existem depois da reescrita feita no código. Com
+# `run_worker_first = true`, toda requisição passa pelo worker.js
+# primeiro, que decide a reescrita e só depois cai no fallback de 404
+# manual (linhas finais do worker.js).
 [assets]
 directory = "./"
 binding = "ASSETS"
 not_found_handling = "404-page"
+run_worker_first = true
