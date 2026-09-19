@@ -18,8 +18,28 @@
   <aside id="layout-sidebar" class="w-60 fixed left-0 top-[72px] bottom-0 border-r border-border bg-basebg p-4 overflow-y-auto"></aside>
 
   <main class="ml-60 min-h-screen flex flex-col">
-  <div class="max-w-3xl mx-auto flex-1 w-full px-4 pt-10">
+  <div class="max-w-5xl mx-auto flex-1 w-full px-4 pt-10">
       <div id="boas-vindas"></div>
+
+      <div class="grid md:grid-cols-2 gap-5 mt-5">
+        <div>
+          <h2 class="text-sm font-bold uppercase tracking-wide text-muted mb-3 flex items-center gap-2">
+            <i class="fa-solid fa-user-plus text-accent"></i> Novos membros
+          </h2>
+          <div id="home-novos-membros" class="flex items-start gap-3 flex-wrap">
+            <p class="text-sm text-muted">Carregando…</p>
+          </div>
+        </div>
+
+        <div>
+          <h2 class="text-sm font-bold uppercase tracking-wide text-muted mb-3 flex items-center gap-2">
+            <i class="fa-solid fa-bullhorn text-accent"></i> Últimas notícias
+          </h2>
+          <div id="home-ultimas-noticias" class="bg-card border border-border rounded-2xl shadow-sm divide-y divide-border overflow-hidden">
+            <p class="text-sm text-muted p-4">Carregando…</p>
+          </div>
+        </div>
+      </div>
     </div>
     <div id="layout-footer"></div>
   </main>
@@ -46,6 +66,56 @@
     const diaEl = document.getElementById('relogio-data');
     if (horaEl) horaEl.textContent = `${hora}:${min}`;
     if (diaEl) diaEl.textContent = `· ${DIAS[agora.getDay()]}, ${agora.getDate()} de ${MESES[agora.getMonth()]}`;
+  }
+
+  function formatarDataCurtaHome(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    const MESES_CURTO = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    return `${String(d.getDate()).padStart(2,'0')} ${MESES_CURTO[d.getMonth()]} ${d.getFullYear()}`;
+  }
+
+  function renderCardNovoMembro(u) {
+    return `
+      <a href="/perfil/${u.nick}" class="card-membro-fundo shrink-0 block hover:opacity-90 transition-opacity" title="${u.nick}">
+        ${u.figure ? `<img src="${avatarUrl(u.figure, 'card', '3')}" class="absolute inset-x-0 bottom-0 mx-auto h-[92%] w-auto object-contain pointer-events-none select-none" alt="">` : ''}
+        <span class="absolute bottom-2 inset-x-0 text-center text-white text-xs font-bold px-2 truncate" style="text-shadow: 0 1px 3px rgba(0,0,0,.8)">
+          ${u.nick}${u.tag ? ` [${u.tag}]` : ''}
+        </span>
+      </a>
+    `;
+  }
+
+  async function carregarNovosMembros() {
+    const raiz = document.getElementById('home-novos-membros');
+    const resp = await apiFetch('/usuarios/recentes?limite=3');
+    const membros = resp.ok ? await resp.json() : [];
+    raiz.innerHTML = membros.length
+      ? membros.map(renderCardNovoMembro).join('')
+      : '<p class="text-sm text-muted">Nenhum membro cadastrado ainda.</p>';
+  }
+
+  function renderLinhaNoticiaHome(n) {
+    return `
+      <a href="/noticias.html" class="flex items-center gap-3 px-4 py-3 hover:bg-basebg transition-colors">
+        ${n.imagem_capa_url
+          ? `<img src="${n.imagem_capa_url}" class="h-12 w-12 rounded-lg object-cover shrink-0" alt="">`
+          : `<span class="h-12 w-12 rounded-lg bg-basebg border border-border flex items-center justify-center text-accent shrink-0"><i class="fa-solid fa-bullhorn"></i></span>`}
+        <div class="min-w-0">
+          <p class="text-sm font-semibold truncate">${n.titulo}</p>
+          <p class="text-xs text-muted mt-0.5">${n.autor_nick} · ${formatarDataCurtaHome(n.publicado_em || n.criado_em)}</p>
+        </div>
+      </a>
+    `;
+  }
+
+  async function carregarUltimasNoticias() {
+    const raiz = document.getElementById('home-ultimas-noticias');
+    const resp = await apiFetch('/noticias?status=publicada');
+    const noticias = resp.ok ? (await resp.json()).slice(0, 3) : [];
+    raiz.innerHTML = noticias.length
+      ? noticias.map(renderLinhaNoticiaHome).join('')
+      : '<p class="text-sm text-muted p-4">Nenhuma notícia publicada ainda.</p>';
   }
 
   montarLayout('/index.html').then((me) => {
@@ -98,6 +168,9 @@
 
     atualizarRelogio();
     setInterval(atualizarRelogio, 1000 * 30);
+
+    carregarNovosMembros();
+    carregarUltimasNoticias();
   });
 </script>
 </body>

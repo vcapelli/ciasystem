@@ -194,6 +194,29 @@ usuarios.patch('/:id/admin', async (c) => {
   return c.json({ ok: true })
 })
 
+// GET /usuarios/recentes?limite=3 — os últimos usuários cadastrados
+// (por `criado_em`), com figure incluída — usado no card "Novos
+// membros" da página inicial. Precisa vir ANTES de `/:id` abaixo,
+// senão o Hono casa "recentes" como se fosse um :id. Só busca poucos
+// de propósito (a home só pede 3): cada figure custa uma chamada à
+// API do Habblet, então não dá pra fazer isso pra uma listagem grande.
+usuarios.get('/recentes', async (c) => {
+  const limite = Math.min(Math.max(Number(c.req.query('limite')) || 3, 1), 10)
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT u.id, u.nick, u.tag, u.figure_fixa, u.criado_em, p.nome AS patente_nome
+     FROM usuarios u LEFT JOIN patentes p ON p.id = u.patente_atual_id
+     WHERE u.status NOT IN ('desligado_honroso', 'desligado_desonroso', 'exonerado')
+     ORDER BY u.criado_em DESC LIMIT ?`
+  ).bind(limite).all<{ id: number; nick: string; tag: string | null; figure_fixa: string | null; criado_em: string; patente_nome: string | null }>()
+
+  const comFigure = await Promise.all(
+    results.map(async (u) => ({ ...u, figure: await figuraSegura(u.nick, u.figure_fixa) }))
+  )
+
+  return c.json(comFigure)
+})
+
 // GET /usuarios/:id — registro completo (todos os campos editáveis),
 // pro painel de admin. Só admin.
 usuarios.get('/:id', async (c) => {

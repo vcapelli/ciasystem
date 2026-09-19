@@ -128,6 +128,8 @@ async function buscarConfiguracoes() {
  * navegador, ela não libera CORS pra qualquer domínio).
  *
  * modo 'pose' — corpo inteiro sentado, pro card de boas-vindas
+ * modo 'card' — corpo inteiro em pé, numa pose de destaque; usado no
+ *   card de "novos membros" da home, sobre a moldura `.card-membro-fundo`.
  * modo 'mini' — corpo inteiro parado; usar dentro de um container
  *   pequeno com overflow-hidden + object-cover/object-top pra cortar
  *   só a cabeça via CSS (o parâmetro headonly não funciona direito
@@ -142,6 +144,14 @@ function avatarUrl(figure, modo = 'mini', direcao = '4') {
     params.set('head_direction', '3');
     params.set('gesture', 'sml');
     params.set('headonly', '0');
+  } else if (modo === 'card') {
+    params.set('action', 'std,crr=');
+    params.set('gesture', 'sml');
+    params.set('direction', direcao);
+    params.set('head_direction', direcao);
+    params.set('headonly', 'false');
+    params.set('size', 'l');
+    params.set('frame_num', '30');
   } else if (modo === 'grande') {
     // Corpo inteiro, de frente, tamanho grande — pra conferir farda/visual.
     params.set('size', 'l');

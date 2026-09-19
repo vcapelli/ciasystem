@@ -87,3 +87,16 @@
   background-repeat: repeat;
   background-position: center;
 }
+
+/* Moldura de "card de membro" — plaquinha ilustrada com o avatar em
+   pose de corpo inteiro por cima. Usada no card de "Novos membros" da
+   página inicial. */
+.card-membro-fundo {
+  position: relative;
+  overflow: hidden;
+  height: 283px;
+  width: 180px;
+  background-image: url(https://imgur.com/mBFCSBg.png);
+  background-repeat: no-repeat;
+  background-size: cover;
+}
