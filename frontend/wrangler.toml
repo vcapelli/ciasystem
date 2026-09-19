@@ -4,6 +4,10 @@ compatibility_date = "2026-01-01"
 
 # `binding = "ASSETS"` é o que o worker.js usa (env.ASSETS.fetch) pra
 # buscar o conteúdo dos arquivos estáticos desta mesma pasta.
+# `not_found_handling = "404-page"` serve automaticamente o
+# `404.html` (na raiz desta pasta) pra qualquer caminho sem asset
+# correspondente — sem isso o runtime devolve um 404 em branco.
 [assets]
 directory = "./"
 binding = "ASSETS"
+not_found_handling = "404-page"

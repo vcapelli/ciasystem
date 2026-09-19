@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIASystem — Página não encontrada</title>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="/assets/tailwind-config.js"></script>
+<link href="https://kit-pro.fontawesome.com/releases/v7.3.1/css/pro.min.css" rel="stylesheet">
+<link rel="stylesheet" href="/assets/theme.css">
+</head>
+<body class="font-sans cia-bg min-h-screen flex items-center justify-center px-4 py-10 relative">
+
+  <div class="w-full max-w-md relative z-10">
+    <div class="bg-card rounded-2xl overflow-hidden shadow-2xl text-center">
+
+      <div class="bg-dark text-white px-8 py-10">
+        <div class="h-16 w-16 rounded-xl bg-white/10 flex items-center justify-center text-white/70 text-2xl mx-auto mb-4">
+          <i class="fa-solid fa-map-signs"></i>
+        </div>
+        <p class="font-display font-black text-4xl tracking-wide">404</p>
+        <h1 class="text-lg font-display font-bold uppercase tracking-wide mt-1">Página não encontrada</h1>
+      </div>
+
+      <div class="px-8 py-8">
+        <p class="text-sm text-muted mb-6">O endereço <span id="caminho-atual" class="font-mono text-dark"></span> não existe ou foi movido.</p>
+        <div class="space-y-2">
+          <a id="btn-principal" href="/index.html" class="block w-full bg-accent hover:bg-accent-dark text-white font-bold uppercase text-sm rounded px-6 py-3 transition-colors">
+            Voltar pro início
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script src="/assets/api.js"></script>
+<script>
+  document.getElementById('caminho-atual').textContent = window.location.pathname;
+  document.getElementById('btn-principal').href = Auth.estaLogado() ? '/index.html' : '/login.html';
+</script>
+</body>
+</html>

@@ -1827,7 +1827,7 @@
   montarLayout('/admin.html').then((me) => {
     if (!me) return;
     if (!me.administrador_sistema) {
-      document.getElementById('conteudo').innerHTML = '<p class="text-sm text-red-500">Essa página é restrita a administradores do sistema.</p>';
+      window.location.href = '/erro/403.html?motivo=' + encodeURIComponent('Essa página é restrita a administradores do sistema.');
       return;
     }
     montarAdmin();

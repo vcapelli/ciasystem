@@ -220,7 +220,16 @@ async function montarLayout(paginaAtiva) {
   ]);
 
   if (!meResp.ok) {
-    Auth.logout();
+    // 401 aqui é mesmo problema de sessão (apiFetch já tentou renovar
+    // e falhou) — desloga de verdade. Qualquer outro status (500, 502,
+    // 503, etc.) é a API fora do ar, não a sessão inválida: manter o
+    // login e mandar pra tela de erro em vez de forçar um logout que
+    // faria a pessoa digitar a senha de novo à toa.
+    if (meResp.status === 401) {
+      Auth.logout();
+    } else {
+      window.location.href = '/erro/500.html';
+    }
     return null;
   }
 

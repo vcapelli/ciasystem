@@ -40,6 +40,17 @@ export default {
       }
     }
 
-    return env.ASSETS.fetch(request);
+    const resposta = await env.ASSETS.fetch(request);
+
+    // `not_found_handling = "404-page"` no wrangler.toml já cobre a
+    // maioria dos casos, mas como toda requisição passa por este
+    // Worker (não só as batidas de asset "puras"), garantimos aqui
+    // também: qualquer 404 devolve o /404.html de verdade em vez de
+    // deixar escapar um 404 em branco do runtime.
+    if (resposta.status === 404) {
+      return env.ASSETS.fetch(new Request(new URL('/404.html', url), request));
+    }
+
+    return resposta;
   },
 };

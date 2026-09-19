@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIASystem — Acesso negado</title>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="/assets/tailwind-config.js"></script>
+<link href="https://kit-pro.fontawesome.com/releases/v7.3.1/css/pro.min.css" rel="stylesheet">
+<link rel="stylesheet" href="/assets/theme.css">
+</head>
+<body class="font-sans cia-bg min-h-screen flex items-center justify-center px-4 py-10 relative">
+
+  <div class="w-full max-w-md relative z-10">
+    <div class="bg-card rounded-2xl overflow-hidden shadow-2xl text-center">
+
+      <div class="bg-dark text-white px-8 py-10">
+        <div class="h-16 w-16 rounded-xl bg-red-500/20 flex items-center justify-center text-red-400 text-2xl mx-auto mb-4">
+          <i class="fa-solid fa-lock"></i>
+        </div>
+        <p class="font-display font-black text-4xl tracking-wide">403</p>
+        <h1 class="text-lg font-display font-bold uppercase tracking-wide mt-1">Acesso negado</h1>
+      </div>
+
+      <div class="px-8 py-8">
+        <p id="descricao" class="text-sm text-muted mb-6">Sua conta não tem permissão pra acessar essa página. Se você acha que deveria ter, fale com quem administra o sistema.</p>
+        <div class="space-y-2">
+          <a id="btn-principal" href="/index.html" class="block w-full bg-accent hover:bg-accent-dark text-white font-bold uppercase text-sm rounded px-6 py-3 transition-colors">
+            Voltar pro início
+          </a>
+          <button id="btn-trocar-conta" class="hidden block w-full border border-border text-dark font-bold uppercase text-sm rounded px-6 py-3 hover:bg-basebg transition-colors">
+            Entrar com outra conta
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script src="/assets/api.js"></script>
+<script>
+  // Página pode ser aberta por alguém sem sessão nenhuma (link direto)
+  // ou por alguém logado mas sem a permissão exigida — o botão
+  // secundário só faz sentido no segundo caso.
+  if (Auth.estaLogado()) {
+    const btnTrocar = document.getElementById('btn-trocar-conta');
+    btnTrocar.classList.remove('hidden');
+    btnTrocar.addEventListener('click', () => Auth.logout());
+  } else {
+    document.getElementById('btn-principal').href = '/login.html';
+  }
+
+  // ?motivo= opcional na URL — quem redireciona pra cá pode passar um
+  // motivo específico em vez do texto genérico (ex: link de admin.html
+  // com ?motivo=Essa%20área%20é%20restrita%20a%20administradores).
+  const motivo = new URLSearchParams(window.location.search).get('motivo');
+  if (motivo) document.getElementById('descricao').textContent = motivo;
+</script>
+</body>
+</html>
