@@ -43,6 +43,34 @@ async function buscarApendiceAdvertencias(usuarioId) {
   }
 }
 
+// Mesma ideia acima, mas pra licença de serviço em vigor, ex:
+// " - {Licença: 16 Set 2026 até 16 Out 2026}". Some sozinho quando a
+// pessoa volta de licença.
+function formatarApendiceLicenca(licenca) {
+  if (!licenca?.fim) return '';
+  return ` - {Licença: ${formatarDataCurtaReq(licenca.inicio)} até ${formatarDataCurtaReq(licenca.fim)}}`;
+}
+
+async function buscarApendiceLicenca(usuarioId) {
+  if (!usuarioId) return '';
+  try {
+    const r = await apiFetch(`/requerimentos/licenca-ativa/${usuarioId}`);
+    return formatarApendiceLicenca(r.ok ? await r.json() : null);
+  } catch {
+    return '';
+  }
+}
+
+// Busca os dois apêndices (advertências + licença) de uma vez e já
+// devolve concatenados, prontos pra colar na identificação.
+async function buscarApendiceIdentificacao(usuarioId) {
+  const [adv, lic] = await Promise.all([
+    buscarApendiceAdvertencias(usuarioId),
+    buscarApendiceLicenca(usuarioId),
+  ]);
+  return adv + lic;
+}
+
 /**
  * Card completo de um requerimento — usado tanto na lista "Recentes"
  * das páginas de requerimento quanto na linha do tempo do perfil, pra
@@ -50,7 +78,7 @@ async function buscarApendiceAdvertencias(usuarioId) {
  * `patentesMapa` = { id: nome } de todas as patentes.
  * `meAtual` = usuário logado (pra saber se mostra o apêndice de admin).
  */
-function renderCardRequerimento(r, patentesMapa, meAtual, apendiceAdvertencias = '') {
+function renderCardRequerimento(r, patentesMapa, meAtual, apendiceExtra = '') {
   const cor = COR_STATUS_REQ[r.status] || COR_STATUS_REQ.pendente;
   const alvos = r.alvos_json ? JSON.parse(r.alvos_json) : [];
   const alvoPrincipal = alvos[0];
@@ -65,7 +93,7 @@ function renderCardRequerimento(r, patentesMapa, meAtual, apendiceAdvertencias =
   const tagUsada = dadosEspecificos.tag_utilizada || r.autor_tag || '—';
   const identificacao = r.tipo === 'exoneracao'
     ? (alvoPrincipal ? `${alvoPrincipal.nick} [${alvoPrincipal.tag || '---'}] [${tagUsada}] {${r.crime_nome || r.fundamentacao || ''}} - ${formatarDataCurtaReq(r.criado_em)} até ${dadosEspecificos.exoneracao_ate ? formatarDataCurtaReq(dadosEspecificos.exoneracao_ate) : 'Indeterminado'}` : null)
-    : (alvoPrincipal ? `${alvoPrincipal.nick} [${prefixoId}${tagUsada}] ${formatarDataCurtaReq(r.criado_em)}${apendiceAdvertencias}` : null);
+    : (alvoPrincipal ? `${alvoPrincipal.nick} [${prefixoId}${tagUsada}] ${formatarDataCurtaReq(r.criado_em)}${apendiceExtra}` : null);
 
   const linhasExtras = [];
   linhasExtras.push(`<b>${ehInstrucaoInicial ? 'Nick e TAG do Instrutor' : 'Requerido por'}:</b> ${r.autor_nick || '—'}${r.autor_tag ? ` [${r.autor_tag}]` : ''}`);
@@ -718,7 +746,7 @@ async function montarFormularioRequerimento(config) {
 
   async function renderCardRecente(r) {
     const alvos = r.alvos_json ? JSON.parse(r.alvos_json) : [];
-    const apendice = await buscarApendiceAdvertencias(alvos[0]?.usuario_id);
+    const apendice = await buscarApendiceIdentificacao(alvos[0]?.usuario_id);
     return renderCardRequerimento(r, patentesMapa, meAtual, apendice);
   }
 

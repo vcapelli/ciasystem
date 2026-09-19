@@ -125,9 +125,9 @@ async function montarListagem(tipo) {
   // uma tela só carregada sob demanda, então tudo bem). Nas listagens
   // de oficiais e executivo, busca também os grupos de cada um, pra
   // mostrar a abreviação do cargo interno ao lado da identificação.
-  // Também busca advertências ativas, pra montar o apêndice
-  // "{1 ADV: ... até ...}" — não se aplica ao formato de exoneração,
-  // que já tem seu próprio bracket.
+  // Também busca advertências ativas e licença em vigor, pra montar o
+  // apêndice "{1 ADV: ... até ...}" / "{Licença: ... até ...}" — não
+  // se aplica ao formato de exoneração, que já tem seu próprio bracket.
   const todosMembros = dados.grupos.flatMap((g) => g.itens);
   const buscarGrupos = tipo === 'corpo-de-oficiais' || tipo === 'corpo-executivo';
   await Promise.all(
@@ -139,7 +139,7 @@ async function montarListagem(tipo) {
         u.grupos = rg.ok ? await rg.json() : [];
       }
       if (!dados.formatoExoneracao && u.id) {
-        u.apendiceAdvertencias = await buscarApendiceAdvertencias(u.id);
+        u.apendiceAdvertencias = await buscarApendiceIdentificacao(u.id);
       }
     })
   );

@@ -565,4 +565,43 @@ requerimentos.get('/advertencias-ativas/:usuarioId', async (c) => {
   return c.json(ativas)
 })
 
+// GET /requerimentos/licenca-ativa/:usuarioId — licença de serviço
+// ainda em vigor (usuarios.status = 'licenca'), com a data de retorno
+// prevista pega do requerimento de licença aprovado mais recente pra
+// esse usuário. Mesma ideia do endpoint de advertências ativas acima,
+// só que aqui a "duração" não é fixa — é a data de retorno que ficou
+// registrada no próprio requerimento (dados_especificos.data_retorno).
+// Usado só pra montar o apêndice de identificação
+// " - {Licença: <início> até <retorno>}" — some sozinho assim que a
+// pessoa volta de licença (requerimento de 'volta_licenca' aprovado).
+requerimentos.get('/licenca-ativa/:usuarioId', async (c) => {
+  const usuarioId = c.req.param('usuarioId')
+
+  const usuario = await c.env.DB.prepare(`SELECT status FROM usuarios WHERE id = ?`)
+    .bind(usuarioId).first<{ status: string }>()
+
+  if (usuario?.status !== 'licenca') return c.json(null)
+
+  const ultimaLicenca = await c.env.DB.prepare(
+    `SELECT r.dados_especificos AS dados_especificos, ra.decidido_em AS inicio
+     FROM requerimento_alvos ra
+     JOIN requerimentos r ON r.id = ra.requerimento_id
+     WHERE r.tipo = 'licenca' AND ra.usuario_id = ? AND ra.status = 'aprovado' AND ra.decidido_em IS NOT NULL
+     ORDER BY ra.decidido_em DESC LIMIT 1`
+  ).bind(usuarioId).first<{ dados_especificos: string | null; inicio: string }>()
+
+  if (!ultimaLicenca) return c.json(null)
+
+  let dataRetorno: string | null = null
+  try {
+    dataRetorno = ultimaLicenca.dados_especificos ? (JSON.parse(ultimaLicenca.dados_especificos).data_retorno ?? null) : null
+  } catch {
+    dataRetorno = null
+  }
+
+  if (!dataRetorno) return c.json(null)
+
+  return c.json({ inicio: ultimaLicenca.inicio, fim: dataRetorno })
+})
+
 export default requerimentos
