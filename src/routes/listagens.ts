@@ -189,8 +189,8 @@ listagens.get('/:tipo', async (c) => {
   if (!filtroPatentes) return c.json({ erro: `listagem '${tipo}' não existe` }, 404)
 
   const { results: patentes } = await c.env.DB.prepare(
-    `SELECT id, nome, ordem, cor FROM patentes WHERE ativo = 1 AND (${filtroPatentes}) ORDER BY ordem DESC`
-  ).all<{ id: number; nome: string; ordem: number; cor: string | null }>()
+    `SELECT id, nome, ordem, cor, vagas FROM patentes WHERE ativo = 1 AND (${filtroPatentes}) ORDER BY ordem DESC`
+  ).all<{ id: number; nome: string; ordem: number; cor: string | null; vagas: number | null }>()
 
   const { results: membros } = await c.env.DB.prepare(
     `SELECT ${SELECT_MEMBRO}, u.patente_atual_id
@@ -200,9 +200,16 @@ listagens.get('/:tipo', async (c) => {
   ).all<{ patente_atual_id: number } & MembroBase>()
 
   const comIdentificacao = await anexarIdentificacao(c.env.DB, membros)
+  // `vagas` vem direto da tabela `patentes` (seção 2.3 do documento-mestre
+  // — só Corpo de Oficiais e Chanceler têm limite; o resto fica `null`).
+  // NÃO inclui aqui a regra da "vaga extraordinária" (a cada 5 oficiais da
+  // mesma patente em licença, abre 1 vaga temporária) — o número mostrado
+  // é sempre o limite normal, mesmo se colar exatamente que o card também
+  // lista quem está de licença no rodapé.
   const grupos = patentes.map((p) => ({
     titulo: p.nome,
     cor: p.cor || (p.ordem === patentes[0]?.ordem ? 'dourado' : 'escuro'),
+    vagas: p.vagas,
     itens: (comIdentificacao as (MembroListagem & { patente_atual_id: number })[]).filter((m) => m.patente_atual_id === p.id),
   }))
 

@@ -66,6 +66,12 @@ function renderLinhaMembro(u, formatoExoneracao, tipo) {
 function renderGrupo(g, formatoExoneracao, tipo) {
   const icone = ICONE_PATENTE[g.titulo] || 'fa-solid fa-users';
   const cor = g.cor && g.cor.startsWith('#') ? g.cor : (COR_GRUPO[g.cor] || COR_GRUPO.escuro);
+  // `g.vagas` só vem preenchido pras patentes que têm limite de efetivo
+  // (Corpo de Oficiais + Chanceler — seção 2.3 do documento-mestre). Sem
+  // limite, mostra só a contagem, sem a barra "/N".
+  const contagem = g.vagas != null ? `${g.itens.length}/${g.vagas}` : `${g.itens.length}`;
+  const emLicenca = g.itens.filter((u) => u.status === 'licenca');
+
   return `
     <div class="bg-card border border-border rounded-2xl shadow-sm overflow-hidden" style="border-left: 4px solid ${cor}">
       <div class="flex items-center gap-3 px-4 py-3 bg-basebg border-b border-border">
@@ -73,13 +79,19 @@ function renderGrupo(g, formatoExoneracao, tipo) {
           <i class="${icone}"></i>
         </span>
         <p class="text-sm font-bold uppercase tracking-wide">${g.titulo}</p>
-        <span class="text-xs text-muted ml-auto">${g.itens.length}</span>
+        <span class="text-xs text-muted ml-auto">${contagem}</span>
       </div>
       <div class="divide-y divide-border">
         ${g.itens.length
           ? g.itens.map((u) => renderLinhaMembro(u, formatoExoneracao, tipo)).join('')
           : '<p class="text-sm text-muted px-4 py-3">Ninguém nessa patente/cargo no momento.</p>'}
       </div>
+      ${emLicenca.length ? `
+        <div class="px-4 py-2.5 border-t border-border bg-basebg text-xs text-muted">
+          <i class="fa-solid fa-plane-departure mr-1"></i>
+          <b>De licença:</b> ${emLicenca.map((u) => `${u.nick}${u.tag ? ` [${u.tag}]` : ''}`).join(', ')}
+        </div>
+      ` : ''}
     </div>
   `;
 }
