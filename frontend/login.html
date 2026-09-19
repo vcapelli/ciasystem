@@ -55,10 +55,16 @@
           </button>
 
           <div id="codigo-confirmar-wrap" class="hidden space-y-3">
-            <input id="codigo-valor-input" type="text" disabled
-              class="w-full border border-border rounded px-4 py-3 text-sm text-muted bg-basebg">
-            <button type="submit"
-              class="w-full bg-accent hover:bg-accent-dark text-white font-bold uppercase text-sm rounded px-6 py-3.5 transition-colors">
+            <div class="relative">
+              <input id="codigo-valor-input" type="text" disabled
+                class="w-full border border-border rounded px-4 py-3 pr-11 text-sm text-muted bg-basebg">
+              <button type="button" id="btn-copiar-codigo" title="Copiar código"
+                class="absolute inset-y-0 right-0 flex items-center px-3.5 text-muted hover:text-accent transition-colors">
+                <i class="fa-regular fa-copy"></i>
+              </button>
+            </div>
+            <button type="submit" id="btn-confirmar-codigo"
+              class="w-full bg-accent hover:bg-accent-dark text-white font-bold uppercase text-sm rounded px-6 py-3.5 transition-colors disabled:opacity-60 disabled:cursor-wait">
               Já coloquei na missão — Entrar
             </button>
           </div>
@@ -102,6 +108,8 @@
 
   function ativarAba(aba) {
     limparErro();
+    pararPolling();
+    resetarBotaoConfirmar();
     const ehSenha = aba === 'senha';
     formSenha.classList.toggle('hidden', !ehSenha);
     formCodigo.classList.toggle('hidden', ehSenha);
@@ -137,6 +145,30 @@
     window.location.href = '/index.html';
   });
 
+  const codigoValorInput = document.getElementById('codigo-valor-input');
+  const btnCopiarCodigo = document.getElementById('btn-copiar-codigo');
+  const btnConfirmarCodigo = document.getElementById('btn-confirmar-codigo');
+
+  btnCopiarCodigo.addEventListener('click', async () => {
+    const valor = codigoValorInput.value;
+    if (!valor) return;
+
+    try {
+      await navigator.clipboard.writeText(valor);
+    } catch {
+      // fallback pra quando a Clipboard API não está disponível (contexto sem
+      // permissão, navegador mais antigo, etc)
+      codigoValorInput.removeAttribute('disabled');
+      codigoValorInput.select();
+      document.execCommand('copy');
+      codigoValorInput.setAttribute('disabled', 'disabled');
+    }
+
+    const iconeOriginal = btnCopiarCodigo.innerHTML;
+    btnCopiarCodigo.innerHTML = '<i class="fa-solid fa-check text-accent"></i>';
+    setTimeout(() => { btnCopiarCodigo.innerHTML = iconeOriginal; }, 1500);
+  });
+
   document.getElementById('btn-solicitar-codigo').addEventListener('click', async () => {
     limparErro();
     const nick = document.getElementById('codigo-nick').value.trim();
@@ -157,23 +189,100 @@
     document.getElementById('codigo-confirmar-wrap').classList.remove('hidden');
   });
 
-  formCodigo.addEventListener('submit', async (e) => {
+  // O jogo (API do Habblet) às vezes demora de 30s a 1min pra refletir a
+  // missão atualizada, então em vez de checar uma vez só, fica tentando de
+  // novo sozinho por um tempo em vez de já mandar a pessoa clicar de novo.
+  let pollAtivo = false;
+  let pollTimeoutId = null;
+
+  function pararPolling() {
+    pollAtivo = false;
+    if (pollTimeoutId) {
+      clearTimeout(pollTimeoutId);
+      pollTimeoutId = null;
+    }
+  }
+
+  function resetarBotaoConfirmar() {
+    btnConfirmarCodigo.disabled = false;
+    btnConfirmarCodigo.textContent = 'Já coloquei na missão — Entrar';
+  }
+
+  formCodigo.addEventListener('submit', (e) => {
     e.preventDefault();
+    if (pollAtivo) return; // já está verificando, um segundo clique não faz nada
     limparErro();
+
     const nick = document.getElementById('codigo-nick').value.trim();
-    const codigo = document.getElementById('codigo-valor-input').value;
+    const codigo = codigoValorInput.value;
 
-    const resposta = await fetch(`${API_BASE}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nick, codigo }),
-    });
-    const dados = await resposta.json();
+    const TEMPO_AVISO = 20000;  // 20s: pode ser a API do Habblet demorando
+    const TEMPO_LIMITE = 90000; // 90s: desiste e deixa a pessoa tentar de novo
+    const INTERVALO = 4000;     // tenta a cada 4s
 
-    if (!resposta.ok) return mostrarErro(dados.erro || 'Não foi possível entrar.');
+    const inicio = Date.now();
+    let avisoMostrado = false;
 
-    Auth.salvarSessao(dados);
-    window.location.href = '/index.html';
+    pollAtivo = true;
+    btnConfirmarCodigo.disabled = true;
+    btnConfirmarCodigo.textContent = 'Verificando na missão…';
+
+    const tentar = async () => {
+      if (!pollAtivo) return;
+
+      const decorrido = Date.now() - inicio;
+
+      if (decorrido >= TEMPO_LIMITE) {
+        pararPolling();
+        mostrarErro('Não conseguimos confirmar o código na missão a tempo. Confira se colocou certinho na missão do Habblet e tente novamente.');
+        resetarBotaoConfirmar();
+        return;
+      }
+
+      if (!avisoMostrado && decorrido >= TEMPO_AVISO) {
+        avisoMostrado = true;
+        mostrarErro('Ainda não encontramos o código na sua missão — pode ser a API do Habblet demorando pra atualizar (às vezes leva até 1 minuto). Continuamos tentando automaticamente...');
+      }
+
+      try {
+        const resposta = await fetch(`${API_BASE}/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nick, codigo }),
+        });
+        const dados = await resposta.json();
+
+        if (resposta.ok) {
+          pararPolling();
+          limparErro();
+          Auth.salvarSessao(dados);
+          window.location.href = '/index.html';
+          return;
+        }
+
+        // Código inválido/expirado (a checagem no banco, não no jogo) ou nick
+        // sem conta: erro definitivo, insistir não vai resolver.
+        const mensagemErro = String(dados.erro || '');
+        const erroDefinitivo = resposta.status === 404 ||
+          (resposta.status === 401 && !mensagemErro.includes('missão'));
+
+        if (erroDefinitivo) {
+          pararPolling();
+          mostrarErro(mensagemErro || 'Não foi possível entrar.');
+          resetarBotaoConfirmar();
+          return;
+        }
+
+        // 401 "código não encontrado na missão" ou 502 (API do Habblet fora
+        // do ar/lenta no momento): ainda vale a pena tentar de novo.
+        pollTimeoutId = setTimeout(tentar, INTERVALO);
+      } catch {
+        // Falha de rede local também é passageira — segue tentando.
+        pollTimeoutId = setTimeout(tentar, INTERVALO);
+      }
+    };
+
+    tentar();
   });
 
   if (Auth.estaLogado()) window.location.href = '/index.html';
