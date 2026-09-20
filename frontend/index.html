@@ -85,10 +85,12 @@
   function renderCardNovoMembro(u) {
     return `
       <a href="/perfil/${u.nick}" class="card-membro-fundo shrink-0 block hover:opacity-90 transition-opacity" title="${u.nick}">
-        <span class="absolute top-0 inset-x-0 text-center text-white text-xs font-bold px-2 py-1.5 truncate bg-gradient-to-b from-black/60 to-transparent z-10">
-          ${u.nick}
-        </span>
-        ${u.figure ? `<img src="${avatarUrl(u.figure, 'card', '3')}" class="absolute inset-x-0 top-0 mx-auto h-[92%] w-auto object-contain pointer-events-none select-none" alt="">` : ''}
+        <div class="absolute inset-0 overflow-hidden rounded-[7px]">
+          <span class="absolute top-0 mt-1.5 inset-x-0 text-center text-white text-sm font-bold px-2 pb-1.5 truncate bg-gradient-to-b from-black/60 to-transparent z-10">
+            ${u.nick}
+          </span>
+          ${u.figure ? `<img src="${avatarUrl(u.figure, 'card', '3')}" class="absolute inset-x-0 top-0 mx-auto h-[92%] w-auto object-contain pointer-events-none select-none" alt="">` : ''}
+        </div>
       </a>
     `;
   }

@@ -90,16 +90,19 @@
 
 /* Moldura de "card de membro" — plaquinha ilustrada com o avatar em
    pose de corpo inteiro por cima. Usada no card de "Novos membros" da
-   página inicial. */
+   página inicial.
+   OBS: `overflow: hidden` fica no wrapper interno (`.card-membro-clip`,
+   aplicado via classe Tailwind no HTML), não aqui — `overflow: hidden`
+   nesse mesmo elemento cortaria o `box-shadow` junto (ele deixa de ser
+   uma sombra "por fora" e vira sombra "por dentro" do card). */
 .card-membro-fundo {
   position: relative;
-  overflow: hidden;
   height: 283px;
   width: 180px;
   background-image: url(https://imgur.com/mBFCSBg.png);
   background-repeat: no-repeat;
   background-size: cover;
   border: 1px solid #e2e4e9;
-  border-radius: 12px;
+  border-radius: 8px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
 }
