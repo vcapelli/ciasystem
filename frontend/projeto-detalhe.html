@@ -130,18 +130,17 @@
     const souMembro = membros.some((m) => m.id === euId);
     const ehResponsavel = p.responsavel_id === euId;
 
-    // Cargo mínimo pra votar (admin > Permissões) — sem restrição
-    // configurada, qualquer membro ativo vota (padrão de sempre).
-    const niveis = grupo ? await buscarNiveisGrupo(grupo.slug) : [];
+    // Cargos que votam (admin > Permissões) — lista EXATA, não um
+    // mínimo. Sem restrição configurada, qualquer membro ativo vota
+    // (padrão de sempre).
     const config = await buscarConfiguracoes();
-    const nivelMinimoVotanteId = config.projetos_nivel_minimo_votante_id ? Number(config.projetos_nivel_minimo_votante_id) : null;
+    let niveisVotantesIds = [];
+    try {
+      const salvos = JSON.parse(config.projetos_niveis_votantes_ids || '[]');
+      if (Array.isArray(salvos)) niveisVotantesIds = salvos.map(Number);
+    } catch { /* config vazia ou inválida — sem restrição */ }
     const meuMembro = membros.find((m) => m.id === euId);
-    let souElegivelParaVotar = souMembro;
-    if (souMembro && nivelMinimoVotanteId && meuMembro) {
-      const meuNivel = niveis.find((n) => n.id === meuMembro.nivel_id);
-      const nivelMinimo = niveis.find((n) => n.id === nivelMinimoVotanteId);
-      souElegivelParaVotar = meuNivel && nivelMinimo ? meuNivel.ordem >= nivelMinimo.ordem : souMembro;
-    }
+    const souElegivelParaVotar = souMembro && (!niveisVotantesIds.length || niveisVotantesIds.includes(meuMembro?.nivel_id));
 
     const [autorFigure, responsavelFigure] = await Promise.all([
       buscarFigureProjeto(p.autor_nick),

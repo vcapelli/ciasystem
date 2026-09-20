@@ -107,10 +107,3 @@ function avatarNickHtml(nick, figure, opts = {}) {
     <span class="${nickClass}">${nick || '—'}</span>
   </span>`;
 }
-
-// Cargos internos (grupo_niveis) de um grupo, ordenados — usado pra
-// checar se o usuário está no cargo mínimo configurado pra votar.
-async function buscarNiveisGrupo(grupoSlug) {
-  const resp = await apiFetch(`/grupos/${grupoSlug}/niveis`);
-  return resp.ok ? await resp.json() : [];
-}
