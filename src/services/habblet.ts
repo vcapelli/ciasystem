@@ -21,12 +21,26 @@ export interface HabbletPlayer {
 const HABBLET_API_BASE = 'https://api.habblet.city'
 
 /**
+ * Codifica o nick pro segmento da URL. Confirmado direto contra a API
+ * real: ela devolve 400 se receber ',' ou ':' percent-encoded (%2C /
+ * %3A) — só aceita esses dois caracteres literais no path (ex:
+ * .../player/Matheus, funciona, .../player/Matheus%2C não). O '.' não
+ * é afetado porque encodeURIComponent nunca o codifica. Por isso
+ * primeiro codificamos normalmente (protege contra espaço, '/', '#',
+ * '?', '%' etc. que o nick não deveria ter mesmo) e depois desfazemos
+ * só essas duas sequências específicas.
+ */
+function nickParaSegmentoUrl(nick: string): string {
+  return encodeURIComponent(nick).replace(/%2C/gi, ',').replace(/%3A/gi, ':')
+}
+
+/**
  * Busca os dados públicos do jogador. Retorna `null` se o nick não
  * existir (404) — nunca lança erro nesse caso, só em falha de rede
  * de verdade (timeout, 5xx, etc.), que o chamador deve tratar.
  */
 export async function buscarJogadorHabblet(nick: string): Promise<HabbletPlayer | null> {
-  const resposta = await fetch(`${HABBLET_API_BASE}/player/${encodeURIComponent(nick)}`)
+  const resposta = await fetch(`${HABBLET_API_BASE}/player/${nickParaSegmentoUrl(nick)}`)
 
   if (resposta.status === 404) return null
   if (!resposta.ok) {
