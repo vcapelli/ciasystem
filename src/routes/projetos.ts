@@ -24,6 +24,15 @@ const STATUS_NAO_TERMINAL = ['aberto', 'em_analise', 'em_votacao', 'aguardando_i
 // resolvido sozinho num F5 porque a réplica alcança o primary em
 // pouco tempo. 'first-primary' força a primeira leitura da sessão a
 // ir direto no primary, então nunca mais vê esse estado velho.
+//
+// Consequência importante: dentro da MESMA sessão, as queries têm que
+// rodar em sequência (await um de cada vez), nunca em paralelo via
+// Promise.all — disparar várias .run()/.all() concorrentes na mesma
+// D1Session pode devolver "erro interno do servidor" (500) de forma
+// intermitente, mesmo com as escritas tendo sido aplicadas com sucesso
+// (por isso um F5 depois mostra tudo certo). Sempre usar um loop
+// for...of com await dentro, nunca .map() + Promise.all, quando o
+// mesmo `db` (sessão) for reutilizado pra várias queries de uma vez.
 const projetos = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
 const BASE_QUERY_PROJETOS = `
@@ -213,11 +222,16 @@ projetos.post('/:id/parecer', async (c) => {
     const { results: membros } = await db.prepare(
       `SELECT usuario_id FROM usuario_grupos WHERE grupo_id = ? AND ativo = 1`
     ).bind(grupoId).all<{ usuario_id: number }>()
-    await Promise.all(membros.map((m) =>
-      notificar(db, m.usuario_id, 'projeto_votacao_aberta', 'Um processo está em votação', {
+    // Sequencial, não Promise.all: várias queries concorrentes na MESMA
+    // D1 Session ('first-primary') disparadas em paralelo podem falhar
+    // com erro interno intermitente — a sessão espera as queries em
+    // ordem. É o mesmo tipo de instabilidade da réplica atrasada (ver
+    // nota no topo do arquivo), só que na escrita em vez da leitura.
+    for (const m of membros) {
+      await notificar(db, m.usuario_id, 'projeto_votacao_aberta', 'Um processo está em votação', {
         referenciaTipo: 'projeto', referenciaId: Number(id),
       })
-    ))
+    }
   }
 
   return c.json({ ok: true })

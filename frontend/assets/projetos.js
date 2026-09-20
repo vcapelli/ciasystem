@@ -67,6 +67,20 @@ async function buscarFigureProjeto(nick) {
   } catch { return null; }
 }
 
+// Avatar grande, corpo inteiro, pose de destaque (modo 'card' — o
+// mesmo usado no card de "Novos membros" da home) pro card do autor e
+// do responsável do processo. frame_num=30 no backend faz o Habblet
+// devolver um GIF animado, e o hover ainda dá aquele "salto" leve
+// (mesmo efeito usado nos aprovadores de documentos).
+function avatarGrandeHtml(figure, nick) {
+  if (!figure) return '';
+  return `
+    <div class="shrink-0 w-20 h-28 sm:w-24 sm:h-32 rounded-xl bg-basebg border border-border overflow-hidden flex items-end justify-center">
+      <img src="${avatarUrl(figure, 'card', '2')}" class="w-full h-[115%] object-contain object-bottom transition-transform duration-300 hover:-translate-y-2" alt="${nick || ''}">
+    </div>
+  `;
+}
+
 // Avatarzinho circular + nick, lado a lado — mesmo visual usado nos
 // aprovadores de documentos, só que inline em vez de empilhado. Sem
 // tag: aqui mostramos só o nick da pessoa.
