@@ -1,7 +1,19 @@
 import { Hono } from 'hono'
+import { podeVerProjetos } from '../services/projetos'
+import { podeVerListagemIp } from './ip-listagem'
 
 type Bindings = { DB: D1Database }
 type Variables = { usuarioId: number }
+
+// Checagens de visibilidade que não se encaixam em grupo_restrito_id
+// nem patente_minima_id (ex: acesso individual concedido por flag,
+// como a listagem de IPs) — cada chave aqui usa a MESMA regra de
+// permissão da página de verdade, então o item some do menu sozinho
+// pra quem não teria acesso ao clicar.
+const CHECAGENS_PERMISSAO_MENU: Record<string, (db: D1Database, usuarioId: number) => Promise<boolean>> = {
+  projetos: podeVerProjetos,
+  ip_listagem: podeVerListagemIp,
+}
 
 const menu = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
@@ -56,6 +68,7 @@ menu.get('/', async (c) => {
     id: number; titulo: string; url: string | null; pagina_customizada_id: number | null
     icone: string | null; item_pai_id: number | null
     grupo_restrito_id: number | null; patente_minima_id: number | null
+    chave_permissao: string | null
   }>()
 
   const visiveis = []
@@ -77,6 +90,10 @@ menu.get('/', async (c) => {
         ).bind(usuario.patente_atual_id, item.patente_minima_id).first<{ ok: number }>()
         ok = ok && Boolean(cmp?.ok)
       }
+    }
+    if (ok && item.chave_permissao) {
+      const checagem = CHECAGENS_PERMISSAO_MENU[item.chave_permissao]
+      ok = checagem ? await checagem(c.env.DB, usuarioId) : ok
     }
     if (ok) visiveis.push(item)
   }

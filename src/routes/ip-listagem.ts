@@ -11,7 +11,7 @@ async function ehAdmin(db: D1Database, usuarioId: number): Promise<boolean> {
   return Boolean(u?.administrador_sistema)
 }
 
-async function podeVerListagemIp(db: D1Database, usuarioId: number): Promise<boolean> {
+export async function podeVerListagemIp(db: D1Database, usuarioId: number): Promise<boolean> {
   if (await ehAdmin(db, usuarioId)) return true
   const permitido = await db.prepare(`SELECT 1 FROM ip_listagem_permissoes WHERE usuario_id = ?`)
     .bind(usuarioId).first()

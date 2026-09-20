@@ -3,8 +3,10 @@
 // livre de propósito: novos tipos de ação não exigem alteração de
 // schema, só o Worker passar a gravar esse valor.
 
+import type { D1Like } from '../types/db'
+
 export async function registrarEvento(
-  db: D1Database,
+  db: D1Like,
   usuarioId: number | null,
   tipoEvento: string,
   opcoes?: {
