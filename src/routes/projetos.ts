@@ -193,6 +193,15 @@ projetos.post('/:id/parecer', async (c) => {
      WHERE id = ?`
   ).bind(body.analise.trim(), body.parecer.trim(), body.veredito, id).run()
 
+  // A recomendação do responsável no parecer já conta como o voto dele —
+  // não precisa votar de novo separadamente na votação que acabou de abrir.
+  await db.prepare(
+    `INSERT INTO projeto_votos (projeto_id, usuario_id, voto, comentario) VALUES (?, ?, ?, ?)
+     ON CONFLICT(projeto_id, usuario_id) DO UPDATE SET
+       voto = excluded.voto, comentario = excluded.comentario,
+       atualizado_em = strftime('%Y-%m-%dT%H:%M:%SZ','now')`
+  ).bind(id, usuarioId, body.veredito, body.parecer.trim()).run()
+
   await registrarHistoricoProjeto(db, Number(id), `Análise e parecer postados (recomendação: ${body.veredito}) — votação aberta`, usuarioId)
 
   await notificar(db, projeto.autor_id, 'projeto_status', 'Seu processo entrou em votação', {
@@ -414,6 +423,27 @@ projetos.post('/:id/desarquivar', async (c) => {
   await notificar(db, projeto.autor_id, 'projeto_status', 'Seu processo foi desarquivado', {
     referenciaTipo: 'projeto', referenciaId: Number(id),
   })
+
+  return c.json({ ok: true })
+})
+
+// DELETE /projetos/:id — exclusão definitiva do processo, só admin do
+// grupo responsável/sistema, em qualquer status. Cascata apaga votos e
+// histórico junto (FKs ON DELETE CASCADE, migração 0038).
+projetos.delete('/:id', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  const db = c.env.DB.withSession('first-primary') // ver nota sobre réplicas D1 no topo do arquivo
+  const id = c.req.param('id')
+
+  if (!(await ehAdminDoGrupoResponsavel(db, usuarioId))) {
+    return c.json({ erro: 'só um administrador do grupo responsável exclui um processo' }, 403)
+  }
+
+  const projeto = await db.prepare(`SELECT id FROM projetos WHERE id = ?`).bind(id).first()
+  if (!projeto) return c.json({ erro: 'não encontrado' }, 404)
+
+  await db.prepare(`DELETE FROM projetos WHERE id = ?`).bind(id).run()
+  await registrarEvento(db, usuarioId, 'projeto_excluido', { referenciaTipo: 'projeto', referenciaId: Number(id) })
 
   return c.json({ ok: true })
 })

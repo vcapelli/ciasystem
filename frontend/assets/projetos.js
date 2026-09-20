@@ -56,3 +56,30 @@ async function buscarMembrosGrupoResponsavel(grupoSlug) {
   const resp = await apiFetch(`/grupos/${grupoSlug}/membros`);
   return resp.ok ? await resp.json() : [];
 }
+
+// Busca a figure (avatar Habblet) de um nick — mesmo padrão usado nas
+// páginas de documentos (documento-dashboard.html).
+async function buscarFigureProjeto(nick) {
+  if (!nick) return null;
+  try {
+    const r = await apiFetch(`/usuarios/nick/${encodeURIComponent(nick)}`);
+    return r.ok ? (await r.json()).figure : null;
+  } catch { return null; }
+}
+
+// Avatarzinho circular + nick, lado a lado — mesmo visual usado nos
+// aprovadores de documentos, só que inline em vez de empilhado. Sem
+// tag: aqui mostramos só o nick da pessoa.
+function avatarNickHtml(nick, figure, opts = {}) {
+  const size = opts.size || 6;
+  const nickClass = opts.bold ? 'font-semibold' : '';
+  const inicial = (nick || '?').slice(0, 2).toUpperCase();
+  return `<span class="inline-flex items-center gap-1.5 align-middle">
+    <span class="h-${size} w-${size} rounded-full bg-basebg border border-border overflow-hidden inline-block align-middle shrink-0">
+      ${figure
+        ? `<img src="${avatarUrl(figure, 'mini', '2')}" class="w-full h-[190%] object-cover object-top -mt-1" alt="">`
+        : `<span class="w-full h-full flex items-center justify-center text-[0.55rem] font-bold">${inicial}</span>`}
+    </span>
+    <span class="${nickClass}">${nick || '—'}</span>
+  </span>`;
+}

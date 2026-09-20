@@ -71,7 +71,7 @@
       <a href="/projetos/${p.id}" class="flex items-center justify-between gap-3 px-4 py-3 hover:bg-basebg transition-colors">
         <div class="min-w-0">
           <p class="text-sm font-semibold truncate">#${p.id} — ${p.titulo}</p>
-          <p class="text-xs text-muted mt-0.5">${p.autor_nick || '—'}${p.autor_tag ? ` [${p.autor_tag}]` : ''} · ${formatarDataProjeto(p.criado_em)}</p>
+          <p class="text-xs text-muted mt-0.5">${avatarNickHtml(p.autor_nick, p.autor_figure, { size: 5 })} · ${formatarDataProjeto(p.criado_em)}</p>
         </div>
         <div class="flex items-center gap-2 shrink-0">
           ${badgeTipoProjeto(p.tipo)}
@@ -90,9 +90,12 @@
       return;
     }
     const lista = resp.ok ? await resp.json() : [];
-    raiz.innerHTML = lista.length
-      ? lista.map(renderLinhaProjeto).join('')
-      : '<p class="text-sm text-muted p-4">Nenhum processo encontrado.</p>';
+    if (!lista.length) {
+      raiz.innerHTML = '<p class="text-sm text-muted p-4">Nenhum processo encontrado.</p>';
+      return;
+    }
+    const comFigure = await Promise.all(lista.map(async (p) => ({ ...p, autor_figure: await buscarFigureProjeto(p.autor_nick) })));
+    raiz.innerHTML = comFigure.map(renderLinhaProjeto).join('');
   }
 
   montarLayout('/projetos.html').then((me) => {
