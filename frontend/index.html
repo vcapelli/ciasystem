@@ -45,6 +45,13 @@
           <div id="home-diario-oficial" class="bg-card border border-border rounded-2xl shadow-sm divide-y divide-border overflow-hidden">
             <p class="text-sm text-muted p-4">Carregando…</p>
           </div>
+
+          <h2 class="text-sm font-bold uppercase tracking-wide text-muted mb-3 mt-5 flex items-center gap-2">
+            <i class="fa-solid fa-clipboard-list text-accent"></i> Últimos requerimentos
+          </h2>
+          <div id="home-ultimos-requerimentos" class="bg-card border border-border rounded-2xl shadow-sm divide-y divide-border overflow-hidden">
+            <p class="text-sm text-muted p-4">Carregando…</p>
+          </div>
         </div>
       </div>
     </div>
@@ -86,7 +93,7 @@
     return `
       <a href="/perfil/${u.nick}" class="card-membro-fundo shrink-0 block hover:opacity-90 transition-opacity" title="${u.nick}">
         <div class="absolute inset-0 overflow-hidden rounded-[7px]">
-          <span class="absolute top-0 mt-1.5 inset-x-0 text-center text-white text-sm font-bold px-2 pb-1.5 truncate bg-gradient-to-b from-black/60 to-transparent z-10">
+          <span class="absolute top-0 mt-1.5 inset-x-0 text-center text-white text-sm font-bold px-2 pb-1.5 truncate z-10" style="text-shadow: 0 1px 3px rgba(0,0,0,0.85), 0 0 6px rgba(0,0,0,0.5);">
             ${u.nick}
           </span>
           ${u.figure ? `<img src="${avatarUrl(u.figure, 'card', '3')}" class="absolute inset-x-0 top-0 mx-auto h-[92%] w-auto object-contain pointer-events-none select-none" alt="">` : ''}
@@ -151,6 +158,64 @@
       : '<p class="text-sm text-muted p-4">Nenhuma publicação no diário oficial ainda.</p>';
   }
 
+  // Rótulo e ícone/cor de cada tipo de requerimento, só pro resumo da
+  // home — mesmos rótulos usados no formulário genérico (requerimentos.js),
+  // duplicados aqui pra não precisar carregar o script inteiro do form
+  // só por causa desse texto.
+  const LABEL_REQ_HOME = {
+    instrucao_inicial: 'Instrução Inicial', contratacao: 'Contratação', promocao: 'Promoção',
+    rebaixamento: 'Rebaixamento', advertencia: 'Advertência', licenca: 'Licença',
+    volta_licenca: 'Volta de Licença', transferencia_conta: 'Transferência de Conta',
+    transferencia_corpo: 'Transferência de Corpo', venda_cargo: 'Venda de Cargo', tag: 'TAG',
+    turno_tarefa: 'Turno/Tarefa', reforma: 'Reforma', desligamento_honroso: 'Desligamento Honroso',
+    desligamento_desonroso: 'Desligamento Desonroso', exoneracao: 'Exoneração',
+    bonificacao: 'Bonificação', cancelamento: 'Cancelamento',
+  };
+  const ICONE_REQ_HOME = {
+    instrucao_inicial: { icone: 'fa-user-graduate', cor: 'text-accent' },
+    contratacao: { icone: 'fa-plus', cor: 'text-accent' },
+    promocao: { icone: 'fa-arrow-up', cor: 'text-accent' },
+    rebaixamento: { icone: 'fa-arrow-down', cor: 'text-red-600' },
+    advertencia: { icone: 'fa-triangle-exclamation', cor: 'text-amber-600' },
+    licenca: { icone: 'fa-plane-departure', cor: 'text-muted' },
+    volta_licenca: { icone: 'fa-plane-arrival', cor: 'text-accent' },
+    transferencia_conta: { icone: 'fa-right-left', cor: 'text-muted' },
+    transferencia_corpo: { icone: 'fa-shuffle', cor: 'text-muted' },
+    venda_cargo: { icone: 'fa-sack-dollar', cor: 'text-accent' },
+    tag: { icone: 'fa-tag', cor: 'text-muted' },
+    turno_tarefa: { icone: 'fa-clock', cor: 'text-muted' },
+    reforma: { icone: 'fa-flag-checkered', cor: 'text-muted' },
+    desligamento_honroso: { icone: 'fa-door-open', cor: 'text-muted' },
+    desligamento_desonroso: { icone: 'fa-door-closed', cor: 'text-red-600' },
+    exoneracao: { icone: 'fa-ban', cor: 'text-red-600' },
+    bonificacao: { icone: 'fa-medal', cor: 'text-accent' },
+    cancelamento: { icone: 'fa-rotate-left', cor: 'text-red-600' },
+  };
+
+  function renderLinhaRequerimentoHome(r) {
+    const alvos = r.alvos_json ? JSON.parse(r.alvos_json) : [];
+    const nickAlvo = alvos[0]?.nick || r.autor_nick || '—';
+    const { icone, cor } = ICONE_REQ_HOME[r.tipo] || { icone: 'fa-file-lines', cor: 'text-muted' };
+    const rotulo = LABEL_REQ_HOME[r.tipo] || r.tipo.replace(/_/g, ' ');
+    return `
+      <a href="/perfil/${nickAlvo}" class="flex items-center gap-3 px-4 py-3 hover:bg-basebg transition-colors">
+        <span class="h-8 w-8 rounded-lg bg-basebg border border-border flex items-center justify-center shrink-0 ${cor}">
+          <i class="fa-solid ${icone} text-xs"></i>
+        </span>
+        <p class="text-sm truncate"><span class="font-semibold">${rotulo}</span> <span class="text-muted">${nickAlvo}</span></p>
+      </a>
+    `;
+  }
+
+  async function carregarUltimosRequerimentos() {
+    const raiz = document.getElementById('home-ultimos-requerimentos');
+    const resp = await apiFetch('/requerimentos');
+    const requerimentos = resp.ok ? (await resp.json()).slice(0, 5) : [];
+    raiz.innerHTML = requerimentos.length
+      ? requerimentos.map(renderLinhaRequerimentoHome).join('')
+      : '<p class="text-sm text-muted p-4">Nenhum requerimento registrado ainda.</p>';
+  }
+
   montarLayout('/index.html').then((me) => {
     if (!me) return;
 
@@ -205,6 +270,7 @@
     carregarNovosMembros();
     carregarUltimasNoticias();
     carregarUltimosDecretos();
+    carregarUltimosRequerimentos();
   });
 </script>
 </body>
