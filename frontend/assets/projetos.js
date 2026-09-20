@@ -67,23 +67,29 @@ async function buscarFigureProjeto(nick) {
   } catch { return null; }
 }
 
-// Avatar grande, corpo inteiro, pose de destaque (modo 'card' — o
-// mesmo usado no card de "Novos membros" da home) pro card do autor e
-// do responsável do processo. frame_num=30 no backend faz o Habblet
-// devolver um GIF animado, e o hover ainda dá aquele "salto" leve
-// (mesmo efeito usado nos aprovadores de documentos).
-function avatarGrandeHtml(figure, nick) {
-  if (!figure) return '';
+// Avatar circular + cargo/nick empilhados embaixo — EXATAMENTE o
+// mesmo componente usado no rodapé de assinaturas de documentos
+// (documento-dashboard.html): recorte só da cabeça (modo 'mini',
+// object-cover/object-top com -mt-3) e o "salto" no hover. Usado pro
+// autor e responsável do processo (label = "Autor"/"Responsável").
+function avatarComLabelHtml(label, nick, figure) {
+  const inicial = (nick || '?').slice(0, 2).toUpperCase();
   return `
-    <div class="shrink-0 w-20 h-28 sm:w-24 sm:h-32 rounded-xl bg-basebg border border-border overflow-hidden flex items-end justify-center">
-      <img src="${avatarUrl(figure, 'card', '2')}" class="w-full h-[115%] object-contain object-bottom transition-transform duration-300 hover:-translate-y-2" alt="${nick || ''}">
+    <div class="text-center">
+      <span class="h-12 w-12 mx-auto rounded-full bg-basebg border border-border overflow-hidden inline-block">
+        ${figure
+          ? `<img src="${avatarUrl(figure, 'mini', '2')}" class="w-full h-[190%] object-cover object-top -mt-3 transition-transform duration-300 hover:-translate-y-[10px]" alt="">`
+          : `<span class="w-full h-full flex items-center justify-center text-xs font-bold">${inicial}</span>`}
+      </span>
+      <p class="text-xs font-semibold mt-1">${label}</p>
+      <p class="text-xs text-muted">${nick || '—'}</p>
     </div>
   `;
 }
 
-// Avatarzinho circular + nick, lado a lado — mesmo visual usado nos
-// aprovadores de documentos, só que inline em vez de empilhado. Sem
-// tag: aqui mostramos só o nick da pessoa.
+// Avatarzinho circular + nick, lado a lado — usado na lista de votos e
+// na lista de processos, onde o espaço é mais compacto (inline em vez
+// de empilhado). Sem tag: aqui mostramos só o nick da pessoa.
 function avatarNickHtml(nick, figure, opts = {}) {
   const size = opts.size || 6;
   const nickClass = opts.bold ? 'font-semibold' : '';
@@ -96,4 +102,11 @@ function avatarNickHtml(nick, figure, opts = {}) {
     </span>
     <span class="${nickClass}">${nick || '—'}</span>
   </span>`;
+}
+
+// Cargos internos (grupo_niveis) de um grupo, ordenados — usado pra
+// checar se o usuário está no cargo mínimo configurado pra votar.
+async function buscarNiveisGrupo(grupoSlug) {
+  const resp = await apiFetch(`/grupos/${grupoSlug}/niveis`);
+  return resp.ok ? await resp.json() : [];
 }

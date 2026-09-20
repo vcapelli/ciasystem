@@ -390,14 +390,33 @@
     const grupos = gruposResp.ok ? await gruposResp.json() : [];
     const permissoesIp = permIpResp.ok ? await permIpResp.json() : [];
 
+    const grupoProjetosAtual = grupos.find((g) => String(g.id) === config.projetos_grupo_responsavel_id);
+    const niveisGrupoProjetos = grupoProjetosAtual
+      ? await apiFetch(`/grupos/${grupoProjetosAtual.slug}/niveis`).then((r) => (r.ok ? r.json() : []))
+      : [];
+
+    function optionsNiveisVotantes(niveis) {
+      return `
+        <option value="">Todos os membros ativos (padrão)</option>
+        ${niveis.map((n) => `<option value="${n.id}" ${String(n.id) === config.projetos_nivel_minimo_votante_id ? 'selected' : ''}>${n.nome} (e cargos acima na hierarquia do grupo)</option>`).join('')}
+      `;
+    }
+
     raiz.innerHTML = `
       <div class="bg-card border border-border rounded-2xl shadow-sm p-5 max-w-lg mb-5">
         <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-1">Grupo responsável pelos projetos</h2>
         <p class="text-xs text-muted mb-3">Único grupo que gere todos os processos de projeto/proposta/correção/sugestão — define responsáveis, dá parecer, vota e implementa.</p>
-        <div class="flex gap-2">
+        <div class="flex gap-2 mb-3">
           <select id="config-projetos-grupo-id" class="flex-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
             <option value="">Nenhum (processos não podem ser abertos)</option>
             ${grupos.map((g) => `<option value="${g.id}" ${String(g.id) === config.projetos_grupo_responsavel_id ? 'selected' : ''}>${g.nome}</option>`).join('')}
+          </select>
+        </div>
+        <label class="block text-xs font-semibold text-muted mb-1">Cargo mínimo que vota</label>
+        <p class="text-xs text-muted mb-2">Por padrão qualquer membro ativo do grupo vota. Escolha um cargo da hierarquia interna do grupo pra restringir a votação só a quem está nesse cargo ou acima (não afeta quem pode ser responsável nem o parecer dele, que sempre conta como voto).</p>
+        <div class="flex gap-2">
+          <select id="config-projetos-nivel-votante-id" class="flex-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent" ${grupoProjetosAtual ? '' : 'disabled'}>
+            ${optionsNiveisVotantes(niveisGrupoProjetos)}
           </select>
           <button id="btn-salvar-grupo-projetos" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors whitespace-nowrap">Salvar</button>
         </div>
@@ -474,11 +493,27 @@
       </div>
     `;
 
+    document.getElementById('config-projetos-grupo-id').addEventListener('change', async (e) => {
+      const selectNivel = document.getElementById('config-projetos-nivel-votante-id');
+      const grupo = grupos.find((g) => String(g.id) === e.target.value);
+      if (!grupo) {
+        selectNivel.innerHTML = optionsNiveisVotantes([]);
+        selectNivel.disabled = true;
+        return;
+      }
+      selectNivel.disabled = false;
+      const niveis = await apiFetch(`/grupos/${grupo.slug}/niveis`).then((r) => (r.ok ? r.json() : []));
+      selectNivel.innerHTML = optionsNiveisVotantes(niveis);
+    });
+
     document.getElementById('btn-salvar-grupo-projetos').addEventListener('click', async () => {
       const msg = document.getElementById('config-projetos-grupo-msg');
       const resp = await apiFetch('/configuracoes', {
         method: 'PATCH',
-        body: JSON.stringify({ projetos_grupo_responsavel_id: document.getElementById('config-projetos-grupo-id').value }),
+        body: JSON.stringify({
+          projetos_grupo_responsavel_id: document.getElementById('config-projetos-grupo-id').value,
+          projetos_nivel_minimo_votante_id: document.getElementById('config-projetos-nivel-votante-id').value,
+        }),
       });
       msg.classList.remove('hidden');
       msg.textContent = resp.ok ? 'Salvo!' : 'Não foi possível salvar.';

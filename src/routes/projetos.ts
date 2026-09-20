@@ -6,6 +6,7 @@ import {
   ehAdminDoGrupoResponsavel,
   ehMembroAtivoDoGrupo,
   podeVerProjetos,
+  podeVotarProjetos,
   registrarHistoricoProjeto,
 } from '../services/projetos'
 
@@ -237,6 +238,50 @@ projetos.post('/:id/parecer', async (c) => {
   return c.json({ ok: true })
 })
 
+// POST /projetos/:id/devolver-parecer — admin do grupo/sistema devolve
+// a análise/parecer pro responsável revisar, só enquanto em_votacao
+// (antes de encerrar). Volta pra em_analise e limpa parecer/veredito e
+// TODOS os votos (inclusive o auto-voto do responsável) — como o
+// parecer vai ser refeito, os votos antigos ficam sem sentido.
+projetos.post('/:id/devolver-parecer', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  const db = c.env.DB.withSession('first-primary') // ver nota sobre réplicas D1 no topo do arquivo
+  const id = c.req.param('id')
+  const body = await c.req.json<{ motivo?: string }>().catch(() => ({}) as { motivo?: string })
+
+  if (!(await ehAdminDoGrupoResponsavel(db, usuarioId))) {
+    return c.json({ erro: 'só um administrador do grupo responsável devolve o parecer' }, 403)
+  }
+
+  const projeto = await db.prepare(`SELECT status, responsavel_id FROM projetos WHERE id = ?`)
+    .bind(id).first<{ status: string; responsavel_id: number | null }>()
+  if (!projeto) return c.json({ erro: 'não encontrado' }, 404)
+  if (projeto.status !== 'em_votacao') {
+    return c.json({ erro: 'só dá pra devolver o parecer enquanto o processo está em votação' }, 409)
+  }
+
+  await db.prepare(`DELETE FROM projeto_votos WHERE projeto_id = ?`).bind(id).run()
+  await db.prepare(
+    `UPDATE projetos SET status = 'em_analise', analise = NULL, parecer = NULL, veredito = NULL,
+       parecer_postado_em = NULL, votacao_aberta_em = NULL, atualizado_em = strftime('%Y-%m-%dT%H:%M:%SZ','now')
+     WHERE id = ?`
+  ).bind(id).run()
+
+  await registrarHistoricoProjeto(
+    db, Number(id),
+    `Análise e parecer devolvidos ao responsável para revisão${body.motivo ? `: ${body.motivo}` : ''}`,
+    usuarioId
+  )
+
+  if (projeto.responsavel_id) {
+    await notificar(db, projeto.responsavel_id, 'projeto_status', 'Seu parecer foi devolvido para revisão', {
+      referenciaTipo: 'projeto', referenciaId: Number(id),
+    })
+  }
+
+  return c.json({ ok: true })
+})
+
 // POST /projetos/:id/votar — membro ativo do grupo responsável, só em
 // em_votacao (inclui o próprio responsável). Upsert: permite trocar o
 // voto enquanto a votação seguir aberta.
@@ -256,8 +301,8 @@ projetos.post('/:id/votar', async (c) => {
   if (projeto.status !== 'em_votacao') return c.json({ erro: 'este processo não está em votação' }, 409)
 
   const grupoId = await buscarGrupoResponsavelProjetos(db)
-  if (!grupoId || !(await ehMembroAtivoDoGrupo(db, usuarioId, grupoId))) {
-    return c.json({ erro: 'só membros ativos do grupo responsável pelos projetos votam' }, 403)
+  if (!grupoId || !(await podeVotarProjetos(db, usuarioId, grupoId))) {
+    return c.json({ erro: 'você não tem o cargo necessário pra votar nesse processo' }, 403)
   }
 
   await db.prepare(

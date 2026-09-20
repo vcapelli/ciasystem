@@ -28,6 +28,39 @@ export async function ehMembroAtivoDoGrupo(db: D1Like, usuarioId: number, grupoI
   return membro !== null
 }
 
+// Cargo mínimo (grupo_niveis.id) da hierarquia interna do grupo que
+// pode votar, ou null se não foi restringido (admin > Permissões >
+// "Cargo mínimo que vota" — padrão: qualquer membro ativo vota).
+export async function buscarNivelMinimoVotantesProjetos(db: D1Like): Promise<number | null> {
+  const config = await db.prepare(`SELECT valor FROM configuracoes_sistema WHERE chave = 'projetos_nivel_minimo_votante_id'`)
+    .first<{ valor: string | null }>()
+  const id = config?.valor ? Number(config.valor) : null
+  return id && !Number.isNaN(id) ? id : null
+}
+
+// Quem pode votar: membro ativo do grupo responsável e, se houver um
+// cargo mínimo configurado, só quem estiver nesse cargo ou acima na
+// hierarquia interna do grupo (mesma lógica de nivel_minimo_id já
+// usada nas aulas de grupo — compara pela `ordem`). Isso é só pra
+// votação: não afeta quem pode ser responsável, nem o parecer dele,
+// que sempre conta como voto independente do cargo (decisão original
+// do módulo).
+export async function podeVotarProjetos(db: D1Like, usuarioId: number, grupoId: number): Promise<boolean> {
+  const membro = await db.prepare(
+    `SELECT gn.ordem FROM usuario_grupos ug JOIN grupo_niveis gn ON gn.id = ug.nivel_id
+     WHERE ug.usuario_id = ? AND ug.grupo_id = ? AND ug.ativo = 1`
+  ).bind(usuarioId, grupoId).first<{ ordem: number }>()
+  if (!membro) return false
+
+  const nivelMinimoId = await buscarNivelMinimoVotantesProjetos(db)
+  if (!nivelMinimoId) return true
+
+  const minimo = await db.prepare(`SELECT ordem FROM grupo_niveis WHERE id = ?`).bind(nivelMinimoId).first<{ ordem: number }>()
+  if (!minimo) return true // config aponta pra um cargo que não existe mais — não trava ninguém
+
+  return membro.ordem >= minimo.ordem
+}
+
 // Quem pode ver a lista/detalhe de processos: administrador do sistema,
 // ou membro ATIVO do grupo responsável configurado (mesmo o autor do
 // processo, se não for membro do grupo, não vê — decisão explícita).
