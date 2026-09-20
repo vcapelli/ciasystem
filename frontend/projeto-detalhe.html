@@ -159,9 +159,8 @@
           ${badgeStatusProjeto(p.status)}
         </div>
         <h1 class="font-display text-xl font-black tracking-tight mb-3">${escapeHtml(p.titulo)}</h1>
-        <div class="flex items-center gap-3 mb-4">
-          ${avatarComLabelHtml('Autor', p.autor_nick, autorFigure)}
-          <p class="text-xs text-muted">Aberto em ${formatarDataProjeto(p.criado_em)}</p>
+        <div class="mb-4">
+          ${avatarComLabelHtml('Autor', p.autor_nick, autorFigure, `Aberto em ${formatarDataProjeto(p.criado_em)}`)}
         </div>
         <p class="text-sm whitespace-pre-wrap">${escapeHtml(p.descricao)}</p>
 
@@ -176,9 +175,8 @@
       <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mt-5">
         <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Responsável</h2>
         ${p.responsavel_nick ? `
-          <div class="flex items-center gap-3 mb-3">
-            ${avatarComLabelHtml('Responsável', p.responsavel_nick, responsavelFigure)}
-            <p class="text-xs text-muted">Definido em ${formatarDataProjeto(p.responsavel_definido_em)}</p>
+          <div class="mb-3">
+            ${avatarComLabelHtml('Responsável', p.responsavel_nick, responsavelFigure, `Definido em ${formatarDataProjeto(p.responsavel_definido_em)}`)}
           </div>
         ` : '<p class="text-sm text-muted mb-3">Ainda não definido.</p>'}
         ${souAdmin && naoTerminal ? `

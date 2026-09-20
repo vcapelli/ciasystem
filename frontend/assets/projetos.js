@@ -67,22 +67,26 @@ async function buscarFigureProjeto(nick) {
   } catch { return null; }
 }
 
-// Avatar circular + cargo/nick empilhados embaixo — EXATAMENTE o
-// mesmo componente usado no rodapé de assinaturas de documentos
-// (documento-dashboard.html): recorte só da cabeça (modo 'mini',
-// object-cover/object-top com -mt-3) e o "salto" no hover. Usado pro
-// autor e responsável do processo (label = "Autor"/"Responsável").
-function avatarComLabelHtml(label, nick, figure) {
+// Avatar circular (mesmo recorte de cabeça usado no rodapé de
+// assinaturas de documentos, modo 'mini' com -mt-3 e o "salto" no
+// hover) ao lado de um bloco de texto: "Label: nick" (só o "Label:" em
+// semibold, o nick em peso normal) e, embaixo, uma linha extra opcional
+// (ex: "Definido em ..."). Usado pro autor e responsável do processo.
+function avatarComLabelHtml(label, nick, figure, linhaExtra) {
   const inicial = (nick || '?').slice(0, 2).toUpperCase();
   return `
-    <div class="text-center">
-      <span class="h-12 w-12 mx-auto rounded-full bg-basebg border border-border overflow-hidden inline-block">
-        ${figure
-          ? `<img src="${avatarUrl(figure, 'mini', '2')}" class="w-full h-[190%] object-cover object-top -mt-3 transition-transform duration-300 hover:-translate-y-[10px]" alt="">`
-          : `<span class="w-full h-full flex items-center justify-center text-xs font-bold">${inicial}</span>`}
-      </span>
-      <p class="text-xs font-semibold mt-1">${label}</p>
-      <p class="text-xs text-muted">${nick || '—'}</p>
+    <div class="flex items-center gap-3">
+      <div class="text-center shrink-0">
+        <span class="h-12 w-12 mx-auto rounded-full bg-basebg border border-border overflow-hidden inline-block">
+          ${figure
+            ? `<img src="${avatarUrl(figure, 'mini', '2')}" class="w-full h-[190%] object-cover object-top -mt-3 transition-transform duration-300 hover:-translate-y-[10px]" alt="">`
+            : `<span class="w-full h-full flex items-center justify-center text-xs font-bold">${inicial}</span>`}
+        </span>
+      </div>
+      <div>
+        <p class="text-xs mt-1"><span class="font-semibold">${label}:</span> ${nick || '—'}</p>
+        ${linhaExtra ? `<p class="text-xs text-muted">${linhaExtra}</p>` : ''}
+      </div>
     </div>
   `;
 }
