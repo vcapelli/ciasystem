@@ -151,11 +151,12 @@ usuarios.patch('/me', async (c) => {
   return c.json({ ok: true })
 })
 
-// POST /usuarios/alterar-senha — só pra quem JÁ tem senha definida e
-// já está logado: como a sessão autenticada já prova quem é a pessoa,
-// não precisa do código na missão de novo (isso só é exigido a
-// primeira vez, em /auth/definir-senha, quando ainda não há senha
-// nenhuma pra provar identidade).
+// POST /usuarios/alterar-senha — define ou troca a senha de quem já
+// está logado. A sessão autenticada já prova quem é a pessoa, então
+// isso vale tanto pra primeira definição quanto pra troca — não é
+// preciso passar pelo código na missão de novo em nenhum dos dois
+// casos (/auth/definir-senha, com código, segue existindo só pra um
+// eventual fluxo futuro sem sessão ativa).
 usuarios.post('/alterar-senha', async (c) => {
   const usuarioId = c.get('usuarioId')
   const body = await c.req.json<{ senha: string }>()
