@@ -1,10 +1,14 @@
 import { Hono } from 'hono'
 import { notificar } from '../services/notificacoes'
 import { registrarEvento } from '../services/logs'
+import type { D1Like } from '../types/db'
 import {
   buscarGrupoResponsavelProjetos,
+  contarVotantesElegiveisProjetos,
+  contarVotosElegiveisProjeto,
   ehAdminDoGrupoResponsavel,
   ehMembroAtivoDoGrupo,
+  fecharVotacaoProjeto,
   podeVerProjetos,
   podeVotarProjetos,
   registrarHistoricoProjeto,
@@ -233,6 +237,18 @@ projetos.post('/:id/parecer', async (c) => {
         referenciaTipo: 'projeto', referenciaId: Number(id),
       })
     }
+
+    // Caso raro, mas possível: o único votante elegível é o próprio
+    // responsável (ex: cargos votantes restritos a um só cargo, e é o
+    // dele) — o auto-voto que acabou de ser gravado já fecha sozinho.
+    const totalElegiveis = await contarVotantesElegiveisProjetos(db, grupoId)
+    const totalVotaram = await contarVotosElegiveisProjeto(db, Number(id), grupoId)
+    if (totalElegiveis > 0 && totalVotaram >= totalElegiveis) {
+      const fechamento = await fecharVotacaoProjeto(db, Number(id), null)
+      if (fechamento.status === 'fechado') {
+        await finalizarFechamentoVotacao(db, id, projeto.autor_id, fechamento, null)
+      }
+    }
   }
 
   return c.json({ ok: true })
@@ -282,9 +298,32 @@ projetos.post('/:id/devolver-parecer', async (c) => {
   return c.json({ ok: true })
 })
 
+// Notifica o autor sobre o resultado do fechamento (manual ou
+// automático) e registra a linha correspondente na timeline.
+async function finalizarFechamentoVotacao(
+  db: D1Like,
+  id: string,
+  autorId: number,
+  fechamento: { resultado: 'aprovado' | 'reprovado'; aprova: number; reprova: number },
+  encerradoPorId: number | null
+): Promise<void> {
+  const descricao = encerradoPorId
+    ? `Votação encerrada: ${fechamento.resultado} (${fechamento.aprova} aprova / ${fechamento.reprova} reprova)`
+    : `Votação encerrada automaticamente — todos os votantes elegíveis já votaram: ${fechamento.resultado} (${fechamento.aprova} aprova / ${fechamento.reprova} reprova)`
+  await registrarHistoricoProjeto(db, Number(id), descricao, encerradoPorId)
+
+  await notificar(db, autorId, 'projeto_status',
+    fechamento.resultado === 'aprovado' ? 'Seu processo foi aprovado — aguardando implementação' : 'Seu processo foi reprovado e arquivado',
+    { referenciaTipo: 'projeto', referenciaId: Number(id) }
+  )
+}
+
 // POST /projetos/:id/votar — membro ativo do grupo responsável, só em
 // em_votacao (inclui o próprio responsável). Upsert: permite trocar o
-// voto enquanto a votação seguir aberta.
+// voto enquanto a votação seguir aberta. Se depois desse voto TODOS os
+// votantes elegíveis já tiverem votado, a votação encerra sozinha (a
+// não ser que dê empate — aí fica esperando o admin resolver, como
+// sempre foi).
 projetos.post('/:id/votar', async (c) => {
   const usuarioId = c.get('usuarioId')
   const db = c.env.DB.withSession('first-primary') // ver nota sobre réplicas D1 no topo do arquivo
@@ -295,8 +334,8 @@ projetos.post('/:id/votar', async (c) => {
     return c.json({ erro: 'voto precisa ser aprova ou reprova' }, 400)
   }
 
-  const projeto = await db.prepare(`SELECT status FROM projetos WHERE id = ?`)
-    .bind(id).first<{ status: string }>()
+  const projeto = await db.prepare(`SELECT status, autor_id FROM projetos WHERE id = ?`)
+    .bind(id).first<{ status: string; autor_id: number }>()
   if (!projeto) return c.json({ erro: 'não encontrado' }, 404)
   if (projeto.status !== 'em_votacao') return c.json({ erro: 'este processo não está em votação' }, 409)
 
@@ -312,11 +351,26 @@ projetos.post('/:id/votar', async (c) => {
        atualizado_em = strftime('%Y-%m-%dT%H:%M:%SZ','now')`
   ).bind(id, usuarioId, body.voto, body.comentario || null).run()
 
+  const totalElegiveis = await contarVotantesElegiveisProjetos(db, grupoId)
+  const totalVotaram = await contarVotosElegiveisProjeto(db, Number(id), grupoId)
+  if (totalElegiveis > 0 && totalVotaram >= totalElegiveis) {
+    const fechamento = await fecharVotacaoProjeto(db, Number(id), null)
+    if (fechamento.status === 'fechado') {
+      await finalizarFechamentoVotacao(db, id, projeto.autor_id, fechamento, null)
+    }
+    // 'empate' com todo mundo já tendo votado: ninguém mais pode votar
+    // pra desempatar — fica parado até um admin agir (ex: devolver o
+    // parecer e reiniciar a votação). 'sem_votos' não acontece aqui já
+    // que acabamos de inserir um voto.
+  }
+
   return c.json({ ok: true })
 })
 
 // POST /projetos/:id/encerrar-votacao — admin do grupo/sistema, só sem
 // empate. Reprovado arquiva automaticamente; aprovado libera implementação.
+// (O fechamento também acontece sozinho, sem precisar desse botão,
+// quando todos os votantes elegíveis já tiverem votado — ver /votar.)
 projetos.post('/:id/encerrar-votacao', async (c) => {
   const usuarioId = c.get('usuarioId')
   const db = c.env.DB.withSession('first-primary') // ver nota sobre réplicas D1 no topo do arquivo
@@ -331,46 +385,13 @@ projetos.post('/:id/encerrar-votacao', async (c) => {
   if (!projeto) return c.json({ erro: 'não encontrado' }, 404)
   if (projeto.status !== 'em_votacao') return c.json({ erro: 'este processo não está em votação' }, 409)
 
-  const contagem = await db.prepare(
-    `SELECT
-       SUM(CASE WHEN voto = 'aprova' THEN 1 ELSE 0 END) AS aprova,
-       SUM(CASE WHEN voto = 'reprova' THEN 1 ELSE 0 END) AS reprova
-     FROM projeto_votos WHERE projeto_id = ?`
-  ).bind(id).first<{ aprova: number | null; reprova: number | null }>()
-  const aprova = contagem?.aprova || 0
-  const reprova = contagem?.reprova || 0
+  const fechamento = await fecharVotacaoProjeto(db, Number(id), usuarioId)
+  if (fechamento.status === 'sem_votos') return c.json({ erro: 'ninguém votou ainda' }, 409)
+  if (fechamento.status === 'empate') return c.json({ erro: 'votação empatada — aguarde mais um voto pra desempatar' }, 409)
 
-  if (aprova === 0 && reprova === 0) return c.json({ erro: 'ninguém votou ainda' }, 409)
-  if (aprova === reprova) return c.json({ erro: 'votação empatada — aguarde mais um voto pra desempatar' }, 409)
+  await finalizarFechamentoVotacao(db, id, projeto.autor_id, fechamento, usuarioId)
 
-  const resultado = aprova > reprova ? 'aprovado' : 'reprovado'
-  const novoStatus = resultado === 'aprovado' ? 'aguardando_implementacao' : 'arquivado'
-
-  await db.prepare(
-    `UPDATE projetos SET
-       votacao_encerrada_em = strftime('%Y-%m-%dT%H:%M:%SZ','now'), votacao_encerrada_por_id = ?,
-       votacao_resultado = ?, status = ?,
-       arquivado_em = CASE WHEN ? = 'arquivado' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE arquivado_em END,
-       motivo_arquivamento = CASE WHEN ? = 'arquivado' THEN ? ELSE motivo_arquivamento END,
-       atualizado_em = strftime('%Y-%m-%dT%H:%M:%SZ','now')
-     WHERE id = ?`
-  ).bind(
-    usuarioId, resultado, novoStatus, novoStatus, novoStatus,
-    `Reprovado em votação (${aprova} aprova / ${reprova} reprova)`, id
-  ).run()
-
-  await registrarHistoricoProjeto(
-    db, Number(id),
-    `Votação encerrada: ${resultado} (${aprova} aprova / ${reprova} reprova)`,
-    usuarioId
-  )
-
-  await notificar(db, projeto.autor_id, 'projeto_status',
-    resultado === 'aprovado' ? 'Seu processo foi aprovado — aguardando implementação' : 'Seu processo foi reprovado e arquivado',
-    { referenciaTipo: 'projeto', referenciaId: Number(id) }
-  )
-
-  return c.json({ ok: true, resultado })
+  return c.json({ ok: true, resultado: fechamento.resultado })
 })
 
 // POST /projetos/:id/concluir — só o responsável atual, só em
