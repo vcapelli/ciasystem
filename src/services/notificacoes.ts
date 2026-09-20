@@ -7,6 +7,7 @@ export type TipoNotificacao =
   | 'tweet_resposta' | 'tweet_curtida' | 'tweet_retweet' | 'tweet_mencao'
   | 'seguidor_novo' | 'requerimento_status' | 'documento_revisao' | 'documento_revisao_pendente'
   | 'emblema_recebido' | 'conquista_alcancada' | 'sistema'
+  | 'projeto_responsavel' | 'projeto_status' | 'projeto_votacao_aberta'
 
 export async function notificar(
   db: D1Database,

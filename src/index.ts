@@ -38,6 +38,7 @@ import requisitosPatente from './routes/requisitos-patente'
 import documentosPermissoes from './routes/documentos-permissoes'
 import documentosCategorias from './routes/documentos-categorias'
 import footer from './routes/footer'
+import projetos from './routes/projetos'
 
 // `Bindings` descreve os recursos do Cloudflare disponíveis no Worker
 // (bindings configurados em wrangler.toml + secrets). `Variables` é o
@@ -149,6 +150,7 @@ protegido.route('/requisitos-patente', requisitosPatente)
 protegido.route('/documentos-permissoes', documentosPermissoes)
 protegido.route('/documentos-categorias', documentosCategorias)
 protegido.route('/footer', footer)
+protegido.route('/projetos', projetos)
 protegido.route('/configuracoes', configuracoesAdmin)
 
 app.route('/', protegido)

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIASystem — Projetos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="/assets/tailwind-config.js"></script>
+<link href="https://kit-pro.fontawesome.com/releases/v7.3.1/css/pro.min.css" rel="stylesheet">
+<link rel="stylesheet" href="/assets/theme.css">
+</head>
+<body class="bg-basebg text-dark font-sans min-h-screen">
+
+  <div class="fixed inset-0 -z-10 habbo-floor-bg"></div>
+
+  <aside id="layout-sidebar" class="w-60 fixed left-0 top-[72px] bottom-0 border-r border-border bg-basebg p-4 overflow-y-auto"></aside>
+
+  <main class="ml-60 min-h-screen flex flex-col">
+    <div class="flex-1 min-w-0 px-6 py-8">
+      <div class="max-w-3xl mx-auto">
+        <h1 class="font-display text-2xl font-black tracking-tight mb-1">Projetos e Propostas</h1>
+        <p class="text-sm text-muted mb-6">Abra um projeto, proposta, correção ou sugestão pra ser analisado pelo grupo responsável.</p>
+
+        <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-6">
+          <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Abrir novo processo</h2>
+          <form id="form-projeto" class="space-y-3">
+            <select id="proj-tipo" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+              <option value="projeto">Projeto</option>
+              <option value="proposta">Proposta</option>
+              <option value="correcao">Correção</option>
+              <option value="sugestao">Sugestão</option>
+            </select>
+            <input id="proj-titulo" maxlength="150" placeholder="Título" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            <textarea id="proj-descricao" rows="4" placeholder="Descreva o processo em detalhes…" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></textarea>
+            <button type="submit" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Abrir processo</button>
+            <p id="proj-erro" class="hidden text-xs text-red-500"></p>
+            <p id="proj-sucesso" class="hidden text-xs text-accent"></p>
+          </form>
+        </div>
+
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-sm font-semibold uppercase tracking-wide text-muted">Processos</h2>
+          <select id="filtro-status" class="bg-basebg border border-border rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-accent">
+            <option value="">Todos os status</option>
+            <option value="aberto">Aberto</option>
+            <option value="em_analise">Em análise</option>
+            <option value="em_votacao">Em votação</option>
+            <option value="aguardando_implementacao">Aguardando implementação</option>
+            <option value="concluido">Concluído</option>
+            <option value="arquivado">Arquivado</option>
+          </select>
+        </div>
+
+        <div id="lista-projetos" class="bg-card border border-border rounded-2xl shadow-sm divide-y divide-border overflow-hidden">
+          <p class="text-sm text-muted p-4">Carregando…</p>
+        </div>
+      </div>
+    </div>
+    <div id="layout-footer"></div>
+  </main>
+
+<script src="/assets/api.js"></script>
+<script src="/assets/projetos.js"></script>
+<script src="/assets/footer.js"></script>
+<script src="/assets/layout.js"></script>
+<script>
+  function renderLinhaProjeto(p) {
+    return `
+      <a href="/projetos/${p.id}" class="flex items-center justify-between gap-3 px-4 py-3 hover:bg-basebg transition-colors">
+        <div class="min-w-0">
+          <p class="text-sm font-semibold truncate">#${p.id} — ${p.titulo}</p>
+          <p class="text-xs text-muted mt-0.5">${p.autor_nick || '—'}${p.autor_tag ? ` [${p.autor_tag}]` : ''} · ${formatarDataProjeto(p.criado_em)}</p>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          ${badgeTipoProjeto(p.tipo)}
+          ${badgeStatusProjeto(p.status)}
+        </div>
+      </a>
+    `;
+  }
+
+  async function carregarLista() {
+    const raiz = document.getElementById('lista-projetos');
+    const status = document.getElementById('filtro-status').value;
+    const resp = await apiFetch(`/projetos${status ? `?status=${status}` : ''}`);
+    if (resp.status === 403) {
+      raiz.innerHTML = '<p class="text-sm text-muted p-4">Você não é membro do grupo responsável pelos projetos, então não vê a lista — mas pode abrir um processo acima.</p>';
+      return;
+    }
+    const lista = resp.ok ? await resp.json() : [];
+    raiz.innerHTML = lista.length
+      ? lista.map(renderLinhaProjeto).join('')
+      : '<p class="text-sm text-muted p-4">Nenhum processo encontrado.</p>';
+  }
+
+  montarLayout('/projetos.html').then((me) => {
+    if (!me) return;
+    carregarLista();
+    document.getElementById('filtro-status').addEventListener('change', carregarLista);
+
+    document.getElementById('form-projeto').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const erroEl = document.getElementById('proj-erro');
+      const sucessoEl = document.getElementById('proj-sucesso');
+      erroEl.classList.add('hidden');
+      sucessoEl.classList.add('hidden');
+
+      const titulo = document.getElementById('proj-titulo').value.trim();
+      const descricao = document.getElementById('proj-descricao').value.trim();
+      if (!titulo || !descricao) {
+        erroEl.textContent = 'Preencha título e descrição.';
+        erroEl.classList.remove('hidden');
+        return;
+      }
+
+      const resp = await apiFetch('/projetos', {
+        method: 'POST',
+        body: JSON.stringify({
+          tipo: document.getElementById('proj-tipo').value,
+          titulo, descricao,
+        }),
+      });
+
+      if (!resp.ok) {
+        const dados = await resp.json().catch(() => ({}));
+        erroEl.textContent = dados.erro || 'Não foi possível abrir o processo.';
+        erroEl.classList.remove('hidden');
+        return;
+      }
+
+      const dados = await resp.json();
+      sucessoEl.textContent = 'Processo aberto! Redirecionando…';
+      sucessoEl.classList.remove('hidden');
+      setTimeout(() => { window.location.href = `/projetos/${dados.id}`; }, 800);
+    });
+  });
+</script>
+</body>
+</html>

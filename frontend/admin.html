@@ -383,14 +383,27 @@
     const raiz = document.getElementById('conteudo-aba');
     raiz.innerHTML = '<p class="text-sm text-muted">Carregando…</p>';
 
-    const [permResp, gruposResp, permIpResp] = await Promise.all([
-      apiFetch('/permissoes-requerimentos'), apiFetch('/grupos'), apiFetch('/ip-listagem/permissoes'),
+    const [permResp, gruposResp, permIpResp, config] = await Promise.all([
+      apiFetch('/permissoes-requerimentos'), apiFetch('/grupos'), apiFetch('/ip-listagem/permissoes'), buscarConfiguracoes(),
     ]);
     const permissoesLista = permResp.ok ? await permResp.json() : [];
     const grupos = gruposResp.ok ? await gruposResp.json() : [];
     const permissoesIp = permIpResp.ok ? await permIpResp.json() : [];
 
     raiz.innerHTML = `
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5 max-w-lg mb-5">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-1">Grupo responsável pelos projetos</h2>
+        <p class="text-xs text-muted mb-3">Único grupo que gere todos os processos de projeto/proposta/correção/sugestão — define responsáveis, dá parecer, vota e implementa.</p>
+        <div class="flex gap-2">
+          <select id="config-projetos-grupo-id" class="flex-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            <option value="">Nenhum (processos não podem ser abertos)</option>
+            ${grupos.map((g) => `<option value="${g.id}" ${String(g.id) === config.projetos_grupo_responsavel_id ? 'selected' : ''}>${g.nome}</option>`).join('')}
+          </select>
+          <button id="btn-salvar-grupo-projetos" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors whitespace-nowrap">Salvar</button>
+        </div>
+        <p id="config-projetos-grupo-msg" class="hidden text-xs mt-2"></p>
+      </div>
+
       <div class="bg-card border border-border rounded-2xl shadow-sm divide-y divide-border overflow-hidden mb-5">
         ${permissoesLista.length ? permissoesLista.map((p) => `
           <div class="flex items-center justify-between px-4 py-3">
@@ -460,6 +473,17 @@
         <p id="perm-ip-erro" class="hidden text-xs text-red-500 mt-2"></p>
       </div>
     `;
+
+    document.getElementById('btn-salvar-grupo-projetos').addEventListener('click', async () => {
+      const msg = document.getElementById('config-projetos-grupo-msg');
+      const resp = await apiFetch('/configuracoes', {
+        method: 'PATCH',
+        body: JSON.stringify({ projetos_grupo_responsavel_id: document.getElementById('config-projetos-grupo-id').value }),
+      });
+      msg.classList.remove('hidden');
+      msg.textContent = resp.ok ? 'Salvo!' : 'Não foi possível salvar.';
+      msg.className = `text-xs mt-2 ${resp.ok ? 'text-green-600' : 'text-red-500'}`;
+    });
 
     let alvoModo = 'usuario';
     let usuarioSelecionadoId = null;
