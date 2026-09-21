@@ -32,16 +32,39 @@ async function buscarPatente(db: D1Database, patenteId: unknown): Promise<{ id: 
 }
 
 /**
- * Cria a linha em `usuarios` pra uma das 3 portas de entrada.
+ * Normaliza a data histórica informada num requerimento de
+ * 'integracao' (`dados_especificos.data`) pro mesmo formato ISO usado
+ * em todo o resto do schema. O formulário manda só a data (input
+ * type="date", ex: '2024-03-15') — completa com T00:00:00Z. Se já vier
+ * um timestamp completo (ex: chamada direta na API), usa como está.
+ * `undefined`/vazio → `null` (cai no fallback pra AGORA em quem chama).
+ */
+export function normalizarDataIntegracao(data: string | undefined | null): string | null {
+  if (!data) return null
+  return /^\d{4}-\d{2}-\d{2}$/.test(data) ? `${data}T00:00:00Z` : data
+}
+
+/**
+ * Cria a linha em `usuarios` pra uma das portas de entrada (instrução
+ * inicial, contratação, venda de cargo, ou integração — migração de
+ * alguém que já estava na organização antes do CIASystem existir).
  * `tag` é opcional em `dados_especificos` (nem toda porta de entrada
  * atribui TAG na hora — pode vir depois via requerimento tipo 'tag').
+ * `dataCustomizada` é só pra 'integracao': define `data_ingresso` e
+ * `data_ultimo_ato_funcional` com a data real de ingresso na
+ * organização (fluxo antigo), em vez de "agora" — sem isso, migrar
+ * alguém resetaria o tempo de serviço já cumprido e travaria a próxima
+ * promoção, que depende de dias corridos desde o último ato funcional
+ * (seção 6 do doc-mestre). `null`/omitido → comportamento de sempre
+ * (AGORA), igual às outras portas de entrada.
  */
 async function criarUsuarioDeEntrada(
   db: D1Database,
   nick: string,
   patenteId: number,
   corpo: string,
-  tag?: string
+  tag?: string,
+  dataCustomizada?: string | null
 ): Promise<number> {
   const existente = await db.prepare(`SELECT id FROM usuarios WHERE nick = ?`).bind(nick).first<{ id: number }>()
   if (existente) throw new Error(`já existe uma conta com o nick '${nick}'`)
@@ -49,9 +72,9 @@ async function criarUsuarioDeEntrada(
   const { meta } = await db
     .prepare(
       `INSERT INTO usuarios (nick, tag, corpo, patente_atual_id, data_ingresso, data_ultimo_ato_funcional)
-       VALUES (?, ?, ?, ?, ${AGORA}, ${AGORA})`
+       VALUES (?, ?, ?, ?, COALESCE(?, ${AGORA}), COALESCE(?, ${AGORA}))`
     )
-    .bind(nick, tag ?? null, corpo, patenteId)
+    .bind(nick, tag ?? null, corpo, patenteId, dataCustomizada ?? null, dataCustomizada ?? null)
     .run()
 
   return Number(meta.last_row_id)
@@ -75,10 +98,13 @@ export async function aplicarEfeitoAprovacao(
       return { usuarioId, antes: null, depois }
     }
 
-    if (tipo === 'contratacao' || tipo === 'venda_cargo') {
+    if (tipo === 'contratacao' || tipo === 'venda_cargo' || tipo === 'integracao') {
       const patente = await buscarPatente(db, dadosEspecificos?.patente_destino_id)
       const tag = dadosEspecificos?.tag as string | undefined
-      const usuarioId = await criarUsuarioDeEntrada(db, alvo.nickAlvo, patente.id, patente.corpo, tag)
+      const dataCustomizada = tipo === 'integracao'
+        ? normalizarDataIntegracao(dadosEspecificos?.data as string | undefined)
+        : null
+      const usuarioId = await criarUsuarioDeEntrada(db, alvo.nickAlvo, patente.id, patente.corpo, tag, dataCustomizada)
       const depois = await db.prepare(`SELECT patente_atual_id, corpo, status, tag, nick FROM usuarios WHERE id = ?`).bind(usuarioId).first()
       return { usuarioId, antes: null, depois }
     }
@@ -123,6 +149,29 @@ export async function aplicarEfeitoAprovacao(
            WHERE id = ?`
         )
         .bind(patenteDestino.id, patenteDestino.corpo, usuarioId)
+        .run()
+      break
+    }
+
+    // Integração usada num usuário que já existe no CIASystem (ex:
+    // corrigir/completar uma migração feita antes de tempo) — mesma
+    // ideia da porta de entrada acima: patente/cargo + TAG opcional +
+    // a data histórica de `data_ultimo_ato_funcional`, sem forçar
+    // AGORA quando uma data foi informada.
+    case 'integracao': {
+      const patenteDestino = await buscarPatente(db, dadosEspecificos?.patente_destino_id)
+      const novaTag = (dadosEspecificos?.tag as string | undefined) ?? null
+      const dataCustomizada = normalizarDataIntegracao(dadosEspecificos?.data as string | undefined)
+      await db
+        .prepare(
+          `UPDATE usuarios
+           SET patente_atual_id = ?, corpo = ?,
+               data_ultimo_ato_funcional = COALESCE(?, ${AGORA}),
+               tag = COALESCE(?, tag),
+               atualizado_em = ${AGORA}
+           WHERE id = ?`
+        )
+        .bind(patenteDestino.id, patenteDestino.corpo, dataCustomizada, novaTag, usuarioId)
         .run()
       break
     }

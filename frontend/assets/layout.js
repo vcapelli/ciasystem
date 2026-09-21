@@ -20,6 +20,7 @@ const NAV_PRINCIPAL = [
     titulo: 'Requerimentos', icone: 'fa-solid fa-file-pen', filhos: [
       { titulo: 'Instrução Inicial', url: '/requerimentos/instrucao-inicial.html' },
       { titulo: 'Contratação', url: '/requerimentos/contratacao.html' },
+      { titulo: 'Integração', url: '/requerimentos/integracao.html', somenteAdmin: true },
       { titulo: 'Corpo de Praças', url: '/requerimentos/corpo-de-pracas.html' },
       { titulo: 'Corpo de Oficiais', url: '/requerimentos/corpo-de-oficiais.html' },
       { titulo: 'Corpo Executivo', url: '/requerimentos/corpo-executivo.html' },
@@ -225,16 +226,17 @@ function linkAtivo(url, paginaAtiva) {
   return url === paginaAtiva ? 'bg-accent/10 text-accent font-semibold' : 'text-muted hover:bg-black/5 hover:text-dark';
 }
 
-function renderItemMenu(item, paginaAtiva) {
+function renderItemMenu(item, paginaAtiva, souAdmin) {
   if (item.filhos) {
-    const abrir = item.filhos.some((f) => f.url === paginaAtiva);
+    const filhosVisiveis = item.filhos.filter((f) => !f.somenteAdmin || souAdmin);
+    const abrir = filhosVisiveis.some((f) => f.url === paginaAtiva);
     return `
       <details class="group" ${abrir ? 'open' : ''}>
         <summary class="flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer text-sm text-muted hover:bg-black/5 hover:text-dark transition-colors">
           <i class="${item.icone || ''} text-gray-400 w-4 text-center"></i><span>${item.titulo}</span>
         </summary>
         <div class="ml-6 mt-1 space-y-0.5">
-          ${item.filhos.map((f) => `
+          ${filhosVisiveis.map((f) => `
             <a href="${f.url}" class="block px-3 py-1.5 rounded-lg text-sm transition-colors ${linkAtivo(f.url, paginaAtiva)}">${f.titulo}</a>
           `).join('')}
         </div>
@@ -252,8 +254,8 @@ function renderSidebar(itensExtras, paginaAtiva, souAdmin) {
   const extras = (itensExtras || []).filter((i) => !i.item_pai_id);
   return `
     <div class="space-y-1">
-      ${NAV_PRINCIPAL.map((item) => renderItemMenu(item, paginaAtiva)).join('')}
-      ${souAdmin ? renderItemMenu({ titulo: 'Admin', url: '/admin.html', icone: 'fa-solid fa-user-shield' }, paginaAtiva) : ''}
+      ${NAV_PRINCIPAL.map((item) => renderItemMenu(item, paginaAtiva, souAdmin)).join('')}
+      ${souAdmin ? renderItemMenu({ titulo: 'Admin', url: '/admin.html', icone: 'fa-solid fa-user-shield' }, paginaAtiva, souAdmin) : ''}
     </div>
     ${extras.length ? `
       <div class="mt-6 pt-4 border-t border-border">

@@ -14,6 +14,7 @@ export type TipoRequerimento =
   | 'transferencia_corpo'
   | 'venda_cargo'
   | 'contratacao'
+  | 'integracao'
   | 'tag'
   | 'turno_tarefa'
   | 'reforma'

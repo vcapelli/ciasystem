@@ -6,7 +6,7 @@ const TITULOS_TIPO_REQ = {
   instrucao_inicial: 'Instrução Inicial', contratacao: 'Contratação', promocao: 'Promoção',
   rebaixamento: 'Rebaixamento', advertencia: 'Advertência', licenca: 'Licença',
   volta_licenca: 'Volta de Licença', transferencia_conta: 'Transferência de Conta',
-  transferencia_corpo: 'Transferência de Corpo', venda_cargo: 'Venda de Cargo', tag: 'TAG',
+  transferencia_corpo: 'Transferência de Corpo', venda_cargo: 'Venda de Cargo', integracao: 'Integração', tag: 'TAG',
   turno_tarefa: 'Turno/Tarefa', reforma: 'Reforma', desligamento_honroso: 'Desligamento Honroso',
   desligamento_desonroso: 'Desligamento Desonroso', exoneracao: 'Exoneração',
   bonificacao: 'Bonificação', cancelamento: 'Cancelamento',
@@ -108,9 +108,14 @@ function renderCardRequerimento(r, patentesMapa, meAtual, apendiceExtra = '', mo
     ? ` - {Licença: ${formatarDataCurtaReq(r.criado_em)} até ${formatarDataCurtaReq(dadosEspecificos.data_retorno)}}`
     : '';
 
+  // Integração: usa a data histórica informada (ingresso real na
+  // organização) na identificação em vez da data de hoje, que só
+  // reflete quando o registro foi migrado pro sistema novo.
+  const dataIdentificacao = (r.tipo === 'integracao' && dadosEspecificos.data) ? dadosEspecificos.data : r.criado_em;
+
   const identificacao = r.tipo === 'exoneracao'
     ? (alvoPrincipal ? `${alvoPrincipal.nick} [${alvoPrincipal.tag || '---'}] [${tagUsada}] {${r.crime_nome || r.fundamentacao || ''}} - ${formatarDataCurtaReq(r.criado_em)} até ${dadosEspecificos.exoneracao_ate ? formatarDataCurtaReq(dadosEspecificos.exoneracao_ate) : 'Indeterminado'}` : null)
-    : (alvoPrincipal ? `${alvoPrincipal.nick} [${prefixoId}${tagUsada}] ${formatarDataCurtaReq(r.criado_em)}${apendiceExtra}${apendicePreviaLicenca}` : null);
+    : (alvoPrincipal ? `${alvoPrincipal.nick} [${prefixoId}${tagUsada}] ${formatarDataCurtaReq(dataIdentificacao)}${apendiceExtra}${apendicePreviaLicenca}` : null);
 
   const linhasExtras = [];
   linhasExtras.push(`<b>${ehInstrucaoInicial ? 'Nick e TAG do Instrutor' : 'Requerido por'}:</b> ${r.autor_nick || '—'}${r.autor_tag ? ` [${r.autor_tag}]` : ''}`);
@@ -126,6 +131,7 @@ function renderCardRequerimento(r, patentesMapa, meAtual, apendiceExtra = '', mo
   if (r.crime_nome) linhasExtras.push(`<b>Infração:</b> ${r.crime_nome}`);
   if (dadosEspecificos.provas) linhasExtras.push(`<b>Provas:</b> ${dadosEspecificos.provas}`);
   if (dadosEspecificos.data_retorno) linhasExtras.push(`<b>Data de retorno:</b> ${formatarDataCurtaReq(dadosEspecificos.data_retorno)}`);
+  if (r.tipo === 'integracao' && dadosEspecificos.data) linhasExtras.push(`<b>Data de ingresso (histórica):</b> ${formatarDataCurtaReq(dadosEspecificos.data)}`);
   if (dadosEspecificos.exoneracao_ate) linhasExtras.push(`<b>Exoneração até:</b> ${formatarDataCurtaReq(dadosEspecificos.exoneracao_ate)}`);
   if (r.fundamentacao) linhasExtras.push(`<b>Motivo:</b> ${r.fundamentacao}`);
 
@@ -282,6 +288,7 @@ function formatarDataHoraReq(iso) {
  *   tiposComTag: [tipo, ...],
  *   tiposComPermissao: [tipo, ...],
  *   tiposComDataRetorno: [tipo, ...],  // licença
+ *   tiposComDataIntegracao: [tipo, ...], // integração: data histórica de ingresso/último ato funcional
  *   tiposComExoneracao: [tipo, ...],   // temporária/indeterminada
  *   tipoVoltaLicencaCondicional: bool, // só habilita 'volta_licenca' se o alvo estiver de licença
  *   usaNovoNick: bool,                 // transferência de conta
@@ -386,6 +393,12 @@ async function montarFormularioRequerimento(config) {
                 <input id="req-data-retorno" type="date" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
               </div>
 
+              <div id="req-campo-data-integracao" class="hidden sm:col-span-2">
+                <label class="block text-xs text-muted mb-1">Data de ingresso (histórica)</label>
+                <input id="req-data-integracao" type="date" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                <p class="text-xs text-muted mt-1">Data real em que a pessoa entrou na organização no sistema antigo. Define o ingresso e o último ato funcional dela — deixe em branco só se ela tiver entrado hoje mesmo, senão o tempo de serviço já cumprido é perdido e a próxima promoção pode ficar bloqueada.</p>
+              </div>
+
               <div id="req-campo-exoneracao" class="hidden space-y-3">
                 <div>
                   <label class="block text-xs text-muted mb-1">Duração</label>
@@ -481,6 +494,7 @@ async function montarFormularioRequerimento(config) {
   const campoProvas = document.getElementById('req-campo-provas');
   const campoPermissao = document.getElementById('req-campo-permissao');
   const campoDataRetorno = document.getElementById('req-campo-data-retorno');
+  const campoDataIntegracao = document.getElementById('req-campo-data-integracao');
   const campoExoneracao = document.getElementById('req-campo-exoneracao');
   const campoNovoNick = document.getElementById('req-campo-novo-nick');
   const previewEl = document.getElementById('req-alvo-preview');
@@ -753,6 +767,7 @@ async function montarFormularioRequerimento(config) {
     campoProvas.classList.toggle('hidden', !(config.tiposComCrime || []).includes(tipoAtual));
     campoPermissao.classList.toggle('hidden', !(config.tiposComPermissao || []).includes(tipoAtual));
     campoDataRetorno.classList.toggle('hidden', !(config.tiposComDataRetorno || []).includes(tipoAtual));
+    campoDataIntegracao.classList.toggle('hidden', !(config.tiposComDataIntegracao || []).includes(tipoAtual));
     campoExoneracao.classList.toggle('hidden', !(config.tiposComExoneracao || []).includes(tipoAtual));
     if (campoNovoNick) campoNovoNick.classList.toggle('hidden', !config.usaNovoNick);
     atualizarOpcoesPatenteFiltradas();
@@ -829,6 +844,9 @@ async function montarFormularioRequerimento(config) {
     }
     if ((config.tiposComDataRetorno || []).includes(tipo) && document.getElementById('req-data-retorno').value) {
       dadosEspecificos.data_retorno = document.getElementById('req-data-retorno').value;
+    }
+    if ((config.tiposComDataIntegracao || []).includes(tipo) && document.getElementById('req-data-integracao').value) {
+      dadosEspecificos.data = document.getElementById('req-data-integracao').value;
     }
     if ((config.tiposComExoneracao || []).includes(tipo)) {
       const duracao = document.getElementById('req-exoneracao-tipo').value;

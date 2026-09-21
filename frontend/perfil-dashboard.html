@@ -49,7 +49,7 @@
     instrucao_inicial: 'fa-solid fa-graduation-cap', promocao: 'fa-solid fa-arrow-up', rebaixamento: 'fa-solid fa-arrow-down',
     advertencia: 'fa-solid fa-triangle-exclamation', licenca: 'fa-solid fa-pause', volta_licenca: 'fa-solid fa-play',
     reserva: 'fa-solid fa-clock', transferencia_conta: 'fa-solid fa-right-left', transferencia_corpo: 'fa-solid fa-right-left',
-    venda_cargo: 'fa-solid fa-sack-dollar', contratacao: 'fa-solid fa-user-plus', tag: 'fa-solid fa-tag',
+    venda_cargo: 'fa-solid fa-sack-dollar', contratacao: 'fa-solid fa-user-plus', integracao: 'fa-solid fa-right-to-bracket', tag: 'fa-solid fa-tag',
     turno_tarefa: 'fa-solid fa-clock', reforma: 'fa-solid fa-medal', desligamento_honroso: 'fa-solid fa-door-open',
     desligamento_desonroso: 'fa-solid fa-door-open', exoneracao: 'fa-solid fa-ban', bonificacao: 'fa-solid fa-star',
     cancelamento: 'fa-solid fa-xmark',
@@ -546,17 +546,27 @@
 
     // Dias no posto (desde a última mudança de patente aprovada) e
     // dias na polícia (desde a instrução inicial/contratação).
-    const TIPOS_MUDANCA_PATENTE = ['instrucao_inicial', 'promocao', 'rebaixamento', 'contratacao', 'transferencia_corpo'];
-    const TIPOS_INGRESSO = ['instrucao_inicial', 'contratacao'];
+    const TIPOS_MUDANCA_PATENTE = ['instrucao_inicial', 'promocao', 'rebaixamento', 'contratacao', 'integracao', 'transferencia_corpo'];
+    const TIPOS_INGRESSO = ['instrucao_inicial', 'contratacao', 'integracao'];
     const reqsAprovados = requerimentos.filter((r) => r.status === 'aprovado');
     function diasDesde(iso) { return iso ? Math.floor((Date.now() - new Date(iso).getTime()) / 86400000) : null; }
+    // Integração carrega uma data histórica própria (dados_especificos.data)
+    // — usa ela em vez de criado_em (que só reflete quando a migração foi
+    // feita, não quando a pessoa realmente entrou na organização).
+    function dataEfetivaRequerimento(r) {
+      if (!r || r.tipo !== 'integracao') return r?.criado_em;
+      try {
+        const dados = r.dados_especificos ? JSON.parse(r.dados_especificos) : {};
+        return dados.data || r.criado_em;
+      } catch { return r.criado_em; }
+    }
 
     const ultimaMudancaPatente = reqsAprovados.find((r) => TIPOS_MUDANCA_PATENTE.includes(r.tipo));
-    const diasNoPosto = diasDesde(ultimaMudancaPatente?.criado_em);
+    const diasNoPosto = diasDesde(dataEfetivaRequerimento(ultimaMudancaPatente));
 
     const reqsIngresso = reqsAprovados.filter((r) => TIPOS_INGRESSO.includes(r.tipo));
     const primeiroIngresso = reqsIngresso[reqsIngresso.length - 1] || reqsAprovados[reqsAprovados.length - 1];
-    const diasNaPolicia = diasDesde(primeiroIngresso?.criado_em);
+    const diasNaPolicia = diasDesde(dataEfetivaRequerimento(primeiroIngresso));
 
     const textoIdentificacao = requerimentos[0]
       ? montarIdentificacao(perfil.nick, requerimentos[0].tipo, requerimentos[0].autor_tag, requerimentos[0].criado_em)

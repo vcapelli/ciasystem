@@ -36,10 +36,16 @@ export async function resolverUsuariosParaDistribuicao(
     if (!params.dias) return []
     const { results } = await db.prepare(
       `SELECT ra.usuario_id AS usuario_id FROM (
-         SELECT alvo.usuario_id, MIN(r.criado_em) AS data_ingresso
+         SELECT alvo.usuario_id,
+           -- Integração carrega a data histórica real de ingresso em
+           -- dados_especificos.data (ver src/services/efeitos.ts) —
+           -- usa ela em vez de criado_em, que só reflete quando a
+           -- migração foi feita. Os outros dois tipos não têm esse
+           -- campo, então caem em criado_em normalmente.
+           MIN(COALESCE(json_extract(r.dados_especificos, '$.data'), r.criado_em)) AS data_ingresso
          FROM requerimento_alvos alvo
          JOIN requerimentos r ON r.id = alvo.requerimento_id
-         WHERE r.tipo IN ('instrucao_inicial', 'contratacao') AND alvo.status = 'aprovado'
+         WHERE r.tipo IN ('instrucao_inicial', 'contratacao', 'integracao') AND alvo.status = 'aprovado'
          GROUP BY alvo.usuario_id
        ) ra
        WHERE (julianday('now') - julianday(ra.data_ingresso)) >= ?`

@@ -15,7 +15,7 @@ type Variables = { usuarioId: number }
 // no ato). Aprovar/reprovar/cancelar manualmente e excluir do histórico
 // continuam exigindo permissão normal (ver podeGerirRequerimento) ou
 // administrador_sistema.
-const TIPOS_AUTO_APROVADOS = ['instrucao_inicial', 'contratacao', 'tag', 'venda_cargo']
+const TIPOS_AUTO_APROVADOS = ['instrucao_inicial', 'contratacao', 'integracao', 'tag', 'venda_cargo']
 
 const requerimentos = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
@@ -54,6 +54,15 @@ requerimentos.post('/', async (c) => {
         return c.json({ erro: 'só administradores do sistema podem promover alguém a Alto Comando Militar' }, 403)
       }
     }
+  }
+
+  // Integração: exclusivo de administrador do sistema — é o formulário
+  // usado só pra migrar pro CIASystem alguém que já está na
+  // organização há tempo (fluxo manual antigo/planilha), então não faz
+  // sentido delegar isso pra ninguém além de admin (diferente de
+  // contratação, que respeita a hierarquia normal de quem contrata).
+  if (body.tipo === 'integracao' && !autor.administrador_sistema) {
+    return c.json({ erro: 'só administradores do sistema podem postar requerimentos de integração' }, 403)
   }
 
   // Contratação: sem ser administrador do sistema, só pode contratar
@@ -223,7 +232,7 @@ requerimentos.post('/', async (c) => {
         const identificador = alvo.usuario_id !== null ? { usuarioId: alvo.usuario_id } : { nickAlvo: alvo.nick_alvo! }
         const dadosParaEfeito = {
           ...(body.dados_especificos ?? {}),
-          ...(body.tipo === 'tag' && body.tag_aplicada ? { tag: body.tag_aplicada } : {}),
+          ...((body.tipo === 'tag' || body.tipo === 'integracao') && body.tag_aplicada ? { tag: body.tag_aplicada } : {}),
         }
         const efeito = await aplicarEfeitoAprovacao(c.env.DB, body.tipo, identificador, dadosParaEfeito)
 
