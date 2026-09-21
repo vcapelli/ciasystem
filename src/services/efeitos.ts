@@ -112,6 +112,21 @@ export async function aplicarEfeitoAprovacao(
       return { usuarioId, antes: null, depois }
     }
 
+    if (tipo === 'integracao') {
+      // Integração é usada especificamente pra migrar quem já está na
+      // organização — é comum a conta já existir (ex: uma tentativa
+      // anterior que criou o usuário mas falhou num passo seguinte, ou
+      // o admin só quer corrigir/completar uma migração já feita). Em
+      // vez de derrubar com "já existe uma conta com o nick X", trata
+      // como uma atualização da conta existente: reaproveita o branch
+      // "alvo já existe" abaixo (mesmo efeito de patente/TAG/data), que
+      // também grava o snapshot "antes" de verdade (em vez de `null`),
+      // então cancelar essa integração depois volta a conta pro estado
+      // anterior de verdade em vez de tentar apagá-la.
+      const existente = await db.prepare(`SELECT id FROM usuarios WHERE nick = ?`).bind(alvo.nickAlvo).first<{ id: number }>()
+      if (existente) return aplicarEfeitoAprovacao(db, tipo, { usuarioId: existente.id }, dadosEspecificos)
+    }
+
     if (tipo === 'contratacao' || tipo === 'venda_cargo' || tipo === 'integracao') {
       const patente = await buscarPatente(db, dadosEspecificos?.patente_destino_id)
       const tag = dadosEspecificos?.tag as string | undefined
