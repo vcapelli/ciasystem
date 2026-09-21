@@ -389,7 +389,7 @@ requerimentos.post('/:id/alvos/:alvoId/decidir', async (c) => {
 
   if (status === 'aprovado') {
     const dadosEspecificos = requerimento.dados_especificos ? JSON.parse(requerimento.dados_especificos) : {}
-    if (requerimento.tipo === 'tag' && requerimento.tag_aplicada) dadosEspecificos.tag = requerimento.tag_aplicada
+    if ((requerimento.tipo === 'tag' || requerimento.tipo === 'integracao') && requerimento.tag_aplicada) dadosEspecificos.tag = requerimento.tag_aplicada
     const identificador = alvo.usuario_id !== null ? { usuarioId: alvo.usuario_id } : { nickAlvo: alvo.nick_alvo! }
 
     try {

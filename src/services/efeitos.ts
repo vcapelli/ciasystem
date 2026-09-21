@@ -35,13 +35,18 @@ async function buscarPatente(db: D1Database, patenteId: unknown): Promise<{ id: 
  * Normaliza a data histórica informada num requerimento de
  * 'integracao' (`dados_especificos.data`) pro mesmo formato ISO usado
  * em todo o resto do schema. O formulário manda só a data (input
- * type="date", ex: '2024-03-15') — completa com T00:00:00Z. Se já vier
- * um timestamp completo (ex: chamada direta na API), usa como está.
- * `undefined`/vazio → `null` (cai no fallback pra AGORA em quem chama).
+ * type="date", ex: '2024-03-15') — completa com T12:00:00Z (meio-dia
+ * UTC, não meia-noite): meia-noite UTC já é o dia anterior em qualquer
+ * fuso negativo (ex: 2026-09-04T00:00:00Z vira 2026-09-03 21:00 em
+ * UTC-3), fazendo o dia exibido "andar pra trás" um dia. Meio-dia UTC
+ * nunca cruza a virada do dia em nenhum fuso horário real (-12 a +14).
+ * Se já vier um timestamp completo (ex: chamada direta na API), usa
+ * como está. `undefined`/vazio → `null` (cai no fallback pra AGORA em
+ * quem chama).
  */
 export function normalizarDataIntegracao(data: string | undefined | null): string | null {
   if (!data) return null
-  return /^\d{4}-\d{2}-\d{2}$/.test(data) ? `${data}T00:00:00Z` : data
+  return /^\d{4}-\d{2}-\d{2}$/.test(data) ? `${data}T12:00:00Z` : data
 }
 
 /**
@@ -68,6 +73,15 @@ async function criarUsuarioDeEntrada(
 ): Promise<number> {
   const existente = await db.prepare(`SELECT id FROM usuarios WHERE nick = ?`).bind(nick).first<{ id: number }>()
   if (existente) throw new Error(`já existe uma conta com o nick '${nick}'`)
+
+  // `usuarios.tag` é UNIQUE no schema — sem essa checagem, tentar usar
+  // uma TAG já ocupada (fácil de acontecer, são só 2-3 caracteres)
+  // derruba o INSERT com um erro cru de constraint do SQLite em vez de
+  // uma mensagem que dá pra entender e corrigir.
+  if (tag) {
+    const tagEmUso = await db.prepare(`SELECT id, nick FROM usuarios WHERE tag = ?`).bind(tag).first<{ id: number; nick: string }>()
+    if (tagEmUso) throw new Error(`a TAG '${tag}' já está em uso por '${tagEmUso.nick}'`)
+  }
 
   const { meta } = await db
     .prepare(
@@ -161,6 +175,11 @@ export async function aplicarEfeitoAprovacao(
     case 'integracao': {
       const patenteDestino = await buscarPatente(db, dadosEspecificos?.patente_destino_id)
       const novaTag = (dadosEspecificos?.tag as string | undefined) ?? null
+      if (novaTag) {
+        const tagEmUso = await db.prepare(`SELECT id, nick FROM usuarios WHERE tag = ? AND id != ?`)
+          .bind(novaTag, usuarioId).first<{ id: number; nick: string }>()
+        if (tagEmUso) throw new Error(`a TAG '${novaTag}' já está em uso por '${tagEmUso.nick}'`)
+      }
       const dataCustomizada = normalizarDataIntegracao(dadosEspecificos?.data as string | undefined)
       await db
         .prepare(

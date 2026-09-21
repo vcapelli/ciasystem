@@ -16,11 +16,22 @@ function tituloTipoReq(tipo) {
   return TITULOS_TIPO_REQ[tipo] || tipo.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
 }
 
+const MESES_CURTOS_REQ = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+
 function formatarDataCurtaReq(iso) {
   if (!iso) return '';
+  // Data pura (input type="date", ex: '2026-09-04', sem horário) —
+  // 'new Date("2026-09-04")' é interpretado como meia-noite UTC, e os
+  // getters usados abaixo (getDate/getMonth) leem em horário LOCAL.
+  // Em fuso negativo (ex: BRT/UTC-3) meia-noite UTC já é o dia
+  // anterior às 21h local, então o dia exibido "anda pra trás" um dia.
+  // Pra data pura, lê os componentes direto da string — sem passar
+  // por conversão de fuso nenhuma. Datas com horário (ex: criado_em,
+  // que é um instante de verdade) continuam pelo caminho de sempre.
+  const soData = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (soData) return `${soData[3]} ${MESES_CURTOS_REQ[Number(soData[2]) - 1]} ${soData[1]}`;
   const d = new Date(iso);
-  const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-  return `${String(d.getDate()).padStart(2,'0')} ${MESES[d.getMonth()]} ${d.getFullYear()}`;
+  return `${String(d.getDate()).padStart(2,'0')} ${MESES_CURTOS_REQ[d.getMonth()]} ${d.getFullYear()}`;
 }
 
 // Apêndice de identificação com advertências escritas ainda ativas
@@ -240,19 +251,34 @@ function ligarAcoesRequerimento(container, aoConcluir) {
         motivo_recusa = prompt('Motivo da recusa:');
         if (motivo_recusa === null) return;
       }
-      await apiFetch(`/requerimentos/${reqId}/alvos/${btn.dataset.alvo}/decidir`, {
+      const resp = await apiFetch(`/requerimentos/${reqId}/alvos/${btn.dataset.alvo}/decidir`, {
         method: 'POST',
         body: JSON.stringify({ status: acao === 'aprovar' ? 'aprovado' : 'reprovado', motivo_recusa: motivo_recusa || undefined }),
       });
+      if (!resp.ok) {
+        const dados = await resp.json().catch(() => ({}));
+        alert(dados.erro || 'Não foi possível decidir esse requerimento.');
+        return;
+      }
       aoConcluir();
     } else if (acao === 'cancelar') {
       if (!confirm('Cancelar este requerimento? Se ele já estava aprovado, o efeito aplicado será revertido (ex: volta à patente/TAG/status de antes).')) return;
       const motivo = prompt('Motivo do cancelamento (opcional):') || undefined;
-      await apiFetch(`/requerimentos/${reqId}/cancelar`, { method: 'POST', body: JSON.stringify({ motivo }) });
+      const resp = await apiFetch(`/requerimentos/${reqId}/cancelar`, { method: 'POST', body: JSON.stringify({ motivo }) });
+      if (!resp.ok) {
+        const dados = await resp.json().catch(() => ({}));
+        alert(dados.erro || 'Não foi possível cancelar esse requerimento.');
+        return;
+      }
       aoConcluir();
     } else if (acao === 'excluir') {
       if (!confirm('Excluir este requerimento definitivamente do histórico? Essa ação não pode ser desfeita.')) return;
-      await apiFetch(`/requerimentos/${reqId}`, { method: 'DELETE' });
+      const resp = await apiFetch(`/requerimentos/${reqId}`, { method: 'DELETE' });
+      if (!resp.ok) {
+        const dados = await resp.json().catch(() => ({}));
+        alert(dados.erro || 'Não foi possível excluir esse requerimento.');
+        return;
+      }
       aoConcluir();
     }
   });
