@@ -41,10 +41,12 @@ const STATUS_NAO_TERMINAL = ['aberto', 'em_analise', 'em_votacao', 'aguardando_i
 const projetos = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
 const BASE_QUERY_PROJETOS = `
-  SELECT p.*, a.nick AS autor_nick, a.tag AS autor_tag, r.nick AS responsavel_nick, r.tag AS responsavel_tag
+  SELECT p.*, a.nick AS autor_nick, a.tag AS autor_tag, r.nick AS responsavel_nick, r.tag AS responsavel_tag,
+    d.titulo AS documento_titulo
   FROM projetos p
   LEFT JOIN usuarios a ON a.id = p.autor_id
   LEFT JOIN usuarios r ON r.id = p.responsavel_id
+  LEFT JOIN documentos d ON d.id = p.documento_id
 `
 
 // POST /projetos — abre um novo processo. Autor é sempre o usuário
@@ -54,13 +56,24 @@ const BASE_QUERY_PROJETOS = `
 projetos.post('/', async (c) => {
   const autorId = c.get('usuarioId')
   const db = c.env.DB.withSession('first-primary') // ver nota sobre réplicas D1 no topo do arquivo
-  const body = await c.req.json<{ tipo: string; titulo: string; descricao: string }>()
+  const body = await c.req.json<{
+    tipo: string; titulo: string; resumo: string; descricao: string
+    documento_id?: number; secao_alvo?: string; artigo_alvo?: string
+  }>()
 
   if (!TIPOS_VALIDOS.includes(body.tipo as (typeof TIPOS_VALIDOS)[number])) {
     return c.json({ erro: 'tipo inválido — use projeto, proposta, correcao ou sugestao' }, 400)
   }
-  if (!body.titulo?.trim() || !body.descricao?.trim()) {
-    return c.json({ erro: 'título e descrição são obrigatórios' }, 400)
+  if (!body.titulo?.trim() || !body.resumo?.trim() || !body.descricao?.trim()) {
+    return c.json({ erro: 'título, resumo e detalhes são obrigatórios' }, 400)
+  }
+  // Correção sempre mira um documento institucional específico — sem
+  // isso o grupo responsável não tem onde ir corrigir o que foi
+  // apontado. Seção/artigo ficam como texto livre (nem toda correção
+  // tem os dois — pode ser só uma seção, ou um trecho fora de artigo
+  // numerado), então não são exigidos.
+  if (body.tipo === 'correcao' && !body.documento_id) {
+    return c.json({ erro: 'correção exige indicar qual documento está sendo corrigido' }, 400)
   }
 
   const grupoId = await buscarGrupoResponsavelProjetos(db)
@@ -68,9 +81,14 @@ projetos.post('/', async (c) => {
     return c.json({ erro: 'nenhum grupo responsável pelos projetos foi configurado ainda — avise um administrador do sistema' }, 409)
   }
 
+  const documentoId = body.tipo === 'correcao' ? (body.documento_id ?? null) : null
+  const secaoAlvo = body.tipo === 'correcao' ? (body.secao_alvo?.trim() || null) : null
+  const artigoAlvo = body.tipo === 'correcao' ? (body.artigo_alvo?.trim() || null) : null
+
   const { meta } = await db.prepare(
-    `INSERT INTO projetos (tipo, titulo, descricao, autor_id) VALUES (?, ?, ?, ?)`
-  ).bind(body.tipo, body.titulo.trim(), body.descricao.trim(), autorId).run()
+    `INSERT INTO projetos (tipo, titulo, resumo, descricao, autor_id, documento_id, secao_alvo, artigo_alvo)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(body.tipo, body.titulo.trim(), body.resumo.trim(), body.descricao.trim(), autorId, documentoId, secaoAlvo, artigoAlvo).run()
 
   const projetoId = Number(meta.last_row_id)
   const autor = await db.prepare(`SELECT nick FROM usuarios WHERE id = ?`).bind(autorId).first<{ nick: string }>()

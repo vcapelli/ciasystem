@@ -14,6 +14,12 @@ const STATUS_PROJETO = {
   arquivado: { label: 'Arquivado', badge: 'bg-red-500/15 text-red-600' },
 };
 
+function escapeHtml(texto) {
+  const div = document.createElement('div');
+  div.textContent = texto || '';
+  return div.innerHTML;
+}
+
 function formatarDataProjeto(iso) {
   if (!iso) return '';
   return new Date(iso).toLocaleString('pt-BR');

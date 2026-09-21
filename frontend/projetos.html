@@ -24,6 +24,40 @@
         <p class="text-sm text-muted mb-6">Abra um projeto, proposta, correção ou sugestão pra ser analisado pelo grupo responsável.</p>
 
         <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-6">
+          <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Qual é a diferença?</h2>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div class="flex gap-3 bg-basebg border border-border rounded-xl p-3.5">
+              <i class="fa-solid fa-diagram-project text-accent mt-0.5"></i>
+              <div>
+                <p class="text-sm font-semibold">Projeto</p>
+                <p class="text-xs text-muted mt-0.5">Uma mudança pontual e objetiva, fácil de descrever e de aplicar — como ajustar o processo de abertura de um batalhão ou criar um novo crime no código penal militar.</p>
+              </div>
+            </div>
+            <div class="flex gap-3 bg-basebg border border-border rounded-xl p-3.5">
+              <i class="fa-solid fa-sitemap text-accent mt-0.5"></i>
+              <div>
+                <p class="text-sm font-semibold">Proposta</p>
+                <p class="text-xs text-muted mt-0.5">Uma mudança mais ampla e estruturante, que mexe em várias frentes ao mesmo tempo — como a criação de uma nova subcompanhia.</p>
+              </div>
+            </div>
+            <div class="flex gap-3 bg-basebg border border-border rounded-xl p-3.5">
+              <i class="fa-solid fa-spell-check text-accent mt-0.5"></i>
+              <div>
+                <p class="text-sm font-semibold">Correção</p>
+                <p class="text-xs text-muted mt-0.5">Um reparo pontual em algo já escrito num documento institucional — uma palavra errada, uma frase confusa — sem intenção de mudar a regra em si, só a redação dela.</p>
+              </div>
+            </div>
+            <div class="flex gap-3 bg-basebg border border-border rounded-xl p-3.5">
+              <i class="fa-solid fa-lightbulb text-accent mt-0.5"></i>
+              <div>
+                <p class="text-sm font-semibold">Sugestão</p>
+                <p class="text-xs text-muted mt-0.5">Uma ideia inicial, ainda sem fundamentação ou estrutura completa — um ponto de partida pro grupo responsável avaliar e amadurecer.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-6">
           <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Abrir novo processo</h2>
           <form id="form-projeto" class="space-y-3">
             <select id="proj-tipo" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
@@ -33,7 +67,24 @@
               <option value="sugestao">Sugestão</option>
             </select>
             <input id="proj-titulo" maxlength="150" placeholder="Título" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
-            <textarea id="proj-descricao" rows="4" placeholder="Descreva o processo em detalhes…" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></textarea>
+            <input id="proj-resumo" maxlength="280" placeholder="Resumo — uma ou duas frases sobre o que é" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+
+            <div id="proj-campo-correcao" class="hidden space-y-3 bg-basebg border border-border rounded-xl p-3.5">
+              <p class="text-xs text-muted">O que está sendo corrigido:</p>
+              <select id="proj-documento" class="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                <option value="">— selecione o documento —</option>
+              </select>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <input id="proj-secao" placeholder="Seção (ex: Título II, Capítulo I)" class="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                <input id="proj-artigo" placeholder="Artigo (ex: Art. 15)" class="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-xs text-muted mb-1">Detalhes</label>
+              <div id="proj-editor-detalhes"></div>
+            </div>
+
             <button type="submit" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Abrir processo</button>
             <p id="proj-erro" class="hidden text-xs text-red-500"></p>
             <p id="proj-sucesso" class="hidden text-xs text-accent"></p>
@@ -63,6 +114,7 @@
 
 <script src="/assets/api.js"></script>
 <script src="/assets/projetos.js"></script>
+<script src="/assets/editor-html.js"></script>
 <script src="/assets/footer.js"></script>
 <script src="/assets/layout.js"></script>
 <script>
@@ -71,6 +123,7 @@
       <a href="/projetos/${p.id}" class="flex items-center justify-between gap-3 px-4 py-3 hover:bg-basebg transition-colors">
         <div class="min-w-0">
           <p class="text-sm font-semibold truncate">#${p.id} — ${p.titulo}</p>
+          ${p.resumo ? `<p class="text-xs text-muted truncate mt-0.5">${escapeHtml(p.resumo)}</p>` : ''}
           <p class="text-xs text-muted mt-0.5">${avatarNickHtml(p.autor_nick, p.autor_figure, { size: 5 })} · ${formatarDataProjeto(p.criado_em)}</p>
         </div>
         <div class="flex items-center gap-2 shrink-0">
@@ -98,10 +151,25 @@
     raiz.innerHTML = comFigure.map(renderLinhaProjeto).join('');
   }
 
-  montarLayout('/projetos.html').then((me) => {
+  document.getElementById('proj-editor-detalhes').innerHTML = htmlEditorHtml('proj-detalhes', '');
+  ligarEditorHtml('proj-detalhes');
+
+  const selectTipo = document.getElementById('proj-tipo');
+  const campoCorrecao = document.getElementById('proj-campo-correcao');
+  function atualizarCampoCorrecao() {
+    campoCorrecao.classList.toggle('hidden', selectTipo.value !== 'correcao');
+  }
+  selectTipo.addEventListener('change', atualizarCampoCorrecao);
+
+  montarLayout('/projetos.html').then(async (me) => {
     if (!me) return;
     carregarLista();
     document.getElementById('filtro-status').addEventListener('change', carregarLista);
+
+    const respDocs = await apiFetch('/documentos');
+    const documentos = respDocs.ok ? await respDocs.json() : [];
+    document.getElementById('proj-documento').innerHTML += documentos
+      .map((d) => `<option value="${d.id}">${d.titulo}</option>`).join('');
 
     document.getElementById('form-projeto').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -110,10 +178,18 @@
       erroEl.classList.add('hidden');
       sucessoEl.classList.add('hidden');
 
+      const tipo = selectTipo.value;
       const titulo = document.getElementById('proj-titulo').value.trim();
-      const descricao = document.getElementById('proj-descricao').value.trim();
-      if (!titulo || !descricao) {
-        erroEl.textContent = 'Preencha título e descrição.';
+      const resumo = document.getElementById('proj-resumo').value.trim();
+      const descricao = document.getElementById('proj-detalhes-textarea').value.trim();
+      if (!titulo || !resumo || !descricao) {
+        erroEl.textContent = 'Preencha título, resumo e detalhes.';
+        erroEl.classList.remove('hidden');
+        return;
+      }
+      const documentoId = document.getElementById('proj-documento').value;
+      if (tipo === 'correcao' && !documentoId) {
+        erroEl.textContent = 'Selecione qual documento está sendo corrigido.';
         erroEl.classList.remove('hidden');
         return;
       }
@@ -121,8 +197,10 @@
       const resp = await apiFetch('/projetos', {
         method: 'POST',
         body: JSON.stringify({
-          tipo: document.getElementById('proj-tipo').value,
-          titulo, descricao,
+          tipo, titulo, resumo, descricao,
+          documento_id: tipo === 'correcao' && documentoId ? Number(documentoId) : undefined,
+          secao_alvo: tipo === 'correcao' ? document.getElementById('proj-secao').value.trim() || undefined : undefined,
+          artigo_alvo: tipo === 'correcao' ? document.getElementById('proj-artigo').value.trim() || undefined : undefined,
         }),
       });
 
