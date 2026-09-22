@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import { reverterEfeitoAlvo } from './services/efeitos'
+import { tornarCivilAposExoneracaoExpirada } from './services/efeitos'
 import auth from './routes/auth'
 import { requireAuth } from './services/auth'
 import { registrarEvento } from './services/logs'
@@ -158,9 +158,13 @@ app.route('/', protegido)
 // A partir daqui, novas rotas protegidas entram no `protegido`, não
 // direto no `app` (senão ficam sem autenticação por engano).
 
-// Cron diário: reverte exonerações temporárias cujo prazo já passou —
-// mesma lógica de "cancelar" (usa o snapshot de antes da aprovação),
-// já que expirar o prazo tem o mesmo efeito de desfazer a punição.
+// Cron diário: quando o prazo de uma exoneração temporária vence, a
+// pessoa NÃO recupera automaticamente o posto/TAG/grupos que tinha
+// antes (isso é o que "cancelar" faz, pra corrigir uma exoneração
+// indevida) — ela vira civil (mesmo efeito de um Desligamento
+// Honroso: sai dos grupos, perde a TAG, mantém patente/corpo como
+// registro histórico) e precisaria reingressar normalmente se quiser
+// voltar. Decisão confirmada com Vitor em 22/09/2026.
 async function processarExoneracoesExpiradas(db: D1Database) {
   const { results: expirados } = await db.prepare(
     `SELECT id FROM usuarios WHERE status = 'exonerado' AND exoneracao_ate IS NOT NULL
@@ -168,19 +172,14 @@ async function processarExoneracoesExpiradas(db: D1Database) {
   ).all<{ id: number }>()
 
   for (const usuario of expirados) {
-    const alvo = await db.prepare(
-      `SELECT ra.id AS alvo_id, ra.requerimento_id FROM requerimento_alvos ra
-       JOIN requerimentos r ON r.id = ra.requerimento_id
-       WHERE ra.usuario_id = ? AND r.tipo = 'exoneracao' AND ra.status = 'aprovado'
-       ORDER BY ra.decidido_em DESC LIMIT 1`
-    ).bind(usuario.id).first<{ alvo_id: number; requerimento_id: number }>()
-
-    if (alvo) {
-      await reverterEfeitoAlvo(db, alvo.requerimento_id, alvo.alvo_id, usuario.id)
+    // Cada usuário é tratado isoladamente: se um falhar, não pode
+    // travar o cron inteiro e deixar os outros presos em exoneração
+    // vencida também.
+    try {
+      await tornarCivilAposExoneracaoExpirada(db, usuario.id)
+    } catch (err) {
+      console.error(`processarExoneracoesExpiradas: falha ao processar usuário ${usuario.id}`, err)
     }
-    // Sempre limpa o prazo, mesmo se não achou o requerimento (evita
-    // tentar reverter de novo no próximo cron caso algo tenha falhado).
-    await db.prepare(`UPDATE usuarios SET exoneracao_ate = NULL WHERE id = ?`).bind(usuario.id).run()
   }
 }
 

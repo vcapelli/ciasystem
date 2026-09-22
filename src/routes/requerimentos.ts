@@ -473,8 +473,18 @@ requerimentos.post('/:id/cancelar', async (c) => {
     `SELECT id, usuario_id FROM requerimento_alvos WHERE requerimento_id = ? AND status = 'aprovado'`
   ).bind(id).all<{ id: number; usuario_id: number | null }>()
 
-  for (const alvo of alvosAprovados) {
-    await reverterEfeitoAlvo(c.env.DB, id, alvo.id, alvo.usuario_id)
+  // Se reverter falhar, a operação inteira para aqui — o requerimento
+  // continua "aprovado" (nada some do histórico e nada fica marcado
+  // como cancelado sem o efeito ter sido desfeito de fato). O admin vê
+  // o erro em vez de um "ok" mentiroso deixando o usuário com o status
+  // antigo grudado pra sempre.
+  try {
+    for (const alvo of alvosAprovados) {
+      await reverterEfeitoAlvo(c.env.DB, id, alvo.id, alvo.usuario_id)
+    }
+  } catch (err) {
+    const mensagem = err instanceof Error ? err.message : 'erro ao reverter o efeito do requerimento'
+    return c.json({ erro: `não foi possível cancelar: ${mensagem}` }, 400)
   }
 
   await c.env.DB.prepare(
@@ -516,8 +526,17 @@ requerimentos.delete('/:id', async (c) => {
     `SELECT id, usuario_id FROM requerimento_alvos WHERE requerimento_id = ? AND status = 'aprovado'`
   ).bind(id).all<{ id: number; usuario_id: number | null }>()
 
-  for (const alvo of alvosAprovados) {
-    await reverterEfeitoAlvo(c.env.DB, id, alvo.id, alvo.usuario_id)
+  // Mesma lógica do /cancelar: se reverter falhar, não segue pra
+  // exclusão — senão o registro some do histórico mas o efeito
+  // (patente, TAG, status etc.) continua aplicado pra sempre, sem
+  // nenhum jeito de rastrear ou desfazer depois.
+  try {
+    for (const alvo of alvosAprovados) {
+      await reverterEfeitoAlvo(c.env.DB, id, alvo.id, alvo.usuario_id)
+    }
+  } catch (err) {
+    const mensagem = err instanceof Error ? err.message : 'erro ao reverter o efeito do requerimento'
+    return c.json({ erro: `não foi possível excluir: ${mensagem}` }, 400)
   }
 
   // `historico` não tem ON DELETE CASCADE de propósito (é o registro

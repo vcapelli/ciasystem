@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import type { D1Like } from '../types/db'
 
 type Bindings = { DB: D1Database }
 
@@ -25,7 +26,7 @@ const EXCLUI_DESLIGADOS_EXONERADOS = `u.status NOT IN ('desligado_honroso', 'des
 // mais recente onde ele foi alvo — o frontend usa isso pra montar a
 // mesma "identificação" (nick [prefixo+TAG] data) usada nos cards de
 // requerimento, reaproveitando a lógica de lá.
-async function anexarIdentificacao(db: D1Database, membros: MembroBase[]): Promise<MembroListagem[]> {
+async function anexarIdentificacao(db: D1Like, membros: MembroBase[]): Promise<MembroListagem[]> {
   if (!membros.length) return membros as MembroListagem[]
 
   const ids = membros.map((m) => m.id)
@@ -62,7 +63,7 @@ interface MembroExonerado extends MembroListagem {
   crime_nome: string | null
   exoneracao_ate: string | null
 }
-async function anexarIdentificacaoExoneracao(db: D1Database, membros: MembroBase[]): Promise<MembroExonerado[]> {
+async function anexarIdentificacaoExoneracao(db: D1Like, membros: MembroBase[]): Promise<MembroExonerado[]> {
   if (!membros.length) return membros as MembroExonerado[]
 
   const ids = membros.map((m) => m.id)
@@ -105,9 +106,17 @@ const SELECT_MEMBRO = `u.id, u.nick, u.tag, u.status`
 listagens.get('/:tipo', async (c) => {
   const tipo = c.req.param('tipo')
 
+  // Sessão 'first-primary': a primeira query de cada sessão sempre vai
+  // pro banco primário, garantindo que essa listagem nunca leia de uma
+  // réplica D1 atrasada em relação a uma aprovação/cancelamento feito
+  // segundos antes (ex: exonerar alguém e recarregar a listagem na
+  // sequência mostrando identificação incompleta/vazia). Mesmo padrão
+  // usado em routes/projetos.ts.
+  const db = c.env.DB.withSession('first-primary')
+
   // --- TAGs: lista única, achatada — nick, TAG e avatar ---
   if (tipo === 'tags') {
-    const { results } = await c.env.DB.prepare(
+    const { results } = await db.prepare(
       `SELECT nick, tag FROM usuarios u WHERE tag IS NOT NULL AND ${EXCLUI_DESLIGADOS_EXONERADOS} ORDER BY nick`
     ).all()
     return c.json({ tipoVisual: 'flat', itens: results })
@@ -115,10 +124,10 @@ listagens.get('/:tipo', async (c) => {
 
   // --- Exonerados: dois grupos fixos por duração, identificação própria ---
   if (tipo === 'exonerados') {
-    const { results } = await c.env.DB.prepare(
+    const { results } = await db.prepare(
       `SELECT ${SELECT_MEMBRO} FROM usuarios u WHERE u.status = 'exonerado' AND u.exoneracao_ate IS NOT NULL ORDER BY u.nick`
     ).all<MembroBase>()
-    const { results: permanentes } = await c.env.DB.prepare(
+    const { results: permanentes } = await db.prepare(
       `SELECT ${SELECT_MEMBRO} FROM usuarios u WHERE u.status = 'exonerado' AND u.exoneracao_ate IS NULL ORDER BY u.nick`
     ).all<MembroBase>()
 
@@ -126,39 +135,39 @@ listagens.get('/:tipo', async (c) => {
       tipoVisual: 'agrupado',
       formatoExoneracao: true,
       grupos: [
-        { titulo: 'Exoneração Temporária', cor: 'amarelo', itens: await anexarIdentificacaoExoneracao(c.env.DB, results) },
-        { titulo: 'Exoneração Permanente', cor: 'vermelho', itens: await anexarIdentificacaoExoneracao(c.env.DB, permanentes) },
+        { titulo: 'Exoneração Temporária', cor: 'amarelo', itens: await anexarIdentificacaoExoneracao(db, results) },
+        { titulo: 'Exoneração Permanente', cor: 'vermelho', itens: await anexarIdentificacaoExoneracao(db, permanentes) },
       ],
     })
   }
 
   // --- Desligados: dois grupos fixos, honroso/desonroso ---
   if (tipo === 'desligados') {
-    const { results: honrosos } = await c.env.DB.prepare(
+    const { results: honrosos } = await db.prepare(
       `SELECT ${SELECT_MEMBRO} FROM usuarios u WHERE u.status = 'desligado_honroso' ORDER BY u.nick`
     ).all<MembroBase>()
-    const { results: desonrosos } = await c.env.DB.prepare(
+    const { results: desonrosos } = await db.prepare(
       `SELECT ${SELECT_MEMBRO} FROM usuarios u WHERE u.status = 'desligado_desonroso' ORDER BY u.nick`
     ).all<MembroBase>()
 
     return c.json({
       tipoVisual: 'agrupado',
       grupos: [
-        { titulo: 'Desligamento Honroso', cor: 'verde', itens: await anexarIdentificacao(c.env.DB, honrosos) },
-        { titulo: 'Desligamento Desonroso', cor: 'vermelho', itens: await anexarIdentificacao(c.env.DB, desonrosos) },
+        { titulo: 'Desligamento Honroso', cor: 'verde', itens: await anexarIdentificacao(db, honrosos) },
+        { titulo: 'Desligamento Desonroso', cor: 'vermelho', itens: await anexarIdentificacao(db, desonrosos) },
       ],
     })
   }
 
   // --- Reformados: agrupado por patente, só os grupos que têm gente ---
   if (tipo === 'reformados') {
-    const { results } = await c.env.DB.prepare(
+    const { results } = await db.prepare(
       `SELECT ${SELECT_MEMBRO}, p.nome AS patente_nome, p.ordem AS patente_ordem
        FROM usuarios u LEFT JOIN patentes p ON p.id = u.patente_atual_id
        WHERE u.status = 'reformado' ORDER BY p.ordem DESC, u.nick`
     ).all<{ patente_nome: string | null } & MembroBase>()
 
-    const comIdentificacao = await anexarIdentificacao(c.env.DB, results)
+    const comIdentificacao = await anexarIdentificacao(db, results)
     const grupos: { titulo: string; cor: string; itens: MembroListagem[] }[] = []
     const indice: Record<string, number> = {}
     for (const m of comIdentificacao as (MembroListagem & { patente_nome: string | null })[]) {
@@ -188,18 +197,18 @@ listagens.get('/:tipo', async (c) => {
   const filtroPatentes = FILTRO_PATENTES[tipo]
   if (!filtroPatentes) return c.json({ erro: `listagem '${tipo}' não existe` }, 404)
 
-  const { results: patentes } = await c.env.DB.prepare(
+  const { results: patentes } = await db.prepare(
     `SELECT id, nome, ordem, cor, vagas FROM patentes WHERE ativo = 1 AND (${filtroPatentes}) ORDER BY ordem DESC`
   ).all<{ id: number; nome: string; ordem: number; cor: string | null; vagas: number | null }>()
 
-  const { results: membros } = await c.env.DB.prepare(
+  const { results: membros } = await db.prepare(
     `SELECT ${SELECT_MEMBRO}, u.patente_atual_id
      FROM usuarios u JOIN patentes p ON p.id = u.patente_atual_id
      WHERE (${FILTRO_PATENTES_JOIN[tipo]}) AND ${EXCLUI_DESLIGADOS_EXONERADOS}
      ORDER BY p.ordem DESC, u.nick`
   ).all<{ patente_atual_id: number } & MembroBase>()
 
-  const comIdentificacao = await anexarIdentificacao(c.env.DB, membros)
+  const comIdentificacao = await anexarIdentificacao(db, membros)
   // `vagas` vem direto da tabela `patentes` (seção 2.3 do documento-mestre
   // — só Corpo de Oficiais e Chanceler têm limite; o resto fica `null`).
   // NÃO inclui aqui a regra da "vaga extraordinária" (a cada 5 oficiais da
