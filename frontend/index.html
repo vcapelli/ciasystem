@@ -47,10 +47,34 @@
           </div>
 
           <h2 class="text-sm font-bold uppercase tracking-wide text-muted mb-3 mt-5 flex items-center gap-2">
-            <i class="fa-solid fa-clipboard-list text-accent"></i> Últimos requerimentos
+            <i class="fa-solid fa-clipboard-list text-accent"></i> Atividade recente
           </h2>
           <div id="home-ultimos-requerimentos" class="bg-card border border-border rounded-2xl shadow-sm divide-y divide-border overflow-hidden">
             <p class="text-sm text-muted p-4">Carregando…</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-8">
+        <h2 class="text-sm font-bold uppercase tracking-wide text-muted mb-3 flex items-center gap-2">
+          <i class="fa-solid fa-table-cells-large text-accent"></i> Painel
+        </h2>
+        <div class="grid md:grid-cols-3 gap-5">
+          <div>
+            <h3 class="text-xs font-bold uppercase tracking-wide text-muted mb-2 flex items-center gap-2">
+              <i class="fa-solid fa-hourglass-half text-accent"></i> Pendências
+            </h3>
+            <div id="home-pendencias" class="bg-card border border-border rounded-2xl shadow-sm divide-y divide-border overflow-hidden">
+              <p class="text-sm text-muted p-4">Carregando…</p>
+            </div>
+          </div>
+
+          <!-- Reservado pros próximos 2 cards do painel. -->
+          <div class="border-2 border-dashed border-border rounded-2xl flex items-center justify-center min-h-[92px] text-xs text-muted/60">
+            Em breve
+          </div>
+          <div class="border-2 border-dashed border-border rounded-2xl flex items-center justify-center min-h-[92px] text-xs text-muted/60">
+            Em breve
           </div>
         </div>
       </div>
@@ -128,7 +152,7 @@
   async function carregarUltimasNoticias() {
     const raiz = document.getElementById('home-ultimas-noticias');
     const resp = await apiFetch('/noticias?status=publicada');
-    const noticias = resp.ok ? (await resp.json()).slice(0, 3) : [];
+    const noticias = resp.ok ? (await resp.json()).slice(0, 2) : [];
     raiz.innerHTML = noticias.length
       ? noticias.map(renderLinhaNoticiaHome).join('')
       : '<p class="text-sm text-muted p-4">Nenhuma notícia publicada ainda.</p>';
@@ -152,7 +176,7 @@
     const raiz = document.getElementById('home-diario-oficial');
     const resp = await apiFetch('/decretos?pagina=1');
     const dados = resp.ok ? await resp.json() : { decretos: [] };
-    const decretos = (dados.decretos || []).slice(0, 3);
+    const decretos = (dados.decretos || []).slice(0, 2);
     raiz.innerHTML = decretos.length
       ? decretos.map(renderLinhaDecretoHome).join('')
       : '<p class="text-sm text-muted p-4">Nenhuma publicação no diário oficial ainda.</p>';
@@ -211,10 +235,70 @@
   async function carregarUltimosRequerimentos() {
     const raiz = document.getElementById('home-ultimos-requerimentos');
     const resp = await apiFetch('/requerimentos');
-    const requerimentos = resp.ok ? (await resp.json()).slice(0, 5) : [];
+    const requerimentos = resp.ok ? (await resp.json()).slice(0, 3) : [];
     raiz.innerHTML = requerimentos.length
       ? requerimentos.map(renderLinhaRequerimentoHome).join('')
       : '<p class="text-sm text-muted p-4">Nenhum requerimento registrado ainda.</p>';
+  }
+
+  // Card "Pendências" do painel — junta 3 fontes num resumo só:
+  // documentos com processo de alteração em aberto, projetos/propostas
+  // ainda não concluídos/arquivados, e revisões de documento esperando
+  // a assinatura do próprio usuário logado. `/projetos` devolve 403 pra
+  // quem não é membro do grupo responsável — trata como "nenhum" em vez
+  // de erro, silenciosamente (mesmo padrão dos outros blocos da home).
+  function renderLinhaPendencia(p) {
+    return `
+      <a href="${p.href}" class="flex items-center gap-3 px-4 py-3 hover:bg-basebg transition-colors">
+        <span class="h-8 w-8 rounded-lg bg-basebg border border-border flex items-center justify-center shrink-0 text-accent">
+          <i class="fa-solid ${p.icone} text-xs"></i>
+        </span>
+        <p class="text-sm">${p.texto}</p>
+      </a>
+    `;
+  }
+
+  async function carregarPendencias() {
+    const raiz = document.getElementById('home-pendencias');
+    const [respDocs, respProjetos, respAssinaturas] = await Promise.all([
+      apiFetch('/documentos'),
+      apiFetch('/projetos'),
+      apiFetch('/documentos/minhas-assinaturas-pendentes'),
+    ]);
+    const documentos = respDocs.ok ? await respDocs.json() : [];
+    const projetos = respProjetos.ok ? await respProjetos.json() : [];
+    const assinaturas = respAssinaturas.ok ? await respAssinaturas.json() : [];
+
+    const documentosEmRevisao = documentos.filter((d) => d.status === 'em_revisao');
+    const projetosAbertos = projetos.filter((p) => !['concluido', 'arquivado'].includes(p.status));
+
+    const itens = [];
+    if (documentosEmRevisao.length) {
+      itens.push({
+        icone: 'fa-file-pen',
+        texto: `${documentosEmRevisao.length} documento${documentosEmRevisao.length > 1 ? 's' : ''} com alteração em aberto`,
+        href: '/documentos.html',
+      });
+    }
+    if (projetosAbertos.length) {
+      itens.push({
+        icone: 'fa-diagram-project',
+        texto: `${projetosAbertos.length} projeto${projetosAbertos.length > 1 ? 's' : ''}/proposta${projetosAbertos.length > 1 ? 's' : ''} em aberto`,
+        href: '/projetos.html',
+      });
+    }
+    if (assinaturas.length) {
+      const primeira = assinaturas[0];
+      itens.push({
+        icone: 'fa-signature',
+        texto: `${assinaturas.length} pendente${assinaturas.length > 1 ? 's' : ''} de sua assinatura`,
+        href: primeira ? `/documentos/${primeira.documento_slug}/revisao/${primeira.numero_revisao}` : '/documentos.html',
+      });
+    }
+
+    raiz.innerHTML = itens.length
+      ? itens.map(renderLinhaPendencia).join('')
+      : '<p class="text-sm text-muted p-4">Nenhuma pendência no momento.</p>';
   }
 
   montarLayout('/index.html').then((me) => {
@@ -272,6 +356,7 @@
     carregarUltimasNoticias();
     carregarUltimosDecretos();
     carregarUltimosRequerimentos();
+    carregarPendencias();
   });
 </script>
 </body>

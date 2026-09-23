@@ -96,6 +96,32 @@ async function buscarUltimaRevisaoImplementada(db: D1Database, documentoId: numb
   return { ...revisao, aprovadores }
 }
 
+// GET /documentos/minhas-assinaturas-pendentes — revisões de documento
+// em que o usuário autenticado precisa assinar AGORA: é um dos
+// aprovadores cadastrados no papel da ETAPA ATUAL (`etapa_atual`,
+// mesmo campo usado por POST .../assinar pra decidir de quem é a vez)
+// e ainda não decidiu. Usado pelo card de "Pendências" da home — não
+// lista todo mundo que algum dia vai assinar, só quem pode agir agora.
+documentos.get('/minhas-assinaturas-pendentes', async (c) => {
+  const usuarioId = c.get('usuarioId')
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT dra.revisao_id, dra.papel, dr.numero_revisao, dr.documento_id, d.titulo AS documento_titulo, d.slug AS documento_slug
+     FROM documento_revisao_aprovadores dra
+     JOIN documento_revisoes dr ON dr.id = dra.revisao_id
+     JOIN documentos d ON d.id = dr.documento_id
+     WHERE dra.usuario_id = ? AND dra.status = 'pendente' AND dr.status = 'em_aprovacao'
+       AND (
+         (dr.etapa_atual = 1 AND dra.papel = 'autor') OR
+         (dr.etapa_atual = 2 AND dra.papel = 'aprovador') OR
+         (dr.etapa_atual = 3 AND dra.papel = 'administrador_forum')
+       )
+     ORDER BY dr.criado_em DESC`
+  ).bind(usuarioId).all()
+
+  return c.json(results)
+})
+
 documentos.get('/slug/:slug', async (c) => {
   const usuarioId = c.get('usuarioId')
   const doc = await c.env.DB.prepare(
