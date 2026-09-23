@@ -30,6 +30,7 @@ import logs from './routes/logs'
 import usuarios from './routes/usuarios'
 import patentes from './routes/patentes'
 import crimes from './routes/crimes'
+import motivosGratificacao from './routes/motivos-gratificacao'
 import habblet from './routes/habblet'
 import bannersPerfil from './routes/banners-perfil'
 import listagens from './routes/listagens'
@@ -142,6 +143,7 @@ protegido.route('/logs', logs)
 protegido.route('/usuarios', usuarios)
 protegido.route('/patentes', patentes)
 protegido.route('/crimes', crimes)
+protegido.route('/motivos-gratificacao', motivosGratificacao)
 protegido.route('/habblet', habblet)
 protegido.route('/banners-perfil', bannersPerfil)
 protegido.route('/listagens', listagens)

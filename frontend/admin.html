@@ -40,6 +40,10 @@
   ];
 
   function tituloTipoAdmin(tipo) {
+    // 'bonificacao' é o valor gravado no banco, mas o requerimento foi
+    // relabelado pra "Gratificação" em toda a interface — exceção
+    // porque o titlecase genérico abaixo não bate com o nome de exibição.
+    if (tipo === 'bonificacao') return 'Gratificação';
     return tipo.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
   }
 
@@ -55,6 +59,7 @@
       { id: 'sugestoes', label: 'Sugestões' },
       { id: 'banners', label: 'Banners' },
       { id: 'infracoes', label: 'Infrações' },
+      { id: 'gratificacoes', label: 'Gratificações' },
       { id: 'menu', label: 'Menu' },
       { id: 'configuracoes', label: 'Configurações' },
       { id: 'usuarios', label: 'Usuários' },
@@ -1848,6 +1853,69 @@
     });
   }
 
+  // ---------- Gratificações (motivos com valor fixo) ----------
+  const VALORES_GRATIFICACAO = [5, 10, 15, 20, 25, 50];
+  async function carregarGratificacoes() {
+    const raiz = document.getElementById('conteudo-aba');
+    raiz.innerHTML = '<p class="text-sm text-muted">Carregando…</p>';
+
+    const resp = await apiFetch('/motivos-gratificacao');
+    const lista = resp.ok ? await resp.json() : [];
+
+    raiz.innerHTML = `
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5 max-w-lg">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-1">Motivos de gratificação</h2>
+        <p class="text-xs text-muted mb-3">Cada motivo tem um valor fixo — é ele quem decide quantos pontos o requerimento de Gratificação concede, não um campo livre.</p>
+        <div class="space-y-1 mb-4">
+          ${lista.length ? lista.map((m) => `
+            <div class="flex items-center justify-between px-3 py-2 bg-basebg border border-border rounded-lg">
+              <p class="text-sm">${m.nome} <span class="text-muted">(+${m.valor})</span></p>
+              <button type="button" data-remover-motivo-gratificacao="${m.id}" class="text-muted hover:text-red-600 transition-colors px-2">
+                <i class="fa-solid fa-trash"></i>
+              </button>
+            </div>
+          `).join('') : '<p class="text-sm text-muted">Nenhum motivo cadastrado.</p>'}
+        </div>
+        <form id="form-novo-motivo-gratificacao" class="flex gap-2">
+          <input id="novo-motivo-gratificacao-nome" placeholder="Nome do motivo" required class="flex-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <select id="novo-motivo-gratificacao-valor" class="bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            ${VALORES_GRATIFICACAO.map((v) => `<option value="${v}">+${v}</option>`).join('')}
+          </select>
+          <button type="submit" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Adicionar</button>
+        </form>
+        <p id="erro-novo-motivo-gratificacao" class="hidden text-xs text-red-400 mt-2"></p>
+      </div>
+    `;
+
+    document.getElementById('form-novo-motivo-gratificacao').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const erroEl = document.getElementById('erro-novo-motivo-gratificacao');
+      erroEl.classList.add('hidden');
+      const resposta = await apiFetch('/motivos-gratificacao', {
+        method: 'POST',
+        body: JSON.stringify({
+          nome: document.getElementById('novo-motivo-gratificacao-nome').value.trim(),
+          valor: Number(document.getElementById('novo-motivo-gratificacao-valor').value),
+        }),
+      });
+      if (!resposta.ok) {
+        const dados = await resposta.json().catch(() => ({}));
+        erroEl.textContent = dados.erro || 'Não foi possível cadastrar esse motivo.';
+        erroEl.classList.remove('hidden');
+        return;
+      }
+      carregarGratificacoes();
+    });
+
+    raiz.querySelectorAll('[data-remover-motivo-gratificacao]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Remover esse motivo? Gratificações já concedidas com ele continuam intactas — só deixa de aparecer pra novos requerimentos.')) return;
+        await apiFetch(`/motivos-gratificacao/${btn.dataset.removerMotivoGratificacao}`, { method: 'DELETE' });
+        carregarGratificacoes();
+      });
+    });
+  }
+
   // ---------- Menu personalizado ----------
   async function carregarMenuAdmin() {
     const raiz = document.getElementById('conteudo-aba');
@@ -1911,6 +1979,7 @@
     sugestoes: carregarSugestoes,
     banners: carregarBanners,
     infracoes: carregarInfracoes,
+    gratificacoes: carregarGratificacoes,
     menu: carregarMenuAdmin,
     configuracoes: carregarConfiguracoes,
     usuarios: carregarUsuarios,

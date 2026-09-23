@@ -138,6 +138,9 @@
   }
 
   function tituloTipo(tipo) {
+    // 'bonificacao' é o valor gravado no banco, mas o requerimento foi
+    // relabelado pra "Gratificação" em toda a interface.
+    if (tipo === 'bonificacao') return 'Gratificação';
     return tipo.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
   }
 

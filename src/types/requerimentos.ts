@@ -39,6 +39,7 @@ export interface CriarRequerimentoInput {
   alvos: AlvoRequerimento[]
   dados_especificos?: Record<string, unknown>
   crime_id?: number
+  motivo_gratificacao_id?: number  // gratificação (tipo 'bonificacao') — o valor é resolvido no servidor a partir do motivo, nunca aceito do cliente
   fundamentacao?: string
   autorizado_por_id?: number
   tag_aplicada?: string

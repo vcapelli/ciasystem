@@ -69,10 +69,16 @@
             </div>
           </div>
 
-          <!-- Reservado pros próximos 2 cards do painel. -->
-          <div class="border-2 border-dashed border-border rounded-2xl flex items-center justify-center min-h-[92px] text-xs text-muted/60">
-            Em breve
+          <div>
+            <h3 class="text-xs font-bold uppercase tracking-wide text-muted mb-2 flex items-center gap-2">
+              <i class="fa-solid fa-medal text-accent"></i> Top 5 gratificação do mês
+            </h3>
+            <div id="home-top-gratificacao" class="bg-card border border-border rounded-2xl shadow-sm divide-y divide-border overflow-hidden">
+              <p class="text-sm text-muted p-4">Carregando…</p>
+            </div>
           </div>
+
+          <!-- Reservado pro próximo card do painel. -->
           <div class="border-2 border-dashed border-border rounded-2xl flex items-center justify-center min-h-[92px] text-xs text-muted/60">
             Em breve
           </div>
@@ -193,7 +199,7 @@
     transferencia_corpo: 'Transferência de Corpo', venda_cargo: 'Venda de Cargo', integracao: 'Integração', tag: 'TAG',
     turno_tarefa: 'Turno/Tarefa', reforma: 'Reforma', desligamento_honroso: 'Desligamento Honroso',
     desligamento_desonroso: 'Desligamento Desonroso', exoneracao: 'Exoneração',
-    bonificacao: 'Bonificação', cancelamento: 'Cancelamento',
+    bonificacao: 'Gratificação', cancelamento: 'Cancelamento',
   };
   const ICONE_REQ_HOME = {
     instrucao_inicial: { icone: 'fa-user-graduate', cor: 'text-accent' },
@@ -301,6 +307,32 @@
       : '<p class="text-sm text-muted p-4">Nenhuma pendência no momento.</p>';
   }
 
+  // Card "Top 5 gratificação do mês" — só os 5 primeiros do ranking
+  // mensal (o backend já devolve ordenado do maior pro menor total).
+  const MEDALHA_COR = ['text-[#eaa506]', 'text-[#9aa2ad]', 'text-[#b5651d]'];
+  function renderLinhaGratificacao(item, posicao) {
+    return `
+      <a href="/perfil/${item.nick}" class="flex items-center gap-3 px-4 py-3 hover:bg-basebg transition-colors">
+        <span class="h-8 w-8 rounded-lg bg-basebg border border-border flex items-center justify-center shrink-0 font-display font-black text-sm ${MEDALHA_COR[posicao] || 'text-muted'}">
+          ${posicao + 1}º
+        </span>
+        <p class="text-sm flex-1 truncate">${item.nick}${item.tag ? ` <span class="text-muted">[${item.tag}]</span>` : ''}</p>
+        <span class="text-xs font-bold text-accent shrink-0">+${item.total}</span>
+      </a>
+    `;
+  }
+
+  async function carregarTopGratificacao() {
+    const raiz = document.getElementById('home-top-gratificacao');
+    const resp = await apiFetch('/listagens/gratificacao');
+    const dados = resp.ok ? await resp.json() : { itens: [] };
+    const top5 = (dados.itens || []).slice(0, 5);
+
+    raiz.innerHTML = top5.length
+      ? top5.map(renderLinhaGratificacao).join('')
+      : '<p class="text-sm text-muted p-4">Ninguém gratificado este mês ainda.</p>';
+  }
+
   montarLayout('/index.html').then((me) => {
     if (!me) return;
 
@@ -357,6 +389,7 @@
     carregarUltimosDecretos();
     carregarUltimosRequerimentos();
     carregarPendencias();
+    carregarTopGratificacao();
   });
 </script>
 </body>

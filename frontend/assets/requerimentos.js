@@ -9,7 +9,7 @@ const TITULOS_TIPO_REQ = {
   transferencia_corpo: 'Transferência de Corpo', venda_cargo: 'Venda de Cargo', integracao: 'Integração', tag: 'TAG',
   turno_tarefa: 'Turno/Tarefa', reforma: 'Reforma', desligamento_honroso: 'Desligamento Honroso',
   desligamento_desonroso: 'Desligamento Desonroso', exoneracao: 'Exoneração',
-  bonificacao: 'Bonificação', cancelamento: 'Cancelamento',
+  bonificacao: 'Gratificação', cancelamento: 'Cancelamento',
 };
 
 function tituloTipoReq(tipo) {
@@ -140,6 +140,7 @@ function renderCardRequerimento(r, patentesMapa, meAtual, apendiceExtra = '', mo
   if (dadosEspecificos.novo_nick) linhasExtras.push(`<b>Novo nickname:</b> ${dadosEspecificos.novo_nick}`);
   if (r.tag_aplicada) linhasExtras.push(`<b>Nova TAG:</b> ${r.tag_aplicada}`);
   if (r.crime_nome) linhasExtras.push(`<b>Infração:</b> ${r.crime_nome}`);
+  if (r.motivo_gratificacao_nome) linhasExtras.push(`<b>Motivo da gratificação:</b> ${r.motivo_gratificacao_nome} (+${r.valor_gratificacao})`);
   if (dadosEspecificos.provas) linhasExtras.push(`<b>Provas:</b> ${dadosEspecificos.provas}`);
   if (dadosEspecificos.data_retorno) linhasExtras.push(`<b>Data de retorno:</b> ${formatarDataCurtaReq(dadosEspecificos.data_retorno)}`);
   if (r.tipo === 'integracao' && dadosEspecificos.data) linhasExtras.push(`<b>Data de ingresso (histórica):</b> ${formatarDataCurtaReq(dadosEspecificos.data)}`);
@@ -311,6 +312,7 @@ function formatarDataHoraReq(iso) {
  *   patenteFiltroPorAlvo: bool,        // promoção/rebaixamento: filtra pela patente atual do alvo
  *   tiposComPatente: [tipo, ...],
  *   tiposComCrime: [tipo, ...],        // também mostra o campo "Provas"
+ *   tiposComMotivoGratificacao: [tipo, ...], // gratificação — select de motivo (valor fixo já embutido em cada opção)
  *   tiposComTag: [tipo, ...],
  *   tiposComPermissao: [tipo, ...],
  *   tiposComDataRetorno: [tipo, ...],  // licença
@@ -399,6 +401,13 @@ async function montarFormularioRequerimento(config) {
               <div id="req-campo-crime" class="hidden">
                 <label class="block text-xs text-muted mb-1">Infração</label>
                 <select id="req-crime" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                  <option value="">— selecione —</option>
+                </select>
+              </div>
+
+              <div id="req-campo-motivo-gratificacao" class="hidden">
+                <label class="block text-xs text-muted mb-1">Motivo da gratificação</label>
+                <select id="req-motivo-gratificacao" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
                   <option value="">— selecione —</option>
                 </select>
               </div>
@@ -517,6 +526,7 @@ async function montarFormularioRequerimento(config) {
   const campoPatente = document.getElementById('req-campo-patente');
   const campoTag = document.getElementById('req-campo-tag');
   const campoCrime = document.getElementById('req-campo-crime');
+  const campoMotivoGratificacao = document.getElementById('req-campo-motivo-gratificacao');
   const campoProvas = document.getElementById('req-campo-provas');
   const campoPermissao = document.getElementById('req-campo-permissao');
   const campoDataRetorno = document.getElementById('req-campo-data-retorno');
@@ -777,6 +787,16 @@ async function montarFormularioRequerimento(config) {
     document.getElementById('req-crime').innerHTML += crimesLista.map((c) => `<option value="${c.id}">${c.nome}</option>`).join('');
   }
 
+  // Carrega motivos de gratificação (se essa página usa esse campo) —
+  // cada opção já mostra o valor fixo, que é resolvido de novo no
+  // servidor na hora de gravar (nunca confia no que está selecionado aqui).
+  if (config.tiposComMotivoGratificacao?.length) {
+    const resp = await apiFetch('/motivos-gratificacao');
+    const motivosLista = resp.ok ? await resp.json() : [];
+    document.getElementById('req-motivo-gratificacao').innerHTML += motivosLista
+      .map((m) => `<option value="${m.id}">${m.nome} (+${m.valor})</option>`).join('');
+  }
+
   // Mapa de todas as patentes, pra exibir o nome no card de "recentes"
   // (independente do corpo dessa página específica).
   const respTodasPatentes = await apiFetch('/patentes');
@@ -791,6 +811,7 @@ async function montarFormularioRequerimento(config) {
     campoTag.classList.toggle('hidden', !(config.tiposComTag || []).includes(tipoAtual));
     campoCrime.classList.toggle('hidden', !(config.tiposComCrime || []).includes(tipoAtual));
     campoProvas.classList.toggle('hidden', !(config.tiposComCrime || []).includes(tipoAtual));
+    campoMotivoGratificacao.classList.toggle('hidden', !(config.tiposComMotivoGratificacao || []).includes(tipoAtual));
     campoPermissao.classList.toggle('hidden', !(config.tiposComPermissao || []).includes(tipoAtual));
     campoDataRetorno.classList.toggle('hidden', !(config.tiposComDataRetorno || []).includes(tipoAtual));
     campoDataIntegracao.classList.toggle('hidden', !(config.tiposComDataIntegracao || []).includes(tipoAtual));
@@ -891,6 +912,8 @@ async function montarFormularioRequerimento(config) {
       fundamentacao: document.getElementById('req-motivo').value.trim() || undefined,
       crime_id: (config.tiposComCrime || []).includes(tipo) && document.getElementById('req-crime').value
         ? Number(document.getElementById('req-crime').value) : undefined,
+      motivo_gratificacao_id: (config.tiposComMotivoGratificacao || []).includes(tipo) && document.getElementById('req-motivo-gratificacao').value
+        ? Number(document.getElementById('req-motivo-gratificacao').value) : undefined,
       tag_aplicada: (config.tiposComTag || []).includes(tipo)
         ? document.getElementById('req-tag').value.trim() : undefined,
       autorizado_por_id: (config.tiposComPermissao || []).includes(tipo) && permissaoSelecionadaId

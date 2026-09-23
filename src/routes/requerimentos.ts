@@ -15,7 +15,7 @@ type Variables = { usuarioId: number }
 // no ato). Aprovar/reprovar/cancelar manualmente e excluir do histórico
 // continuam exigindo permissão normal (ver podeGerirRequerimento) ou
 // administrador_sistema.
-const TIPOS_AUTO_APROVADOS = ['instrucao_inicial', 'contratacao', 'integracao', 'tag', 'venda_cargo']
+const TIPOS_AUTO_APROVADOS = ['instrucao_inicial', 'contratacao', 'integracao', 'tag', 'venda_cargo', 'bonificacao']
 
 const requerimentos = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
@@ -81,6 +81,23 @@ requerimentos.post('/', async (c) => {
     }
     if (!patenteAutor || patenteDestino.ordem >= patenteAutor.ordem) {
       return c.json({ erro: 'você não pode contratar alguém pra uma patente igual ou superior à sua' }, 403)
+    }
+  }
+
+  // Gratificação (tipo 'bonificacao'): liberado a partir de Subtenente
+  // (Corpo Militar) — qualquer cargo do Corpo Executivo já equivale a
+  // Tenente ou mais na tabela de equivalência, ou seja, sempre acima de
+  // Subtenente, então passa sem comparar ordem. Não importa se o alvo é
+  // hierarquicamente superior ou inferior ao autor — 'bonificacao' não
+  // é mapeado por acaoHierarquiaDoTipo, então a checagem genérica logo
+  // abaixo já é pulada por conta própria pra esse tipo.
+  if (body.tipo === 'bonificacao' && !autor.administrador_sistema && autor.corpo === 'militar') {
+    const [patenteAutor, subtenente] = await Promise.all([
+      c.env.DB.prepare(`SELECT ordem FROM patentes WHERE id = ?`).bind(autor.patente_atual_id).first<{ ordem: number }>(),
+      c.env.DB.prepare(`SELECT ordem FROM patentes WHERE corpo = 'militar' AND nome = 'Subtenente'`).first<{ ordem: number }>(),
+    ])
+    if (!patenteAutor || !subtenente || patenteAutor.ordem < subtenente.ordem) {
+      return c.json({ erro: 'só Subtenente ou patente superior pode conceder gratificação' }, 403)
     }
   }
 
@@ -173,10 +190,26 @@ requerimentos.post('/', async (c) => {
     operadoPorId = autorId
   }
 
+  // Gratificação: o cliente só manda o motivo — o valor concedido é
+  // sempre resolvido e congelado aqui no servidor, nunca aceito vindo
+  // pronto do body (senão daria pra forjar qualquer número). Uma vez
+  // gravado, `valor_gratificacao` não muda mesmo que o motivo seja
+  // editado ou desativado depois.
+  let valorGratificacao: number | null = null
+  if (body.tipo === 'bonificacao') {
+    if (!body.motivo_gratificacao_id) {
+      return c.json({ erro: 'motivo_gratificacao_id é obrigatório pra requerimento de gratificação' }, 400)
+    }
+    const motivo = await c.env.DB.prepare(`SELECT valor FROM motivos_gratificacao WHERE id = ? AND ativo = 1`)
+      .bind(body.motivo_gratificacao_id).first<{ valor: number }>()
+    if (!motivo) return c.json({ erro: 'motivo de gratificação não encontrado' }, 400)
+    valorGratificacao = motivo.valor
+  }
+
   const { meta } = await c.env.DB.prepare(
     `INSERT INTO requerimentos
-      (tipo, autor_id, tag_requerimento, dados_especificos, crime_id, fundamentacao, autorizado_por_id, tag_aplicada, tag_grupo_override, operado_por_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      (tipo, autor_id, tag_requerimento, dados_especificos, crime_id, fundamentacao, autorizado_por_id, tag_aplicada, tag_grupo_override, operado_por_id, motivo_gratificacao_id, valor_gratificacao)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       body.tipo,
@@ -188,7 +221,9 @@ requerimentos.post('/', async (c) => {
       body.autorizado_por_id ?? null,
       body.tag_aplicada ?? null,
       tagGrupoOverride,
-      operadoPorId
+      operadoPorId,
+      body.motivo_gratificacao_id ?? null,
+      valorGratificacao
     )
     .run()
 
@@ -276,6 +311,7 @@ requerimentos.post('/', async (c) => {
 
 const BASE_QUERY_REQUERIMENTOS = `
   SELECT r.*, u.nick AS autor_nick, COALESCE(r.tag_grupo_override, u.tag) AS autor_tag, p.nome AS autor_patente_nome, cr.nome AS crime_nome,
+    mg.nome AS motivo_gratificacao_nome,
     u.tipo AS autor_tipo, u.figure_fixa AS autor_figure_fixa,
     (
       SELECT json_group_array(json_object(
@@ -302,6 +338,7 @@ const BASE_QUERY_REQUERIMENTOS = `
   LEFT JOIN usuarios u ON u.id = r.autor_id
   LEFT JOIN patentes p ON p.id = u.patente_atual_id
   LEFT JOIN crimes cr ON cr.id = r.crime_id
+  LEFT JOIN motivos_gratificacao mg ON mg.id = r.motivo_gratificacao_id
 `
 
 // Roda a query base + busca a figure de cada autor distinto em

@@ -178,6 +178,40 @@ listagens.get('/:tipo', async (c) => {
     return c.json({ tipoVisual: 'agrupado', grupos })
   }
 
+  // --- Gratificação: ranking do mês (maior total primeiro), com
+  // seletor de mês — usa `?mes=YYYY-MM` (padrão: mês corrente). O total
+  // soma `valor_gratificacao` (já congelado na criação, não recalcula
+  // a partir do motivo atual) de requerimentos aprovados do tipo
+  // 'bonificacao' — reinício mensal é só um efeito do filtro por mês,
+  // não existe zeragem/job nenhum: o mês anterior continua consultável
+  // via `mes`, e a lista de meses disponíveis alimenta o seletor.
+  if (tipo === 'gratificacao') {
+    const mes = c.req.query('mes') || new Date().toISOString().slice(0, 7)
+
+    const { results: itens } = await db.prepare(
+      `SELECT u.id, u.nick, u.tag, SUM(r.valor_gratificacao) AS total
+       FROM requerimentos r
+       JOIN requerimento_alvos ra ON ra.requerimento_id = r.id
+       JOIN usuarios u ON u.id = ra.usuario_id
+       WHERE r.tipo = 'bonificacao' AND r.status = 'aprovado' AND strftime('%Y-%m', r.criado_em) = ?
+       GROUP BY u.id
+       ORDER BY total DESC, u.nick`
+    ).bind(mes).all<{ id: number; nick: string; tag: string | null; total: number }>()
+
+    const { results: mesesDisponiveis } = await db.prepare(
+      `SELECT DISTINCT strftime('%Y-%m', r.criado_em) AS mes
+       FROM requerimentos r WHERE r.tipo = 'bonificacao' AND r.status = 'aprovado'
+       ORDER BY mes DESC`
+    ).all<{ mes: string }>()
+
+    return c.json({
+      tipoVisual: 'ranking',
+      mes,
+      mesesDisponiveis: mesesDisponiveis.map((m) => m.mes).filter(Boolean),
+      itens,
+    })
+  }
+
   // --- Corpos com hierarquia de patente: soldados, corpo-de-pracas,
   // corpo-de-oficiais, corpo-executivo — mostra TODAS as patentes da
   // faixa, mesmo vazias. "Alto Comando Militar" (a patente suprema)

@@ -29,6 +29,7 @@ const NAV_PRINCIPAL = [
       { titulo: 'Desligamentos', url: '/requerimentos/desligamentos.html' },
       { titulo: 'Reforma', url: '/requerimentos/reforma.html' },
       { titulo: 'Exoneração', url: '/requerimentos/exoneracao.html' },
+      { titulo: 'Gratificação', url: '/requerimentos/gratificacao.html' },
     ],
   },
   {
@@ -41,6 +42,7 @@ const NAV_PRINCIPAL = [
       { titulo: 'Reformados', url: '/listagens/reformados.html' },
       { titulo: 'Desligados', url: '/listagens/desligados.html' },
       { titulo: 'Exonerados', url: '/listagens/exonerados.html' },
+      { titulo: 'Gratificação', url: '/listagens/gratificacao.html' },
     ],
   },
 ];

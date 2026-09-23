@@ -96,16 +96,69 @@ function renderGrupo(g, formatoExoneracao, tipo) {
   `;
 }
 
-async function montarListagem(tipo) {
+const MESES_NOMES_LISTAGEM = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+function nomeMesLegivel(mesAno) {
+  const [ano, mes] = mesAno.split('-').map(Number);
+  return `${MESES_NOMES_LISTAGEM[mes - 1] || mesAno} de ${ano}`;
+}
+
+function renderLinhaGratificacao(u, posicao) {
+  return `
+    <div class="flex items-center gap-3 px-4 py-3">
+      <span class="h-8 w-8 rounded-lg bg-basebg border border-border flex items-center justify-center shrink-0 font-display font-black text-sm text-muted">
+        ${posicao + 1}º
+      </span>
+      <span class="h-11 w-11 rounded-full bg-basebg border border-border overflow-hidden inline-block shrink-0">
+        ${u.figure ? `<img src="${avatarUrl(u.figure, 'mini', '2')}" class="w-full h-[190%] object-cover object-top -mt-3" alt="">` : `<span class="w-full h-full flex items-center justify-center text-sm font-bold">${u.nick.slice(0,2).toUpperCase()}</span>`}
+      </span>
+      <span class="text-base flex-1">${u.nick}${u.tag ? ` <span class="text-muted">[${u.tag}]</span>` : ''}</span>
+      <span class="text-sm font-bold text-accent shrink-0">+${u.total}</span>
+    </div>
+  `;
+}
+
+async function montarListagem(tipo, mes) {
   const raiz = document.getElementById('listagem-raiz');
   raiz.innerHTML = '<p class="text-sm text-muted">Carregando…</p>';
 
-  const resp = await apiFetch(`/listagens/${tipo}`);
+  const resp = await apiFetch(`/listagens/${tipo}${mes ? `?mes=${encodeURIComponent(mes)}` : ''}`);
   if (!resp.ok) {
     raiz.innerHTML = '<p class="text-sm text-red-400">Não foi possível carregar essa listagem.</p>';
     return;
   }
   const dados = await resp.json();
+
+  // Ranking (gratificação): ordenado do maior pro menor total do mês,
+  // com seletor pra ver meses anteriores — "reiniciar todo dia 1º" é só
+  // um efeito do filtro por mês, não existe zeragem/job nenhum: o mês
+  // anterior sempre continua consultável aqui.
+  if (dados.tipoVisual === 'ranking') {
+    await Promise.all(
+      dados.itens.map(async (u) => {
+        const r = await apiFetch(`/usuarios/nick/${encodeURIComponent(u.nick)}`);
+        u.figure = r.ok ? (await r.json()).figure : null;
+      })
+    );
+
+    const meses = dados.mesesDisponiveis?.length ? dados.mesesDisponiveis : [dados.mes];
+    raiz.innerHTML = `
+      <div class="flex items-center justify-end mb-3">
+        <select id="listagem-ranking-mes" class="bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          ${meses.map((m) => `<option value="${m}" ${m === dados.mes ? 'selected' : ''}>${nomeMesLegivel(m)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="bg-card border border-border rounded-2xl shadow-sm divide-y divide-border overflow-hidden">
+        ${dados.itens.length
+          ? dados.itens.map((u, i) => renderLinhaGratificacao(u, i)).join('')
+          : '<p class="text-sm text-muted p-4">Ninguém gratificado nesse mês.</p>'}
+      </div>
+    `;
+    document.getElementById('listagem-ranking-mes')?.addEventListener('change', (e) => {
+      montarListagem(tipo, e.target.value);
+    });
+    return;
+  }
 
   if (dados.tipoVisual === 'flat') {
     // TAGs: lista única, nick + TAG + avatar.
