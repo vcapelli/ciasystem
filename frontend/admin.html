@@ -762,6 +762,14 @@
     const raiz = document.getElementById('conteudo-aba');
     raiz.innerHTML = `
       <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-5 max-w-lg">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-1">Administradores do Sistema</h2>
+        <p class="text-xs text-muted mb-3">Têm acesso total, sem checagem de hierarquia — conceda com cuidado. Pra dar acesso a alguém novo, busque a conta abaixo e marque "Admin do sistema".</p>
+        <div id="lista-admins-sistema" class="divide-y divide-border">
+          <p class="text-sm text-muted">Carregando…</p>
+        </div>
+      </div>
+
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-5 max-w-lg">
         <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-1">Nova conta oficial</h2>
         <p class="text-xs text-muted mb-3">Contas tipo "Administração", "Setor Técnico" etc. — sem corpo/patente, não passam pela instrução inicial.</p>
         <form id="form-nova-conta-oficial" class="space-y-3">
@@ -832,6 +840,8 @@
       </div>
     `;
 
+    carregarListaAdminsSistema();
+
     document.getElementById('nco-logo').addEventListener('input', (e) => {
       const preview = document.getElementById('nco-logo-preview');
       preview.innerHTML = e.target.value.trim() ? `<img src="${e.target.value.trim()}" class="max-w-full max-h-full object-contain" alt="">` : '';
@@ -889,7 +899,7 @@
             <div class="flex items-center gap-4">
               <label class="flex items-center gap-2 text-xs text-muted">
                 Admin do sistema
-                <input type="checkbox" data-toggle-admin="${u.id}" ${u.administrador_sistema ? 'checked' : ''}>
+                <input type="checkbox" data-toggle-admin="${u.id}" ${u.administrador_sistema ? 'checked' : ''} ${u.nick.toLowerCase() === 'vcapelli' ? 'disabled title="vcapelli não pode ter o admin removido"' : ''}>
               </label>
               <button type="button" data-editar-usuario="${u.id}" class="text-xs font-semibold text-accent hover:underline">Editar</button>
               <button type="button" data-senha-usuario="${u.id}" data-nick="${escapeHtml(u.nick)}" class="text-xs font-semibold text-accent hover:underline">Senha</button>
@@ -910,7 +920,9 @@
               const d = await resp.json().catch(() => ({}));
               alert(d.erro || 'Não foi possível alterar.');
               chk.checked = !chk.checked;
+              return;
             }
+            carregarListaAdminsSistema();
           });
         });
 
@@ -930,6 +942,45 @@
           btn.addEventListener('click', () => abrirModalSenhaUsuario(btn.dataset.senhaUsuario, btn.dataset.nick));
         });
       }, 250);
+    });
+  }
+
+  // Listagem de todo mundo com administrador_sistema = 1 — o backend
+  // já suporta esse filtro (GET /usuarios?apenas_admin=1), usado aqui
+  // sem `busca` pra trazer todos de uma vez (o próprio filtro já limita
+  // bem o resultado, não precisa dos 100 de LIMIT genérico da rota).
+  async function carregarListaAdminsSistema() {
+    const raiz = document.getElementById('lista-admins-sistema');
+    if (!raiz) return;
+    const resp = await apiFetch('/usuarios?apenas_admin=1');
+    if (!resp.ok) { raiz.innerHTML = '<p class="text-sm text-red-400">Erro ao carregar.</p>'; return; }
+    const lista = await resp.json();
+    raiz.innerHTML = lista.length ? lista.map((u) => `
+      <div class="flex items-center justify-between py-2.5">
+        <div>
+          <p class="text-sm font-semibold">${escapeHtml(u.nick)}${u.tag ? ` [${escapeHtml(u.tag)}]` : ''}</p>
+          <p class="text-xs text-muted">${escapeHtml(u.patente_nome || '—')}</p>
+        </div>
+        ${u.nick.toLowerCase() === 'vcapelli'
+          ? '<span class="text-xs text-muted" title="vcapelli não pode ter o admin removido"><i class="fa-solid fa-lock"></i> Fixo</span>'
+          : `<button type="button" data-remover-admin="${u.id}" data-nick="${escapeHtml(u.nick)}" class="text-xs font-semibold text-red-600 hover:underline">Remover admin</button>`}
+      </div>
+    `).join('') : '<p class="text-sm text-muted">Nenhum administrador cadastrado.</p>';
+
+    raiz.querySelectorAll('[data-remover-admin]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm(`Remover o acesso de administrador do sistema de ${btn.dataset.nick}?`)) return;
+        const resp2 = await apiFetch(`/usuarios/${btn.dataset.removerAdmin}/admin`, {
+          method: 'PATCH',
+          body: JSON.stringify({ administrador_sistema: false }),
+        });
+        if (!resp2.ok) {
+          const d = await resp2.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível remover.');
+          return;
+        }
+        carregarListaAdminsSistema();
+      });
     });
   }
 

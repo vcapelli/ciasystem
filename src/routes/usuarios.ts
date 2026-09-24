@@ -231,11 +231,18 @@ usuarios.patch('/:id/admin', async (c) => {
     .bind(usuarioAtualId).first<{ administrador_sistema: number }>()
   if (!atual?.administrador_sistema) return c.json({ erro: 'só administradores do sistema concedem isso' }, 403)
 
-  const alvo = await c.env.DB.prepare(`SELECT id FROM usuarios WHERE id = ?`).bind(alvoId).first()
+  const alvo = await c.env.DB.prepare(`SELECT id, nick FROM usuarios WHERE id = ?`).bind(alvoId).first<{ id: number; nick: string }>()
   if (!alvo) return c.json({ erro: 'usuário alvo não encontrado' }, 404)
 
   if (String(usuarioAtualId) === alvoId && !administrador_sistema) {
     return c.json({ erro: 'você não pode remover seu próprio acesso de administrador' }, 400)
+  }
+
+  // Conta do dono do sistema — nunca pode perder administrador_sistema,
+  // nem por outro admin, pra não haver como travar o próprio acesso ao
+  // sistema por engano (ou de propósito) sem passar direto pelo banco.
+  if (!administrador_sistema && alvo.nick.toLowerCase() === 'vcapelli') {
+    return c.json({ erro: 'a conta vcapelli não pode ter o acesso de administrador removido' }, 400)
   }
 
   await c.env.DB.prepare(`UPDATE usuarios SET administrador_sistema = ? WHERE id = ?`)
