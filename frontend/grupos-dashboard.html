@@ -41,6 +41,7 @@
   //   /grupos/{slug}/registros
   //   /grupos/{slug}/aulas           → lista de aulas (categorizada)
   //   /grupos/{slug}/aulas/{aulaSlug} → aula individual
+  //   /grupos/{slug}/metas           → dashboard da meta semanal (grupos com permite_aulas)
   //   /grupos/{slug}/configuracoes
   const partes = location.pathname.split('/').filter(Boolean);
   const slug = decodeURIComponent(partes[1] || '');
@@ -93,6 +94,7 @@
     if (grupo.permite_aulas) {
       abas.push({ id: 'aulas', label: 'Aulas', href: `/grupos/${slug}/aulas` });
       abas.push({ id: 'relatorios', label: 'Relatórios', href: `/grupos/${slug}/relatorios` });
+      abas.push({ id: 'metas', label: 'Metas', href: `/grupos/${slug}/metas` });
     }
     if (souAdminDoGrupo) abas.push({ id: 'configuracoes', label: 'Configurações', href: `/grupos/${slug}/configuracoes` });
 
@@ -805,11 +807,125 @@
     });
   }
 
+  // ---------- Metas (dashboard de acompanhamento da meta semanal) ----------
+  let semanaMetasDashboard = null; // null = semana atual; senão, 'YYYY-MM-DD' (qualquer dia dela)
+
+  // `semana_inicio`/`semana_fim` são datas puras ('YYYY-MM-DD'), não
+  // instantes — não pode passar por `new Date(...)` + getters locais
+  // (formatarDataCurtaGrupo é pra timestamps ISO de verdade, tipo
+  // data_ingresso) ou o dia exibido "anda pra trás" em fuso negativo.
+  function formatarDataSemana(dataIso) {
+    const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    const [ano, mes, dia] = dataIso.split('-').map(Number);
+    return `${String(dia).padStart(2,'0')} ${MESES[mes - 1]} ${ano}`;
+  }
+
+  function deslocarSemana(dataIso, dias) {
+    const d = new Date(`${dataIso}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + dias);
+    return d.toISOString().slice(0, 10);
+  }
+
+  const STATUS_META = {
+    isento: { label: 'Isento (entrou essa semana)', cor: 'bg-gray-500/15 text-gray-600' },
+    cumpriu: { label: 'Meta batida', cor: 'bg-green-500/15 text-green-600' },
+    andamento: { label: 'Em andamento', cor: 'bg-yellow-500/15 text-yellow-700' },
+    naoCumpriu: { label: 'Não cumpriu', cor: 'bg-red-500/15 text-red-600' },
+  };
+
+  function statusMetaMembro(m, dados) {
+    if (m.isento) return STATUS_META.isento;
+    if (m.cumpriu) return STATUS_META.cumpriu;
+    if (dados.semana_atual) return STATUS_META.andamento;
+    return STATUS_META.naoCumpriu;
+  }
+
+  async function renderLinhaMetaMembro(m, dados) {
+    const figure = await buscarFigurePorNick(m.nick);
+    const status = statusMetaMembro(m, dados);
+    const quantidade = dados.quantidade || 0;
+    const pct = quantidade ? Math.min(100, Math.round((m.aulas_dadas / quantidade) * 100)) : 0;
+
+    return `
+      <div class="flex items-center gap-3 px-4 py-3">
+        <span class="h-10 w-10 rounded-full bg-basebg border border-border overflow-hidden inline-block shrink-0">
+          ${figure ? `<img src="${avatarUrl(figure, 'mini', '2')}" class="w-full h-[190%] object-cover object-top -mt-2.5" alt="">` : `<span class="w-full h-full flex items-center justify-center text-xs font-bold">${m.nick.slice(0,2).toUpperCase()}</span>`}
+        </span>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium truncate">${m.nick}${m.tag ? ` <span class="text-muted font-normal">[${m.tag}]</span>` : ''} <span class="text-muted font-normal text-xs">· ${m.nivel_nome}</span></p>
+          <div class="h-1.5 bg-basebg border border-border rounded-full overflow-hidden mt-1.5 max-w-xs">
+            <div class="h-full bg-accent" style="width: ${pct}%"></div>
+          </div>
+        </div>
+        <div class="text-right shrink-0">
+          <p class="text-sm font-bold">${m.aulas_dadas}${quantidade ? `/${quantidade}` : ''}</p>
+          <span class="text-[0.65rem] font-semibold px-2 py-0.5 rounded-full ${status.cor} inline-block mt-0.5">${status.label}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  async function montarMetasDashboard(grupo, souAdminDoGrupo) {
+    const container = document.getElementById('conteudo-principal');
+    container.innerHTML = '<p class="text-sm text-muted">Carregando…</p>';
+
+    const resp = await apiFetch(`/grupos/${slug}/meta/dashboard${semanaMetasDashboard ? `?semana=${semanaMetasDashboard}` : ''}`);
+    if (!resp.ok) {
+      container.innerHTML = '<p class="text-sm text-red-400">Não foi possível carregar o painel de metas.</p>';
+      return;
+    }
+    const dados = await resp.json();
+
+    if (!dados.ativa) {
+      container.innerHTML = `
+        <div class="bg-card border border-border rounded-2xl shadow-sm p-6 text-center">
+          <p class="text-sm text-muted">A meta semanal ainda não está ativa nesse grupo.</p>
+          ${souAdminDoGrupo ? `<a href="/grupos/${slug}/configuracoes" class="text-xs font-semibold text-accent hover:underline mt-2 inline-block">Configurar em Configurações → Metas</a>` : ''}
+        </div>
+      `;
+      return;
+    }
+
+    const nomeSemana = `${formatarDataSemana(dados.semana_inicio)} — ${formatarDataSemana(dados.semana_fim)}${dados.semana_atual ? ' (semana atual)' : ''}`;
+
+    container.innerHTML = `
+      <div class="flex items-center justify-between mb-4">
+        <button id="metas-semana-anterior" class="h-9 w-9 rounded-lg bg-card border border-border text-sm hover:bg-basebg transition-colors"><i class="fa-solid fa-chevron-left"></i></button>
+        <p class="text-sm font-semibold">${nomeSemana}</p>
+        <button id="metas-semana-seguinte" ${dados.semana_atual ? 'disabled' : ''} class="h-9 w-9 rounded-lg bg-card border border-border text-sm disabled:opacity-40 hover:bg-basebg transition-colors"><i class="fa-solid fa-chevron-right"></i></button>
+      </div>
+
+      ${!dados.tem_niveis_configurados ? `
+        <div class="bg-card border border-border rounded-2xl shadow-sm p-4 mb-4 text-sm text-muted">
+          Nenhum cargo está configurado pra receber essa meta.
+          ${souAdminDoGrupo ? `<a href="/grupos/${slug}/configuracoes" class="text-accent hover:underline">Configure em Configurações → Metas</a>.` : ''}
+        </div>
+      ` : ''}
+
+      <div class="bg-card border border-border rounded-2xl shadow-sm divide-y divide-border overflow-hidden">
+        ${dados.membros.length
+          ? (await Promise.all(dados.membros.map((m) => renderLinhaMetaMembro(m, dados)))).join('')
+          : `<p class="text-sm text-muted p-4">${dados.tem_niveis_configurados ? 'Nenhum membro nos cargos selecionados.' : 'Nada a mostrar.'}</p>`}
+      </div>
+    `;
+
+    document.getElementById('metas-semana-anterior').addEventListener('click', () => {
+      semanaMetasDashboard = deslocarSemana(dados.semana_inicio, -7);
+      montarMetasDashboard(grupo, souAdminDoGrupo);
+    });
+    document.getElementById('metas-semana-seguinte').addEventListener('click', () => {
+      if (dados.semana_atual) return;
+      semanaMetasDashboard = deslocarSemana(dados.semana_inicio, 7);
+      montarMetasDashboard(grupo, souAdminDoGrupo);
+    });
+  }
+
   // ---------- Configurações: Básico + Hierarquia ----------
   let subAbaConfig = 'basico';
 
-  function renderConfigTabs() {
+  function renderConfigTabs(grupo) {
     const subAbas = [{ id: 'basico', label: 'Básico' }, { id: 'hierarquia', label: 'Hierarquia' }];
+    if (grupo.permite_aulas) subAbas.push({ id: 'metas', label: 'Metas' });
     return `
       <div class="flex gap-2 mb-4">
         ${subAbas.map((s) => `
@@ -971,14 +1087,83 @@
     });
   }
 
+  // ---------- Configurações: Metas (só grupos com permite_aulas) ----------
+  async function montarConfigMetas(grupo) {
+    const config = document.getElementById('config-conteudo');
+    const [metaResp, niveisResp] = await Promise.all([
+      apiFetch(`/grupos/${slug}/meta`), apiFetch(`/grupos/${slug}/niveis`),
+    ]);
+    const meta = metaResp.ok ? await metaResp.json() : { ativa: false, quantidade: null, niveis_ids: [] };
+    const niveis = niveisResp.ok ? await niveisResp.json() : [];
+
+    config.innerHTML = `
+      <form id="form-config-meta" class="bg-card border border-border rounded-2xl shadow-sm p-5 max-w-lg space-y-3">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-1">Meta semanal de aulas</h2>
+        <p class="text-xs text-muted mb-2">Quantidade mínima de aulas (relatórios registrados) que cada membro dos cargos selecionados precisa dar por semana. Quem entrar no grupo durante a própria semana fica isento da meta nessa semana.</p>
+
+        <label class="flex items-center gap-2 text-sm">
+          <input id="meta-ativa" type="checkbox" ${meta.ativa ? 'checked' : ''}> Meta ativa
+        </label>
+
+        <div>
+          <label class="block text-xs text-muted mb-1">Aulas por semana</label>
+          <input id="meta-quantidade" type="number" min="1" value="${meta.quantidade ?? ''}" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+        </div>
+
+        <div>
+          <label class="block text-xs text-muted mb-1">Aplica-se aos cargos</label>
+          <div class="space-y-1.5">
+            ${[...niveis].sort((a,b) => a.ordem - b.ordem).map((n) => `
+              <label class="flex items-center gap-2 bg-basebg border border-border rounded-lg px-3 py-2 text-sm">
+                <input type="checkbox" data-meta-nivel="${n.id}" ${meta.niveis_ids.includes(n.id) ? 'checked' : ''}> ${n.nome}
+              </label>
+            `).join('') || '<p class="text-sm text-muted">Nenhum cargo cadastrado ainda — crie um na aba Hierarquia.</p>'}
+          </div>
+        </div>
+
+        <button type="submit" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Salvar</button>
+        <p id="form-config-meta-erro" class="hidden text-xs text-red-400"></p>
+        <p id="form-config-meta-sucesso" class="hidden text-xs text-green-600">Salvo!</p>
+      </form>
+    `;
+
+    document.getElementById('form-config-meta').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const erroEl = document.getElementById('form-config-meta-erro');
+      const sucessoEl = document.getElementById('form-config-meta-sucesso');
+      erroEl.classList.add('hidden');
+      sucessoEl.classList.add('hidden');
+
+      const niveisSelecionados = [...config.querySelectorAll('[data-meta-nivel]')]
+        .filter((chk) => chk.checked).map((chk) => Number(chk.dataset.metaNivel));
+
+      const resp = await apiFetch(`/grupos/${slug}/meta`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          ativa: document.getElementById('meta-ativa').checked,
+          quantidade: document.getElementById('meta-quantidade').value ? Number(document.getElementById('meta-quantidade').value) : null,
+          niveis_ids: niveisSelecionados,
+        }),
+      });
+      if (!resp.ok) {
+        const d = await resp.json().catch(() => ({}));
+        erroEl.textContent = d.erro || 'Não foi possível salvar.';
+        erroEl.classList.remove('hidden');
+        return;
+      }
+      sucessoEl.classList.remove('hidden');
+    });
+  }
+
   function ligarConfigTabs(grupo, me) {
     document.querySelectorAll('[data-subaba-config]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         subAbaConfig = btn.dataset.subabaConfig;
-        document.getElementById('conteudo-principal').innerHTML = renderConfigTabs();
-        ligarConfigTabs(grupo);
-        if (subAbaConfig === 'basico') { document.getElementById('config-conteudo').innerHTML = renderConfigBasico(grupo); ligarFormBasico(grupo); }
-        else montarConfigHierarquia(grupo);
+        document.getElementById('conteudo-principal').innerHTML = renderConfigTabs(grupo);
+        ligarConfigTabs(grupo, me);
+        if (subAbaConfig === 'basico') { document.getElementById('config-conteudo').innerHTML = renderConfigBasico(grupo, me); ligarFormBasico(grupo, me); }
+        else if (subAbaConfig === 'hierarquia') montarConfigHierarquia(grupo);
+        else if (subAbaConfig === 'metas') montarConfigMetas(grupo);
       });
     });
   }
@@ -1073,11 +1258,14 @@
       await montarRelatoriosAula(grupo, souAdminDoGrupo, me);
     } else if (aba === 'aulas' && grupo.permite_aulas) {
       await montarAulas(grupo, souAdminDoGrupo);
+    } else if (aba === 'metas' && grupo.permite_aulas) {
+      await montarMetasDashboard(grupo, souAdminDoGrupo);
     } else if (aba === 'configuracoes' && souAdminDoGrupo) {
-      conteudoPrincipal.innerHTML = renderConfigTabs();
+      subAbaConfig = 'basico';
+      conteudoPrincipal.innerHTML = renderConfigTabs(grupo);
       ligarConfigTabs(grupo, me);
-      if (subAbaConfig === 'basico') { document.getElementById('config-conteudo').innerHTML = renderConfigBasico(grupo, me); ligarFormBasico(grupo, me); }
-      else montarConfigHierarquia(grupo);
+      document.getElementById('config-conteudo').innerHTML = renderConfigBasico(grupo, me);
+      ligarFormBasico(grupo, me);
     } else {
       conteudoPrincipal.innerHTML = '<p class="text-sm text-muted">Você não tem acesso a essa aba.</p>';
     }

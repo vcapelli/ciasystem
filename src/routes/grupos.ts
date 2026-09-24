@@ -714,6 +714,135 @@ grupos.get('/:slug/aulas-relatorios', async (c) => {
   return c.json({ relatorios, total: totalRow?.n ?? 0, pagina, por_pagina: porPagina })
 })
 
+// --- Meta semanal (só relevante em grupos com permite_aulas = 1) ---
+
+// Segunda a domingo da semana que contém `dataRef` (ou hoje, se omitida).
+// Sempre em UTC — o mesmo padrão usado nas datas ISO gravadas no banco.
+function limitesSemana(dataRef?: string): { inicio: string; fim: string } {
+  const base = dataRef ? new Date(`${dataRef}T00:00:00Z`) : new Date()
+  const diaSemana = base.getUTCDay() // 0 = domingo, 1 = segunda, ...
+  const deslocamento = diaSemana === 0 ? 6 : diaSemana - 1 // dias desde a última segunda
+  const inicio = new Date(base)
+  inicio.setUTCDate(base.getUTCDate() - deslocamento)
+  const fim = new Date(inicio)
+  fim.setUTCDate(inicio.getUTCDate() + 6)
+  const fmt = (d: Date) => d.toISOString().slice(0, 10)
+  return { inicio: fmt(inicio), fim: fmt(fim) }
+}
+
+// GET /grupos/:slug/meta — configuração atual (qualquer membro pode
+// ver, pro dashboard saber se a meta está ativa e quanto vale).
+grupos.get('/:slug/meta', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  const slug = c.req.param('slug')
+  const grupo = await c.env.DB.prepare(
+    `SELECT id, meta_semanal_ativa, meta_semanal_quantidade FROM grupos WHERE slug = ?`
+  ).bind(slug).first<{ id: number; meta_semanal_ativa: number; meta_semanal_quantidade: number | null }>()
+  if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
+  if (!(await pertenceAoGrupo(c.env.DB, usuarioId, grupo.id))) {
+    return c.json({ erro: 'só membros deste grupo (ou administradores) podem ver isso' }, 403)
+  }
+
+  const { results: niveis } = await c.env.DB.prepare(`SELECT nivel_id FROM grupo_meta_niveis WHERE grupo_id = ?`)
+    .bind(grupo.id).all<{ nivel_id: number }>()
+
+  return c.json({
+    ativa: Boolean(grupo.meta_semanal_ativa),
+    quantidade: grupo.meta_semanal_quantidade,
+    niveis_ids: niveis.map((n) => n.nivel_id),
+  })
+})
+
+// PATCH /grupos/:slug/meta — só admin do grupo (mesma permissão de
+// mexer na hierarquia interna).
+grupos.patch('/:slug/meta', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  const slug = c.req.param('slug')
+  const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
+  if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
+  if (!(await ehAdminDoGrupo(c.env.DB, usuarioId, grupo.id))) {
+    return c.json({ erro: 'sem permissão de administrador neste grupo' }, 403)
+  }
+
+  const body = await c.req.json<{ ativa?: boolean; quantidade?: number | null; niveis_ids?: number[] }>()
+
+  if (body.ativa && (!body.quantidade || body.quantidade < 1)) {
+    return c.json({ erro: 'defina uma quantidade de aulas por semana maior que zero pra ativar a meta' }, 400)
+  }
+
+  await c.env.DB.prepare(`UPDATE grupos SET meta_semanal_ativa = ?, meta_semanal_quantidade = ? WHERE id = ?`)
+    .bind(body.ativa ? 1 : 0, body.quantidade ?? null, grupo.id).run()
+
+  if (body.niveis_ids) {
+    await c.env.DB.prepare(`DELETE FROM grupo_meta_niveis WHERE grupo_id = ?`).bind(grupo.id).run()
+    for (const nivelId of body.niveis_ids) {
+      await c.env.DB.prepare(`INSERT INTO grupo_meta_niveis (grupo_id, nivel_id) VALUES (?, ?)`)
+        .bind(grupo.id, nivelId).run()
+    }
+  }
+
+  return c.json({ ok: true })
+})
+
+// GET /grupos/:slug/meta/dashboard?semana=YYYY-MM-DD — qualquer membro
+// pode ver (é o painel de acompanhamento, não a configuração). `semana`
+// é qualquer data dentro da semana desejada; sem isso, usa a atual.
+// Conta "aulas dadas" via `criado_em` (ver comentário na migração
+// 0043) e isenta quem ingressou no grupo dentro da própria semana
+// mostrada — de propósito só nessa semana: quem entrou numa semana
+// passada já foi cobrado normalmente desde então.
+grupos.get('/:slug/meta/dashboard', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  const slug = c.req.param('slug')
+  const grupo = await c.env.DB.prepare(
+    `SELECT id, meta_semanal_ativa, meta_semanal_quantidade FROM grupos WHERE slug = ?`
+  ).bind(slug).first<{ id: number; meta_semanal_ativa: number; meta_semanal_quantidade: number | null }>()
+  if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
+  if (!(await pertenceAoGrupo(c.env.DB, usuarioId, grupo.id))) {
+    return c.json({ erro: 'só membros deste grupo (ou administradores) podem ver isso' }, 403)
+  }
+
+  const { inicio, fim } = limitesSemana(c.req.query('semana'))
+  const semanaAtual = limitesSemana()
+
+  const { results: niveisAplicaveis } = await c.env.DB.prepare(`SELECT nivel_id FROM grupo_meta_niveis WHERE grupo_id = ?`)
+    .bind(grupo.id).all<{ nivel_id: number }>()
+  const idsNiveis = niveisAplicaveis.map((n) => n.nivel_id)
+
+  let membros: Record<string, unknown>[] = []
+  if (idsNiveis.length) {
+    const placeholders = idsNiveis.map(() => '?').join(',')
+    const inicioIso = `${inicio}T00:00:00Z`
+    const fimIso = `${fim}T23:59:59Z`
+    const { results } = await c.env.DB.prepare(
+      `SELECT u.id, u.nick, u.tag, ug.nivel_id, gn.nome AS nivel_nome, gn.abreviacao AS nivel_abreviacao, ug.data_ingresso,
+        (SELECT COUNT(*) FROM grupo_aula_relatorios r WHERE r.grupo_id = ? AND r.instrutor_id = u.id AND r.criado_em BETWEEN ? AND ?) AS aulas_dadas
+       FROM usuario_grupos ug
+       JOIN usuarios u ON u.id = ug.usuario_id
+       JOIN grupo_niveis gn ON gn.id = ug.nivel_id
+       WHERE ug.grupo_id = ? AND ug.ativo = 1 AND ug.nivel_id IN (${placeholders})
+       ORDER BY gn.ordem, u.nick`
+    ).bind(grupo.id, inicioIso, fimIso, grupo.id, ...idsNiveis)
+      .all<{ id: number; nick: string; tag: string | null; nivel_id: number; nivel_nome: string; nivel_abreviacao: string | null; data_ingresso: string; aulas_dadas: number }>()
+
+    membros = results.map((m) => ({
+      ...m,
+      isento: m.data_ingresso >= inicioIso && m.data_ingresso <= fimIso,
+      cumpriu: grupo.meta_semanal_quantidade ? m.aulas_dadas >= grupo.meta_semanal_quantidade : true,
+    }))
+  }
+
+  return c.json({
+    ativa: Boolean(grupo.meta_semanal_ativa),
+    quantidade: grupo.meta_semanal_quantidade,
+    semana_inicio: inicio,
+    semana_fim: fim,
+    semana_atual: inicio === semanaAtual.inicio,
+    tem_niveis_configurados: idsNiveis.length > 0,
+    membros,
+  })
+})
+
 // --- Páginas do hub ---
 
 grupos.post('/:slug/paginas', async (c) => {
