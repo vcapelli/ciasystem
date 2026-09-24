@@ -664,7 +664,7 @@ grupos.get('/:slug/aulas', async (c) => {
       if (aula.nivel_minimo_id !== null) {
         if (!membro) continue
         const minimo = await c.env.DB.prepare(`SELECT ordem FROM grupo_niveis WHERE id = ?`).bind(aula.nivel_minimo_id).first<{ ordem: number }>()
-        if (!minimo || membro.ordem > minimo.ordem) continue
+        if (!minimo || membro.ordem < minimo.ordem) continue
       }
       if (aula.categoria_id !== null) {
         const niveisPermitidos = await niveisDaCategoriaAula(c.env.DB, aula.categoria_id)
@@ -701,7 +701,7 @@ grupos.get('/:slug/aulas/:aulaSlug', async (c) => {
 
     if (aula.nivel_minimo_id !== null) {
       const minimo = await c.env.DB.prepare(`SELECT ordem FROM grupo_niveis WHERE id = ?`).bind(aula.nivel_minimo_id).first<{ ordem: number }>()
-      if (!membro || !minimo || membro.ordem > minimo.ordem) {
+      if (!membro || !minimo || membro.ordem < minimo.ordem) {
         return c.json({ erro: 'você não tem acesso a esta aula' }, 403)
       }
     }

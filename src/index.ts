@@ -50,6 +50,7 @@ type Bindings = {
 }
 type Variables = {
   usuarioId: number
+  usuarioStatus: string
 }
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
@@ -92,6 +93,37 @@ app.route('/configuracoes', configuracoesPublico)
 // primeiro pra qualquer path aqui dentro, sem ambiguidade de ordem.
 const protegido = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 protegido.use('*', requireAuth)
+
+// "Convidado": usuário desligado (honroso ou desonroso) continua com
+// login e navegação normais — inclusive tweetar e mandar mensagem —
+// mas fica proibido de qualquer ação institucional (requerimentos,
+// grupos, documentos, projetos, sugestões, e o resto do que só faz
+// sentido pra quem está no efetivo). Decisão confirmada com Vitor em
+// 24/09/2026. GET nunca é bloqueado (leitura sempre liberada); só
+// método de escrita (POST/PATCH/PUT/DELETE) nos prefixos abaixo.
+const STATUS_CONVIDADO = ['desligado_honroso', 'desligado_desonroso']
+const PREFIXOS_BLOQUEADOS_CONVIDADO = [
+  '/requerimentos', '/grupos', '/documentos', '/documentos-categorias', '/documentos-permissoes',
+  '/projetos', '/sugestoes', '/decretos', '/noticias', '/menu', '/paginas', '/crimes', '/medalhas',
+  '/cursos', '/honrarias', '/emblemas', '/conquistas', '/motivos-gratificacao', '/permissoes-requerimentos',
+  '/requisitos-patente', '/patentes', '/configuracoes', '/footer', '/banners-perfil', '/ip-listagem',
+  '/forum', '/usuarios',
+]
+// Exceções dentro de `/usuarios`: essas são autoatendimento (editar o
+// próprio perfil, heartbeat de presença, trocar a própria senha), não
+// ação institucional — continuam liberadas pro Convidado.
+const EXCECOES_CONVIDADO = new Set(['/usuarios/me', '/usuarios/heartbeat', '/usuarios/alterar-senha'])
+
+protegido.use('*', async (c, next) => {
+  const metodo = c.req.method
+  if (metodo !== 'GET' && metodo !== 'HEAD' && metodo !== 'OPTIONS' && STATUS_CONVIDADO.includes(c.get('usuarioStatus'))) {
+    const caminho = new URL(c.req.url).pathname
+    if (!EXCECOES_CONVIDADO.has(caminho) && PREFIXOS_BLOQUEADOS_CONVIDADO.some((p) => caminho.startsWith(p))) {
+      return c.json({ erro: 'usuários desligados não realizam ações institucionais — acesso é só leitura, tweets e mensagens' }, 403)
+    }
+  }
+  await next()
+})
 
 // Log automático: toda ação (POST/PATCH/DELETE/PUT) autenticada gera
 // um registro em logs_eventos, com IP e user-agent — sem precisar

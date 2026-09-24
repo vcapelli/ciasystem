@@ -72,7 +72,25 @@ documentos.get('/', async (c) => {
   const { results } = await c.env.DB.prepare(
     `SELECT d.*, dc.nome AS categoria_nome
      FROM documentos d LEFT JOIN documentos_categorias dc ON dc.id = d.categoria_id
+     WHERE d.ativo = 1
      ORDER BY dc.ordem, d.titulo`
+  ).all()
+  return c.json(results)
+})
+
+// GET /documentos/lixeira — documentos "deletados" (ativo = 0). Só
+// admin do sistema. Precisa vir ANTES de GET /:id, senão o Hono trata
+// "lixeira" como um :id.
+documentos.get('/lixeira', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  if (!(await ehAdmin(c.env.DB, usuarioId))) return c.json({ erro: 'só administradores do sistema veem a lixeira' }, 403)
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT d.id, d.titulo, d.slug, d.categoria_id, dc.nome AS categoria_nome,
+            d.status, d.numero_revisao_atual, d.criado_em, d.atualizado_em
+     FROM documentos d LEFT JOIN documentos_categorias dc ON dc.id = d.categoria_id
+     WHERE d.ativo = 0
+     ORDER BY d.atualizado_em DESC`
   ).all()
   return c.json(results)
 })
@@ -125,7 +143,7 @@ documentos.get('/minhas-assinaturas-pendentes', async (c) => {
 documentos.get('/slug/:slug', async (c) => {
   const usuarioId = c.get('usuarioId')
   const doc = await c.env.DB.prepare(
-    `SELECT d.*, dc.nome AS categoria_nome FROM documentos d LEFT JOIN documentos_categorias dc ON dc.id = d.categoria_id WHERE d.slug = ?`
+    `SELECT d.*, dc.nome AS categoria_nome FROM documentos d LEFT JOIN documentos_categorias dc ON dc.id = d.categoria_id WHERE d.slug = ? AND d.ativo = 1`
   ).bind(c.req.param('slug')).first<{ id: number }>()
   if (!doc) return c.json({ erro: 'não encontrado' }, 404)
 
@@ -149,7 +167,7 @@ documentos.get('/slug/:slug', async (c) => {
 })
 
 documentos.get('/slug/:slug/versao/:numero', async (c) => {
-  const doc = await c.env.DB.prepare(`SELECT id, titulo, categoria_id FROM documentos WHERE slug = ?`)
+  const doc = await c.env.DB.prepare(`SELECT id, titulo, categoria_id FROM documentos WHERE slug = ? AND ativo = 1`)
     .bind(c.req.param('slug')).first<{ id: number; titulo: string; categoria_id: number }>()
   if (!doc) return c.json({ erro: 'documento não encontrado' }, 404)
 
@@ -174,7 +192,7 @@ documentos.get('/slug/:slug/versao/:numero', async (c) => {
 // sequencial do documento (o que aparece na URL).
 documentos.get('/slug/:slug/revisao/:numero', async (c) => {
   const usuarioId = c.get('usuarioId')
-  const doc = await c.env.DB.prepare(`SELECT id, titulo, categoria_id, slug FROM documentos WHERE slug = ?`)
+  const doc = await c.env.DB.prepare(`SELECT id, titulo, categoria_id, slug FROM documentos WHERE slug = ? AND ativo = 1`)
     .bind(c.req.param('slug')).first<{ id: number; titulo: string; categoria_id: number; slug: string }>()
   if (!doc) return c.json({ erro: 'documento não encontrado' }, 404)
 
@@ -205,7 +223,7 @@ documentos.get('/slug/:slug/revisao/:numero', async (c) => {
 })
 
 documentos.get('/:id', async (c) => {
-  const doc = await c.env.DB.prepare(`SELECT * FROM documentos WHERE id = ?`).bind(c.req.param('id')).first()
+  const doc = await c.env.DB.prepare(`SELECT * FROM documentos WHERE id = ? AND ativo = 1`).bind(c.req.param('id')).first()
   if (!doc) return c.json({ erro: 'não encontrado' }, 404)
   return c.json(doc)
 })
@@ -223,14 +241,34 @@ documentos.patch('/:id', async (c) => {
   return c.json({ ok: true })
 })
 
+// DELETE /documentos/:id — manda pra lixeira (soft delete). Preserva
+// documento_revisoes / historico / aprovadores, que continuam
+// existindo (histórico permanente); só marca ativo = 0 pra sumir das
+// listagens normais. Restaura com POST /:id/restaurar (admin).
 documentos.delete('/:id', async (c) => {
   const usuarioId = c.get('usuarioId')
   if (!(await podeGerirDocumento(c.env.DB, usuarioId, 'deletar'))) {
     return c.json({ erro: 'sem permissão para deletar documentos' }, 403)
   }
-  const doc = await c.env.DB.prepare(`SELECT id FROM documentos WHERE id = ?`).bind(c.req.param('id')).first()
+  const doc = await c.env.DB.prepare(`SELECT id FROM documentos WHERE id = ? AND ativo = 1`).bind(c.req.param('id')).first()
   if (!doc) return c.json({ erro: 'não encontrado' }, 404)
-  await c.env.DB.prepare(`DELETE FROM documentos WHERE id = ?`).bind(c.req.param('id')).run()
+  await c.env.DB.prepare(
+    `UPDATE documentos SET ativo = 0, atualizado_em = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
+  ).bind(c.req.param('id')).run()
+  return c.json({ ok: true })
+})
+
+// POST /documentos/:id/restaurar — tira da lixeira. Só admin do sistema.
+documentos.post('/:id/restaurar', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  if (!(await ehAdmin(c.env.DB, usuarioId))) return c.json({ erro: 'só administradores do sistema restauram documentos' }, 403)
+
+  const doc = await c.env.DB.prepare(`SELECT id FROM documentos WHERE id = ? AND ativo = 0`).bind(c.req.param('id')).first()
+  if (!doc) return c.json({ erro: 'documento não encontrado na lixeira' }, 404)
+
+  await c.env.DB.prepare(
+    `UPDATE documentos SET ativo = 1, atualizado_em = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
+  ).bind(c.req.param('id')).run()
   return c.json({ ok: true })
 })
 
@@ -248,7 +286,7 @@ documentos.post('/:id/revisoes', async (c) => {
     coautores_ids?: number[]
   }>()
 
-  const doc = await c.env.DB.prepare(`SELECT conteudo_atual FROM documentos WHERE id = ?`)
+  const doc = await c.env.DB.prepare(`SELECT conteudo_atual FROM documentos WHERE id = ? AND ativo = 1`)
     .bind(documentoId).first<{ conteudo_atual: string }>()
   if (!doc) return c.json({ erro: 'documento não encontrado' }, 404)
 

@@ -122,7 +122,7 @@
     return `
       <a href="/projetos/${p.id}" class="flex items-center justify-between gap-3 px-4 py-3 hover:bg-basebg transition-colors">
         <div class="min-w-0">
-          <p class="text-sm font-semibold truncate">#${p.id} — ${p.titulo}</p>
+          <p class="text-sm font-semibold truncate">#${p.id} — ${escapeHtml(p.titulo)}</p>
           ${p.resumo ? `<p class="text-xs text-muted truncate mt-0.5">${escapeHtml(p.resumo)}</p>` : ''}
           <p class="text-xs text-muted mt-0.5">${avatarNickHtml(p.autor_nick, p.autor_figure, { size: 5 })} · ${formatarDataProjeto(p.criado_em)}</p>
         </div>

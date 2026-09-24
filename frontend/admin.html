@@ -33,6 +33,13 @@
 <script src="/assets/editor-html.js"></script>
 <script src="/assets/layout.js"></script>
 <script>
+  // Rejeita URLs com esquemas perigosos (javascript:, data:) antes de
+  // gravar num link clicável do menu personalizado ou do footer — evita
+  // XSS via clique num link "inofensivo" cadastrado no admin.
+  function ehUrlEsquemaPerigoso(url) {
+    return /^\s*(javascript|data):/i.test(url || '');
+  }
+
   const TIPOS_REQUERIMENTO = [
     'instrucao_inicial','promocao','rebaixamento','advertencia','licenca','volta_licenca','reserva',
     'transferencia_conta','transferencia_corpo','venda_cargo','contratacao','integracao','tag','turno_tarefa','reforma',
@@ -390,7 +397,7 @@
     raiz.innerHTML = '<p class="text-sm text-muted">Carregando…</p>';
 
     const [permResp, gruposResp, permIpResp, config] = await Promise.all([
-      apiFetch('/permissoes-requerimentos'), apiFetch('/grupos'), apiFetch('/ip-listagem/permissoes'), buscarConfiguracoes(),
+      apiFetch('/permissoes-requerimentos'), apiFetch('/grupos'), apiFetch('/ip-listagem/permissoes'), buscarConfiguracoesAutenticadas(),
     ]);
     const permissoesLista = permResp.ok ? await permResp.json() : [];
     const grupos = gruposResp.ok ? await gruposResp.json() : [];
@@ -1412,11 +1419,16 @@
     });
     document.getElementById('form-novo-link').addEventListener('submit', async (e) => {
       e.preventDefault();
+      const urlLink = document.getElementById('novo-link-url').value.trim();
+      if (ehUrlEsquemaPerigoso(urlLink)) {
+        alert('URL inválida: não é permitido usar links "javascript:" ou "data:".');
+        return;
+      }
       await apiFetch('/footer/links', {
         method: 'POST',
         body: JSON.stringify({
           titulo: document.getElementById('novo-link-titulo').value.trim(),
-          url: document.getElementById('novo-link-url').value.trim(),
+          url: urlLink,
           ordem: Number(document.getElementById('novo-link-ordem').value) || 0,
         }),
       });
@@ -1727,12 +1739,12 @@
         ${lista.length ? lista.map((s) => `
           <div class="bg-card border border-border rounded-2xl shadow-sm p-4">
             <div class="flex items-center justify-between gap-2">
-              <p class="text-sm font-semibold">${s.titulo}</p>
+              <p class="text-sm font-semibold">${escapeHtml(s.titulo)}</p>
               <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full capitalize ${BADGE_SUGESTAO[s.status] || ''}">${s.status}</span>
             </div>
-            <p class="text-xs text-muted mt-1">por ${s.autor_nick || '—'} · ${new Date(s.criado_em).toLocaleDateString('pt-BR')}</p>
-            <p class="text-sm mt-2 whitespace-pre-wrap">${s.descricao}</p>
-            ${s.motivo_decisao ? `<p class="text-xs text-muted mt-2">Decisão: ${s.motivo_decisao} (${s.decidido_por_nick || '—'})</p>` : ''}
+            <p class="text-xs text-muted mt-1">por ${escapeHtml(s.autor_nick || '—')} · ${new Date(s.criado_em).toLocaleDateString('pt-BR')}</p>
+            <p class="text-sm mt-2 whitespace-pre-wrap">${escapeHtml(s.descricao)}</p>
+            ${s.motivo_decisao ? `<p class="text-xs text-muted mt-2">Decisão: ${escapeHtml(s.motivo_decisao)} (${escapeHtml(s.decidido_por_nick || '—')})</p>` : ''}
             ${s.status === 'pendente' ? `
               <div class="flex gap-2 mt-3">
                 <button data-decidir="${s.id}" data-status="aprovada" class="btn-decidir-sugestao text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-500/15 text-green-600 hover:bg-green-500/25 transition-colors">
@@ -2157,11 +2169,16 @@
 
     document.getElementById('form-novo-item-menu').addEventListener('submit', async (e) => {
       e.preventDefault();
+      const urlItem = document.getElementById('novo-item-url').value.trim();
+      if (ehUrlEsquemaPerigoso(urlItem)) {
+        alert('URL inválida: não é permitido usar links "javascript:" ou "data:".');
+        return;
+      }
       await apiFetch('/menu', {
         method: 'POST',
         body: JSON.stringify({
           titulo: document.getElementById('novo-item-titulo').value.trim(),
-          url: document.getElementById('novo-item-url').value.trim(),
+          url: urlItem,
         }),
       });
       carregarMenuAdmin();

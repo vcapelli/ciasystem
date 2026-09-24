@@ -85,14 +85,22 @@ export async function revogarTodasSessoes(db: D1Database, usuarioId: number): Pr
   await db.prepare(`UPDATE refresh_tokens SET revogado = 1 WHERE usuario_id = ?`).bind(usuarioId).run()
 }
 
-type BindingsComSecret = { JWT_SECRET: string }
-type VariablesComUsuario = { usuarioId: number }
+type BindingsComSecret = { JWT_SECRET: string; DB: D1Database }
+type VariablesComUsuario = { usuarioId: number; usuarioStatus: string }
 
 /**
  * Middleware: exige `Authorization: Bearer <access_token>`. Nenhuma
  * rota downstream deve confiar em usuario_id vindo do corpo da
  * requisição pra saber "quem está fazendo essa ação" — só pra
  * identificar alvos (outras pessoas), nunca o próprio ator.
+ *
+ * O `status` do usuário é consultado fresco no banco a cada request
+ * (mesmo padrão de `administrador_sistema`, nunca embutido no JWT):
+ * uma conta exonerada precisa perder o acesso IMEDIATAMENTE, mesmo
+ * com um access token ainda válido por até 1h — não só a partir do
+ * próximo login. `usuarioStatus` fica no contexto pra quem vier
+ * depois (ex: o guard de "Convidado" em src/index.ts) não precisar
+ * consultar de novo.
  */
 export async function requireAuth(
   c: Context<{ Bindings: BindingsComSecret; Variables: VariablesComUsuario }>,
@@ -105,13 +113,27 @@ export async function requireAuth(
 
   const token = header.slice('Bearer '.length)
 
+  let usuarioId: number
   try {
     const payload = await verify(token, c.env.JWT_SECRET, 'HS256')
-    const usuarioId = Number((payload as { sub: unknown }).sub)
+    usuarioId = Number((payload as { sub: unknown }).sub)
     if (!usuarioId) throw new Error('payload sem sub válido')
-    c.set('usuarioId', usuarioId)
-    await next()
   } catch {
     return c.json({ erro: 'token inválido ou expirado' }, 401)
   }
+
+  const usuario = await c.env.DB.prepare(`SELECT status FROM usuarios WHERE id = ?`)
+    .bind(usuarioId)
+    .first<{ status: string }>()
+
+  if (!usuario) {
+    return c.json({ erro: 'usuário não encontrado' }, 401)
+  }
+  if (usuario.status === 'exonerado') {
+    return c.json({ erro: 'conta exonerada — acesso bloqueado' }, 403)
+  }
+
+  c.set('usuarioId', usuarioId)
+  c.set('usuarioStatus', usuario.status)
+  await next()
 }

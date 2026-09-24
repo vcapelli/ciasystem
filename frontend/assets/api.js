@@ -61,6 +61,18 @@ const Auth = {
       });
 
       if (!resposta.ok) {
+        // Antes de desistir, checa se outra aba já renovou com sucesso
+        // enquanto essa chamada estava em voo — o backend rotaciona o
+        // refresh_token, então a segunda tentativa a usar o token antigo
+        // sempre recebe 401 mesmo a renovação tendo funcionado na outra
+        // aba. Se o token salvo agora é diferente do que tentamos usar,
+        // é exatamente esse caso: trata como sucesso silencioso, sem
+        // limpar a sessão (que apagaria o token novo e derrubaria as duas
+        // abas). Só limpa de verdade se o token continuar o mesmo.
+        const refreshTokenAtual = this.getRefreshToken();
+        if (refreshTokenAtual && refreshTokenAtual !== refreshToken) {
+          return true;
+        }
         this.limparSessao();
         return false;
       }
@@ -77,6 +89,18 @@ const Auth = {
     }
   },
 };
+
+/**
+ * Escapa texto livre de usuário antes de interpolar em innerHTML,
+ * evitando XSS armazenado (nick, motto, bio, motivo, título etc.).
+ * Mesma lógica usada em assets/projetos.js — promovida pra cá porque
+ * api.js é carregado em toda página do sistema.
+ */
+function escapeHtml(texto) {
+  const div = document.createElement('div');
+  div.textContent = texto || '';
+  return div.innerHTML;
+}
 
 /**
  * Wrapper de fetch autenticado. Se o access_token expirou (401),
@@ -116,6 +140,22 @@ async function apiFetch(caminho, opcoes = {}) {
 async function buscarConfiguracoes() {
   try {
     const resposta = await fetch(`${API_BASE}/configuracoes`);
+    return resposta.ok ? await resposta.json() : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Igual a `buscarConfiguracoes()`, mas traz TODAS as chaves (não só
+ * as marcadas como públicas) — exige estar logado. Use em telas que já
+ * ficam atrás de `montarLayout()`/login e precisam de uma chave de
+ * configuração operacional que não é pra vazar pra quem não tem conta
+ * (ex: `projetos_grupo_responsavel_id`).
+ */
+async function buscarConfiguracoesAutenticadas() {
+  try {
+    const resposta = await apiFetch('/configuracoes/todas');
     return resposta.ok ? await resposta.json() : {};
   } catch {
     return {};

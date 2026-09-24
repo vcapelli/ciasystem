@@ -101,6 +101,22 @@ requerimentos.post('/', async (c) => {
     }
   }
 
+  // Venda de cargo, transferência de corpo e reforma: não são mapeados
+  // por acaoHierarquiaDoTipo (não é uma checagem de "teto" entre
+  // patentes) — a regra aqui é de ELEGIBILIDADE por corpo: só quem já
+  // é do Corpo de Oficiais (Corpo Militar) ou do Corpo Executivo pode
+  // postar esses 3 tipos. Admin do sistema sempre pode, independente
+  // do corpo/sub_corpo dele (mesmo bypass usado em contratação/
+  // integração acima).
+  if (['venda_cargo', 'transferencia_corpo', 'reforma'].includes(body.tipo) && !autor.administrador_sistema) {
+    const patenteAutor = await c.env.DB.prepare(`SELECT sub_corpo, corpo FROM patentes WHERE id = ?`)
+      .bind(autor.patente_atual_id).first<{ sub_corpo: string | null; corpo: string }>()
+    const elegivel = patenteAutor?.sub_corpo === 'oficiais' || patenteAutor?.corpo === 'executivo'
+    if (!elegivel) {
+      return c.json({ erro: `só integrantes do Corpo de Oficiais ou do Corpo Executivo podem postar requerimentos do tipo '${body.tipo}'` }, 403)
+    }
+  }
+
   const acao = acaoHierarquiaDoTipo(body.tipo)
   if (acao && !autor.administrador_sistema) {
     for (const item of body.alvos) {
@@ -417,9 +433,13 @@ requerimentos.post('/:id/alvos/:alvoId/decidir', async (c) => {
     if (!pode) return c.json({ erro: 'sem permissão para gerir requerimentos deste tipo' }, 403)
   }
 
-  const alvo = await c.env.DB.prepare(`SELECT usuario_id, nick_alvo FROM requerimento_alvos WHERE id = ? AND requerimento_id = ?`)
-    .bind(alvoId, id).first<{ usuario_id: number | null; nick_alvo: string | null }>()
+  const alvo = await c.env.DB.prepare(`SELECT usuario_id, nick_alvo, status FROM requerimento_alvos WHERE id = ? AND requerimento_id = ?`)
+    .bind(alvoId, id).first<{ usuario_id: number | null; nick_alvo: string | null; status: string }>()
   if (!alvo) return c.json({ erro: 'alvo não encontrado neste requerimento' }, 404)
+
+  if (alvo.status !== 'pendente') {
+    return c.json({ erro: 'este alvo já foi decidido anteriormente' }, 409)
+  }
 
   let detalhesHistorico: unknown = null
   let usuarioIdFinal: number | null = alvo.usuario_id
@@ -521,6 +541,9 @@ requerimentos.post('/:id/cancelar', async (c) => {
     }
   } catch (err) {
     const mensagem = err instanceof Error ? err.message : 'erro ao reverter o efeito do requerimento'
+    if (mensagem.includes('já acumulou outras ações')) {
+      return c.json({ erro: mensagem }, 409)
+    }
     return c.json({ erro: `não foi possível cancelar: ${mensagem}` }, 400)
   }
 
@@ -573,6 +596,9 @@ requerimentos.delete('/:id', async (c) => {
     }
   } catch (err) {
     const mensagem = err instanceof Error ? err.message : 'erro ao reverter o efeito do requerimento'
+    if (mensagem.includes('já acumulou outras ações')) {
+      return c.json({ erro: mensagem }, 409)
+    }
     return c.json({ erro: `não foi possível excluir: ${mensagem}` }, 400)
   }
 

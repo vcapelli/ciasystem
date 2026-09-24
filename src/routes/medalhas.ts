@@ -5,6 +5,12 @@ type Variables = { usuarioId: number }
 
 const medalhas = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
+async function ehAdmin(db: D1Database, usuarioId: number): Promise<boolean> {
+  const u = await db.prepare(`SELECT administrador_sistema FROM usuarios WHERE id = ?`)
+    .bind(usuarioId).first<{ administrador_sistema: number }>()
+  return Boolean(u?.administrador_sistema)
+}
+
 // TODO: checar os limites do doc-mestre antes de conceder (medalha
 // temporária: máx. 30/dia e 700/mês por policial) — não implementado.
 medalhas.post('/', async (c) => {
@@ -16,6 +22,10 @@ medalhas.post('/', async (c) => {
     quantidade?: number
     expira_em?: string
   }>()
+
+  if (body.usuario_id === concedidaPorId && !(await ehAdmin(c.env.DB, concedidaPorId))) {
+    return c.json({ erro: 'você não pode conceder medalha a si mesmo' }, 403)
+  }
 
   const { meta } = await c.env.DB.prepare(
     `INSERT INTO medalhas (usuario_id, tipo, motivo, quantidade, concedida_por_id, expira_em)

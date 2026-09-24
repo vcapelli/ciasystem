@@ -127,7 +127,7 @@
     // Cargos que votam (admin > Permissões) — lista EXATA, não um
     // mínimo. Sem restrição configurada, qualquer membro ativo vota
     // (padrão de sempre).
-    const config = await buscarConfiguracoes();
+    const config = await buscarConfiguracoesAutenticadas();
     let niveisVotantesIds = [];
     try {
       const salvos = JSON.parse(config.projetos_niveis_votantes_ids || '[]');

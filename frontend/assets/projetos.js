@@ -39,7 +39,7 @@ function badgeTipoProjeto(tipo) {
 // foi configurado. Usado pra montar o seletor de responsável e pra
 // decidir se as ações de administrador do grupo aparecem na tela.
 async function buscarGrupoResponsavelProjetos() {
-  const [config, gruposResp] = await Promise.all([buscarConfiguracoes(), apiFetch('/grupos')]);
+  const [config, gruposResp] = await Promise.all([buscarConfiguracoesAutenticadas(), apiFetch('/grupos')]);
   const grupoId = config.projetos_grupo_responsavel_id ? Number(config.projetos_grupo_responsavel_id) : null;
   if (!grupoId) return null;
   const grupos = gruposResp.ok ? await gruposResp.json() : [];

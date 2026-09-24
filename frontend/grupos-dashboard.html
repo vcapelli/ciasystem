@@ -650,7 +650,7 @@
     function checkboxesNiveis(idPrefixo, niveisMarcados) {
       return [...niveis].sort((a,b) => a.ordem - b.ordem).map((n) => `
         <label class="flex items-center gap-2 bg-basebg border border-border rounded-lg px-3 py-1.5 text-xs">
-          <input type="checkbox" data-${idPrefixo}-nivel="${n.id}" ${niveisMarcados.includes(n.id) ? 'checked' : ''}> ${n.nome}
+          <input type="checkbox" data-nivel-id="${n.id}" ${niveisMarcados.includes(n.id) ? 'checked' : ''}> ${n.nome}
         </label>
       `).join('');
     }
@@ -710,7 +710,7 @@
       `;
       form.querySelector('form').addEventListener('submit', async (e) => {
         e.preventDefault();
-        const niveisSelecionados = [...form.querySelectorAll('[data-nova-cat-nivel]')].filter((chk) => chk.checked).map((chk) => Number(chk.dataset.novaCatNivel));
+        const niveisSelecionados = [...form.querySelectorAll('[data-nivel-id]')].filter((chk) => chk.checked).map((chk) => Number(chk.dataset.nivelId));
         await apiFetch(`/grupos/${slug}/aulas-categorias`, {
           method: 'POST',
           body: JSON.stringify({ nome: document.getElementById('nome-nova-categoria-aula').value.trim(), niveis_ids: niveisSelecionados }),
@@ -737,7 +737,7 @@
         `;
         form.querySelector('form').addEventListener('submit', async (e) => {
           e.preventDefault();
-          const niveisSelecionados = [...form.querySelectorAll(`[data-editar-cat-${catId}-nivel]`)].filter((chk) => chk.checked).map((chk) => Number(chk.dataset[`editarCat${catId}Nivel`]));
+          const niveisSelecionados = [...form.querySelectorAll('[data-nivel-id]')].filter((chk) => chk.checked).map((chk) => Number(chk.dataset.nivelId));
           await apiFetch(`/grupos/${slug}/aulas-categorias/${catId}`, {
             method: 'PATCH', body: JSON.stringify({ niveis_ids: niveisSelecionados }),
           });
