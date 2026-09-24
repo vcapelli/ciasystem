@@ -55,12 +55,15 @@ export function normalizarDataIntegracao(data: string | undefined | null): strin
  * alguém que já estava na organização antes do CIASystem existir).
  * `tag` é opcional em `dados_especificos` (nem toda porta de entrada
  * atribui TAG na hora — pode vir depois via requerimento tipo 'tag').
- * `dataCustomizada` é só pra 'integracao': define `data_ingresso` e
- * `data_ultimo_ato_funcional` com a data real de ingresso na
- * organização (fluxo antigo), em vez de "agora" — sem isso, migrar
- * alguém resetaria o tempo de serviço já cumprido e travaria a próxima
- * promoção, que depende de dias corridos desde o último ato funcional
- * (seção 6 do doc-mestre). `null`/omitido → comportamento de sempre
+ * `dataIngresso`/`dataUltimoAto` são só pra 'integracao': duas datas
+ * históricas independentes — quando a pessoa realmente entrou na
+ * organização (`data_ingresso`) e a data do último ato funcional dela
+ * no sistema antigo (`data_ultimo_ato_funcional`, base pra contar dias
+ * mínimos de promoção — seção 6 do doc-mestre). Se só uma delas for
+ * informada, a outra cai pro mesmo valor (fallback simétrico —
+ * comportamento de antes, quando só existia uma data pros dois campos,
+ * preservado pra quando o admin só tem uma das duas na hora de migrar
+ * alguém antigo). `null`/omitido nos dois → comportamento de sempre
  * (AGORA), igual às outras portas de entrada.
  */
 async function criarUsuarioDeEntrada(
@@ -69,7 +72,8 @@ async function criarUsuarioDeEntrada(
   patenteId: number,
   corpo: string,
   tag?: string,
-  dataCustomizada?: string | null
+  dataIngresso?: string | null,
+  dataUltimoAto?: string | null
 ): Promise<number> {
   const existente = await db.prepare(`SELECT id FROM usuarios WHERE nick = ?`).bind(nick).first<{ id: number }>()
   if (existente) throw new Error(`já existe uma conta com o nick '${nick}'`)
@@ -83,12 +87,18 @@ async function criarUsuarioDeEntrada(
     if (tagEmUso) throw new Error(`a TAG '${tag}' já está em uso por '${tagEmUso.nick}'`)
   }
 
+  // Fallback simétrico: se só uma das duas datas foi informada, usa o
+  // mesmo valor pra outra (é melhor que "agora" quando o admin só tem
+  // uma referência histórica confiável na hora de migrar alguém).
+  const dataIngressoFinal = dataIngresso ?? dataUltimoAto ?? null
+  const dataUltimoAtoFinal = dataUltimoAto ?? dataIngresso ?? null
+
   const { meta } = await db
     .prepare(
       `INSERT INTO usuarios (nick, tag, corpo, patente_atual_id, data_ingresso, data_ultimo_ato_funcional)
        VALUES (?, ?, ?, ?, COALESCE(?, ${AGORA}), COALESCE(?, ${AGORA}))`
     )
-    .bind(nick, tag ?? null, corpo, patenteId, dataCustomizada ?? null, dataCustomizada ?? null)
+    .bind(nick, tag ?? null, corpo, patenteId, dataIngressoFinal, dataUltimoAtoFinal)
     .run()
 
   return Number(meta.last_row_id)
@@ -130,10 +140,13 @@ export async function aplicarEfeitoAprovacao(
     if (tipo === 'contratacao' || tipo === 'venda_cargo' || tipo === 'integracao') {
       const patente = await buscarPatente(db, dadosEspecificos?.patente_destino_id)
       const tag = dadosEspecificos?.tag as string | undefined
-      const dataCustomizada = tipo === 'integracao'
+      const dataIngresso = tipo === 'integracao'
         ? normalizarDataIntegracao(dadosEspecificos?.data as string | undefined)
         : null
-      const usuarioId = await criarUsuarioDeEntrada(db, alvo.nickAlvo, patente.id, patente.corpo, tag, dataCustomizada)
+      const dataUltimoAto = tipo === 'integracao'
+        ? normalizarDataIntegracao(dadosEspecificos?.data_ultimo_ato_funcional as string | undefined)
+        : null
+      const usuarioId = await criarUsuarioDeEntrada(db, alvo.nickAlvo, patente.id, patente.corpo, tag, dataIngresso, dataUltimoAto)
       const depois = await db.prepare(`SELECT patente_atual_id, corpo, status, tag, nick, exoneracao_ate FROM usuarios WHERE id = ?`).bind(usuarioId).first()
       return { usuarioId, antes: null, depois }
     }
@@ -185,8 +198,14 @@ export async function aplicarEfeitoAprovacao(
     // Integração usada num usuário que já existe no CIASystem (ex:
     // corrigir/completar uma migração feita antes de tempo) — mesma
     // ideia da porta de entrada acima: patente/cargo + TAG opcional +
-    // a data histórica de `data_ultimo_ato_funcional`, sem forçar
-    // AGORA quando uma data foi informada.
+    // as duas datas históricas independentes (`data_ingresso` e
+    // `data_ultimo_ato_funcional`), com fallback simétrico entre elas
+    // quando só uma for informada (comportamento de antes, quando só
+    // existia um campo de data pros dois). Se NENHUMA das duas vier
+    // preenchida, `data_ingresso` mantém o valor já registrado
+    // (COALESCE com a própria coluna) e `data_ultimo_ato_funcional` cai
+    // pra AGORA (reaplicar Integração sem informar data é, por si só,
+    // um novo ato funcional).
     case 'integracao': {
       const patenteDestino = await buscarPatente(db, dadosEspecificos?.patente_destino_id)
       const novaTag = (dadosEspecificos?.tag as string | undefined) ?? null
@@ -198,17 +217,21 @@ export async function aplicarEfeitoAprovacao(
           .bind(novaTag, usuarioId).first<{ id: number; nick: string }>()
         if (tagEmUso) throw new Error(`a TAG '${novaTag}' já está em uso por '${tagEmUso.nick}'`)
       }
-      const dataCustomizada = normalizarDataIntegracao(dadosEspecificos?.data as string | undefined)
+      const dataIngressoInformada = normalizarDataIntegracao(dadosEspecificos?.data as string | undefined)
+      const dataUltimoAtoInformada = normalizarDataIntegracao(dadosEspecificos?.data_ultimo_ato_funcional as string | undefined)
+      const dataIngresso = dataIngressoInformada ?? dataUltimoAtoInformada
+      const dataUltimoAto = dataUltimoAtoInformada ?? dataIngressoInformada
       await db
         .prepare(
           `UPDATE usuarios
            SET patente_atual_id = ?, corpo = ?,
+               data_ingresso = COALESCE(?, data_ingresso),
                data_ultimo_ato_funcional = COALESCE(?, ${AGORA}),
                tag = COALESCE(?, tag),
                atualizado_em = ${AGORA}
            WHERE id = ?`
         )
-        .bind(patenteDestino.id, patenteDestino.corpo, dataCustomizada, novaTag, usuarioId)
+        .bind(patenteDestino.id, patenteDestino.corpo, dataIngresso, dataUltimoAto, novaTag, usuarioId)
         .run()
       break
     }

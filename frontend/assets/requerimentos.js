@@ -149,6 +149,7 @@ function renderCardRequerimento(r, patentesMapa, meAtual, apendiceExtra = '', mo
   if (dadosEspecificos.provas) linhasExtras.push(`<b>Provas:</b> ${dadosEspecificos.provas}`);
   if (dadosEspecificos.data_retorno) linhasExtras.push(`<b>Data de retorno:</b> ${formatarDataCurtaReq(dadosEspecificos.data_retorno)}`);
   if (r.tipo === 'integracao' && dadosEspecificos.data) linhasExtras.push(`<b>Data de ingresso (histórica):</b> ${formatarDataCurtaReq(dadosEspecificos.data)}`);
+  if (r.tipo === 'integracao' && dadosEspecificos.data_ultimo_ato_funcional) linhasExtras.push(`<b>Data do último requerimento (histórica):</b> ${formatarDataCurtaReq(dadosEspecificos.data_ultimo_ato_funcional)}`);
   if (dadosEspecificos.exoneracao_ate) linhasExtras.push(`<b>Exoneração até:</b> ${formatarDataCurtaReq(dadosEspecificos.exoneracao_ate)}`);
   if (r.fundamentacao) linhasExtras.push(`<b>Motivo:</b> ${r.fundamentacao}`);
 
@@ -333,7 +334,7 @@ function formatarDataHoraReq(iso) {
  *   tiposComTag: [tipo, ...],
  *   tiposComPermissao: [tipo, ...],
  *   tiposComDataRetorno: [tipo, ...],  // licença
- *   tiposComDataIntegracao: [tipo, ...], // integração: data histórica de ingresso/último ato funcional
+ *   tiposComDataIntegracao: [tipo, ...], // integração: duas datas históricas independentes — ingresso e último ato funcional
  *   tiposComExoneracao: [tipo, ...],   // temporária/indeterminada
  *   tipoVoltaLicencaCondicional: bool, // só habilita 'volta_licenca' se o alvo estiver de licença
  *   usaNovoNick: bool,                 // transferência de conta
@@ -438,10 +439,17 @@ async function montarFormularioRequerimento(config) {
                 <input id="req-data-retorno" type="date" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
               </div>
 
-              <div id="req-campo-data-integracao" class="hidden sm:col-span-2">
-                <label class="block text-xs text-muted mb-1">Data de ingresso (histórica)</label>
-                <input id="req-data-integracao" type="date" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
-                <p class="text-xs text-muted mt-1">Data real em que a pessoa entrou na organização no sistema antigo. Define o ingresso e o último ato funcional dela — deixe em branco só se ela tiver entrado hoje mesmo, senão o tempo de serviço já cumprido é perdido e a próxima promoção pode ficar bloqueada.</p>
+              <div id="req-campo-data-integracao" class="hidden sm:col-span-2 space-y-3">
+                <div>
+                  <label class="block text-xs text-muted mb-1">Data de ingresso (histórica)</label>
+                  <input id="req-data-integracao" type="date" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                  <p class="text-xs text-muted mt-1">Data real em que a pessoa entrou na organização no sistema antigo. Preencha sempre que souber — é a base do "tempo na polícia" no perfil dela. Se não souber, deixe em branco e ela usa a data do último requerimento abaixo.</p>
+                </div>
+                <div>
+                  <label class="block text-xs text-muted mb-1">Data do último requerimento (histórica)</label>
+                  <input id="req-data-ultimo-ato" type="date" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                  <p class="text-xs text-muted mt-1">Data da última promoção/ato dela no sistema antigo (base do "tempo no posto" e dos dias mínimos pra próxima promoção). Se não souber, deixe em branco e ela usa a data de ingresso acima. Preencher só um dos dois campos aplica o mesmo valor aos dois — como era antes de existir esse segundo campo.</p>
+                </div>
               </div>
 
               <div id="req-campo-exoneracao" class="hidden space-y-3">
@@ -892,6 +900,9 @@ async function montarFormularioRequerimento(config) {
     }
     if ((config.tiposComDataIntegracao || []).includes(tipo) && document.getElementById('req-data-integracao').value) {
       dadosEspecificos.data = document.getElementById('req-data-integracao').value;
+    }
+    if ((config.tiposComDataIntegracao || []).includes(tipo) && document.getElementById('req-data-ultimo-ato').value) {
+      dadosEspecificos.data_ultimo_ato_funcional = document.getElementById('req-data-ultimo-ato').value;
     }
     if ((config.tiposComExoneracao || []).includes(tipo)) {
       const duracao = document.getElementById('req-exoneracao-tipo').value;

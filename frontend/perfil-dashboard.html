@@ -553,23 +553,37 @@
     const TIPOS_INGRESSO = ['instrucao_inicial', 'contratacao', 'integracao'];
     const reqsAprovados = requerimentos.filter((r) => r.status === 'aprovado');
     function diasDesde(iso) { return iso ? Math.floor((Date.now() - new Date(iso).getTime()) / 86400000) : null; }
-    // Integração carrega uma data histórica própria (dados_especificos.data)
-    // — usa ela em vez de criado_em (que só reflete quando a migração foi
-    // feita, não quando a pessoa realmente entrou na organização).
-    function dataEfetivaRequerimento(r) {
+    // Integração carrega duas datas históricas próprias em
+    // dados_especificos: `data` (ingresso real na organização) e
+    // `data_ultimo_ato_funcional` (última promoção/ato no sistema
+    // antigo) — usa a que for pertinente em vez de criado_em (que só
+    // reflete quando a migração foi feita, não quando o evento
+    // histórico realmente aconteceu). São conceitos diferentes: uma
+    // integração recém-postada tem as duas datas no passado, e usar a
+    // de ingresso pro "tempo no posto" subestimaria o tempo desde a
+    // última promoção real (ex: entrou em Ago mas só foi promovido em
+    // Set — "dias no posto" tem que contar desde Set, não desde Ago).
+    function dataEfetivaIngresso(r) {
       if (!r || r.tipo !== 'integracao') return r?.criado_em;
       try {
         const dados = r.dados_especificos ? JSON.parse(r.dados_especificos) : {};
         return dados.data || r.criado_em;
       } catch { return r.criado_em; }
     }
+    function dataEfetivaUltimoAto(r) {
+      if (!r || r.tipo !== 'integracao') return r?.criado_em;
+      try {
+        const dados = r.dados_especificos ? JSON.parse(r.dados_especificos) : {};
+        return dados.data_ultimo_ato_funcional || dados.data || r.criado_em;
+      } catch { return r.criado_em; }
+    }
 
     const ultimaMudancaPatente = reqsAprovados.find((r) => TIPOS_MUDANCA_PATENTE.includes(r.tipo));
-    const diasNoPosto = diasDesde(dataEfetivaRequerimento(ultimaMudancaPatente));
+    const diasNoPosto = diasDesde(dataEfetivaUltimoAto(ultimaMudancaPatente));
 
     const reqsIngresso = reqsAprovados.filter((r) => TIPOS_INGRESSO.includes(r.tipo));
     const primeiroIngresso = reqsIngresso[reqsIngresso.length - 1] || reqsAprovados[reqsAprovados.length - 1];
-    const diasNaPolicia = diasDesde(dataEfetivaRequerimento(primeiroIngresso));
+    const diasNaPolicia = diasDesde(dataEfetivaIngresso(primeiroIngresso));
 
     const textoIdentificacao = requerimentos[0]
       ? montarIdentificacao(perfil.nick, requerimentos[0].tipo, requerimentos[0].autor_tag, requerimentos[0].criado_em)
