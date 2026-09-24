@@ -5,6 +5,7 @@ import { aplicarEfeitoAprovacao, recalcularStatusRequerimento, reverterEfeitoAlv
 import { notificar } from '../services/notificacoes'
 import { registrarEvento } from '../services/logs'
 import { buscarJogadorHabblet } from '../services/habblet'
+import { requisitosPendentes } from '../services/requisitos-patente'
 import type { CriarRequerimentoInput } from '../types/requerimentos'
 
 type Bindings = { DB: D1Database }
@@ -15,7 +16,7 @@ type Variables = { usuarioId: number }
 // no ato). Aprovar/reprovar/cancelar manualmente e excluir do histórico
 // continuam exigindo permissão normal (ver podeGerirRequerimento) ou
 // administrador_sistema.
-const TIPOS_AUTO_APROVADOS = ['instrucao_inicial', 'contratacao', 'integracao', 'tag', 'venda_cargo', 'bonificacao']
+const TIPOS_AUTO_APROVADOS = ['instrucao_inicial', 'contratacao', 'integracao', 'tag', 'venda_cargo']
 
 const requerimentos = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
@@ -81,39 +82,6 @@ requerimentos.post('/', async (c) => {
     }
     if (!patenteAutor || patenteDestino.ordem >= patenteAutor.ordem) {
       return c.json({ erro: 'você não pode contratar alguém pra uma patente igual ou superior à sua' }, 403)
-    }
-  }
-
-  // Gratificação (tipo 'bonificacao'): liberado a partir de Subtenente
-  // (Corpo Militar) — qualquer cargo do Corpo Executivo já equivale a
-  // Tenente ou mais na tabela de equivalência, ou seja, sempre acima de
-  // Subtenente, então passa sem comparar ordem. Não importa se o alvo é
-  // hierarquicamente superior ou inferior ao autor — 'bonificacao' não
-  // é mapeado por acaoHierarquiaDoTipo, então a checagem genérica logo
-  // abaixo já é pulada por conta própria pra esse tipo.
-  if (body.tipo === 'bonificacao' && !autor.administrador_sistema && autor.corpo === 'militar') {
-    const [patenteAutor, subtenente] = await Promise.all([
-      c.env.DB.prepare(`SELECT ordem FROM patentes WHERE id = ?`).bind(autor.patente_atual_id).first<{ ordem: number }>(),
-      c.env.DB.prepare(`SELECT ordem FROM patentes WHERE corpo = 'militar' AND nome = 'Subtenente'`).first<{ ordem: number }>(),
-    ])
-    if (!patenteAutor || !subtenente || patenteAutor.ordem < subtenente.ordem) {
-      return c.json({ erro: 'só Subtenente ou patente superior pode conceder gratificação' }, 403)
-    }
-  }
-
-  // Venda de cargo, transferência de corpo e reforma: não são mapeados
-  // por acaoHierarquiaDoTipo (não é uma checagem de "teto" entre
-  // patentes) — a regra aqui é de ELEGIBILIDADE por corpo: só quem já
-  // é do Corpo de Oficiais (Corpo Militar) ou do Corpo Executivo pode
-  // postar esses 3 tipos. Admin do sistema sempre pode, independente
-  // do corpo/sub_corpo dele (mesmo bypass usado em contratação/
-  // integração acima).
-  if (['venda_cargo', 'transferencia_corpo', 'reforma'].includes(body.tipo) && !autor.administrador_sistema) {
-    const patenteAutor = await c.env.DB.prepare(`SELECT sub_corpo, corpo FROM patentes WHERE id = ?`)
-      .bind(autor.patente_atual_id).first<{ sub_corpo: string | null; corpo: string }>()
-    const elegivel = patenteAutor?.sub_corpo === 'oficiais' || patenteAutor?.corpo === 'executivo'
-    if (!elegivel) {
-      return c.json({ erro: `só integrantes do Corpo de Oficiais ou do Corpo Executivo podem postar requerimentos do tipo '${body.tipo}'` }, 403)
     }
   }
 
@@ -206,26 +174,36 @@ requerimentos.post('/', async (c) => {
     operadoPorId = autorId
   }
 
-  // Gratificação: o cliente só manda o motivo — o valor concedido é
-  // sempre resolvido e congelado aqui no servidor, nunca aceito vindo
-  // pronto do body (senão daria pra forjar qualquer número). Uma vez
-  // gravado, `valor_gratificacao` não muda mesmo que o motivo seja
-  // editado ou desativado depois.
-  let valorGratificacao: number | null = null
-  if (body.tipo === 'bonificacao') {
-    if (!body.motivo_gratificacao_id) {
-      return c.json({ erro: 'motivo_gratificacao_id é obrigatório pra requerimento de gratificação' }, 400)
+  // TAG pessoal: 2-3 caracteres alfanuméricos — antes só se checava
+  // "não vazia" (no efeito) e "única" (constraint do banco), o
+  // formato nunca era validado no servidor.
+  if (body.tipo === 'tag' && body.tag_aplicada) {
+    if (!/^[A-Za-z0-9]{2,3}$/.test(body.tag_aplicada)) {
+      return c.json({ erro: 'TAG deve ter 2 ou 3 caracteres alfanuméricos' }, 400)
     }
-    const motivo = await c.env.DB.prepare(`SELECT valor FROM motivos_gratificacao WHERE id = ? AND ativo = 1`)
-      .bind(body.motivo_gratificacao_id).first<{ valor: number }>()
-    if (!motivo) return c.json({ erro: 'motivo de gratificação não encontrado' }, 400)
-    valorGratificacao = motivo.valor
+  }
+
+  // Apêndice informativo (não bloqueia o envio): se o requerimento
+  // define uma patente de destino, checa `requisitos_patente` contra
+  // cada alvo já existente e guarda o que estiver pendente, pra quem
+  // for decidir ver o alerta — a validação continua sendo humana.
+  const patenteDestinoParaAlerta = (body.dados_especificos as { patente_destino_id?: number } | undefined)?.patente_destino_id
+  let alertasRequisitos: Record<number, string[]> | null = null
+  if (patenteDestinoParaAlerta) {
+    for (const item of body.alvos) {
+      if (typeof item !== 'number') continue
+      const pendentes = await requisitosPendentes(c.env.DB, item, patenteDestinoParaAlerta)
+      if (pendentes.length) {
+        alertasRequisitos = alertasRequisitos ?? {}
+        alertasRequisitos[item] = pendentes
+      }
+    }
   }
 
   const { meta } = await c.env.DB.prepare(
     `INSERT INTO requerimentos
-      (tipo, autor_id, tag_requerimento, dados_especificos, crime_id, fundamentacao, autorizado_por_id, tag_aplicada, tag_grupo_override, operado_por_id, motivo_gratificacao_id, valor_gratificacao)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      (tipo, autor_id, tag_requerimento, dados_especificos, crime_id, fundamentacao, autorizado_por_id, tag_aplicada, tag_grupo_override, operado_por_id, alertas_requisitos)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       body.tipo,
@@ -238,8 +216,7 @@ requerimentos.post('/', async (c) => {
       body.tag_aplicada ?? null,
       tagGrupoOverride,
       operadoPorId,
-      body.motivo_gratificacao_id ?? null,
-      valorGratificacao
+      alertasRequisitos ? JSON.stringify(alertasRequisitos) : null
     )
     .run()
 
@@ -327,7 +304,6 @@ requerimentos.post('/', async (c) => {
 
 const BASE_QUERY_REQUERIMENTOS = `
   SELECT r.*, u.nick AS autor_nick, COALESCE(r.tag_grupo_override, u.tag) AS autor_tag, p.nome AS autor_patente_nome, cr.nome AS crime_nome,
-    mg.nome AS motivo_gratificacao_nome,
     u.tipo AS autor_tipo, u.figure_fixa AS autor_figure_fixa,
     (
       SELECT json_group_array(json_object(
@@ -354,7 +330,6 @@ const BASE_QUERY_REQUERIMENTOS = `
   LEFT JOIN usuarios u ON u.id = r.autor_id
   LEFT JOIN patentes p ON p.id = u.patente_atual_id
   LEFT JOIN crimes cr ON cr.id = r.crime_id
-  LEFT JOIN motivos_gratificacao mg ON mg.id = r.motivo_gratificacao_id
 `
 
 // Roda a query base + busca a figure de cada autor distinto em
@@ -433,13 +408,9 @@ requerimentos.post('/:id/alvos/:alvoId/decidir', async (c) => {
     if (!pode) return c.json({ erro: 'sem permissão para gerir requerimentos deste tipo' }, 403)
   }
 
-  const alvo = await c.env.DB.prepare(`SELECT usuario_id, nick_alvo, status FROM requerimento_alvos WHERE id = ? AND requerimento_id = ?`)
-    .bind(alvoId, id).first<{ usuario_id: number | null; nick_alvo: string | null; status: string }>()
+  const alvo = await c.env.DB.prepare(`SELECT usuario_id, nick_alvo FROM requerimento_alvos WHERE id = ? AND requerimento_id = ?`)
+    .bind(alvoId, id).first<{ usuario_id: number | null; nick_alvo: string | null }>()
   if (!alvo) return c.json({ erro: 'alvo não encontrado neste requerimento' }, 404)
-
-  if (alvo.status !== 'pendente') {
-    return c.json({ erro: 'este alvo já foi decidido anteriormente' }, 409)
-  }
 
   let detalhesHistorico: unknown = null
   let usuarioIdFinal: number | null = alvo.usuario_id
@@ -515,13 +486,20 @@ requerimentos.post('/:id/cancelar', async (c) => {
     .bind(usuarioId).first<{ administrador_sistema: number }>()
   if (!usuario) return c.json({ erro: 'usuário não encontrado' }, 404)
 
-  const requerimento = await c.env.DB.prepare(`SELECT tipo FROM requerimentos WHERE id = ?`)
-    .bind(id).first<{ tipo: string }>()
+  const requerimento = await c.env.DB.prepare(`SELECT tipo, criado_em FROM requerimentos WHERE id = ?`)
+    .bind(id).first<{ tipo: string; criado_em: string }>()
   if (!requerimento) return c.json({ erro: 'requerimento não encontrado' }, 404)
 
   if (!usuario.administrador_sistema) {
     const pode = await podeGerirRequerimento(c.env.DB, usuarioId, requerimento.tipo, 'cancelar')
     if (!pode) return c.json({ erro: 'sem permissão para cancelar requerimentos deste tipo' }, 403)
+
+    // Janela de 72h a partir da criação do requerimento — passado
+    // isso, só administrador do sistema pode cancelar (bypassa acima).
+    const horasDesdeACriacao = (Date.now() - new Date(requerimento.criado_em).getTime()) / (1000 * 60 * 60)
+    if (horasDesdeACriacao > 72) {
+      return c.json({ erro: 'prazo de 72h para cancelar este requerimento já expirou — só administradores do sistema podem cancelar agora' }, 403)
+    }
   }
 
   // Alvos já aprovados: reverte o efeito (volta pra como estava antes)
@@ -541,9 +519,6 @@ requerimentos.post('/:id/cancelar', async (c) => {
     }
   } catch (err) {
     const mensagem = err instanceof Error ? err.message : 'erro ao reverter o efeito do requerimento'
-    if (mensagem.includes('já acumulou outras ações')) {
-      return c.json({ erro: mensagem }, 409)
-    }
     return c.json({ erro: `não foi possível cancelar: ${mensagem}` }, 400)
   }
 
@@ -596,9 +571,6 @@ requerimentos.delete('/:id', async (c) => {
     }
   } catch (err) {
     const mensagem = err instanceof Error ? err.message : 'erro ao reverter o efeito do requerimento'
-    if (mensagem.includes('já acumulou outras ações')) {
-      return c.json({ erro: mensagem }, 409)
-    }
     return c.json({ erro: `não foi possível excluir: ${mensagem}` }, 400)
   }
 

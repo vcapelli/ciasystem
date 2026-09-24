@@ -11,8 +11,6 @@
 //     CRIA a linha em `usuarios` e devolve o `usuarioId` gerado, pra
 //     a rota fazer o backfill de `requerimento_alvos.usuario_id`.
 
-import { revogarTodasSessoes } from './auth'
-
 export type IdentificadorAlvo = { usuarioId: number } | { nickAlvo: string }
 
 export interface EfeitoAplicado {
@@ -152,7 +150,6 @@ export async function aplicarEfeitoAprovacao(
       const exoneracaoAte = (dadosEspecificos?.exoneracao_ate as string | undefined) ?? null
       await db.prepare(`UPDATE usuarios SET status = 'exonerado', exoneracao_ate = ?, atualizado_em = ${AGORA} WHERE id = ?`)
         .bind(exoneracaoAte, usuarioId).run()
-      await revogarTodasSessoes(db, usuarioId)
       const depois = await db.prepare(`SELECT patente_atual_id, corpo, status, tag, nick, exoneracao_ate FROM usuarios WHERE id = ?`).bind(usuarioId).first()
       return { usuarioId, antes: null, depois }
     }
@@ -194,6 +191,9 @@ export async function aplicarEfeitoAprovacao(
       const patenteDestino = await buscarPatente(db, dadosEspecificos?.patente_destino_id)
       const novaTag = (dadosEspecificos?.tag as string | undefined) ?? null
       if (novaTag) {
+        if (!/^[A-Za-z0-9]{2,3}$/.test(novaTag)) {
+          throw new Error(`TAG deve ter 2 ou 3 caracteres alfanuméricos`)
+        }
         const tagEmUso = await db.prepare(`SELECT id, nick FROM usuarios WHERE tag = ? AND id != ?`)
           .bind(novaTag, usuarioId).first<{ id: number; nick: string }>()
         if (tagEmUso) throw new Error(`a TAG '${novaTag}' já está em uso por '${tagEmUso.nick}'`)
@@ -268,13 +268,15 @@ export async function aplicarEfeitoAprovacao(
         )
         .bind(exoneracaoAte, usuarioId)
         .run()
-      await revogarTodasSessoes(db, usuarioId)
       break
     }
 
     case 'tag': {
       const novaTag = dadosEspecificos?.tag as string | undefined
       if (!novaTag) throw new Error(`dados_especificos.tag é obrigatório para o tipo 'tag'`)
+      if (!/^[A-Za-z0-9]{2,3}$/.test(novaTag)) {
+        throw new Error(`TAG deve ter 2 ou 3 caracteres alfanuméricos`)
+      }
       await db
         .prepare(`UPDATE usuarios SET tag = ?, atualizado_em = ${AGORA} WHERE id = ?`)
         .bind(novaTag, usuarioId)
@@ -393,20 +395,6 @@ export async function reverterEfeitoAlvo(db: D1Database, requerimentoId: string 
     // menos uma linha lá — sem limpar isso, o DELETE final falhava
     // (FK), o erro era engolido pelo catch antigo, e o usuário (com
     // status 'exonerado' etc.) ficava travado pra sempre.
-    //
-    // Antes de apagar tudo, confere se o usuário já acumulou histórico
-    // além do registro desta própria porta de entrada — se sim, ele já
-    // teve promoções/punições/etc. em cima da conta criada aqui, e
-    // desfazer a entrada agora deixaria esse histórico órfão apontando
-    // pra um usuário que não existe mais. Mais seguro recusar e deixar
-    // o admin resolver manualmente.
-    const { results: linhasHistorico } = await db.prepare(
-      `SELECT id FROM historico WHERE usuario_id = ?`
-    ).bind(usuarioId).all<{ id: number }>()
-    if (linhasHistorico.length > 1) {
-      throw new Error('não é possível cancelar esta porta de entrada: o usuário já acumulou outras ações desde então')
-    }
-
     await db.prepare(`DELETE FROM historico WHERE usuario_id = ?`).bind(usuarioId).run()
     await db.prepare(`DELETE FROM notificacoes WHERE usuario_id = ?`).bind(usuarioId).run()
     await db.prepare(`UPDATE requerimento_alvos SET usuario_id = NULL WHERE usuario_id = ?`).bind(usuarioId).run()

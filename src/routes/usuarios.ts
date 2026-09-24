@@ -179,11 +179,22 @@ usuarios.post('/alterar-senha', async (c) => {
 usuarios.patch('/:id/admin', async (c) => {
   const usuarioAtualId = c.get('usuarioId')
   const alvoId = c.req.param('id')
-  const { administrador_sistema } = await c.req.json<{ administrador_sistema: boolean }>()
+  const body = await c.req.json<{ administrador_sistema?: boolean }>().catch(() => ({} as { administrador_sistema?: boolean }))
+
+  // Antes, se `administrador_sistema` viesse ausente do corpo, o
+  // `undefined` caía em "falsy" e revogava o admin do alvo em
+  // silêncio — agora é erro de validação explícito.
+  if (typeof body.administrador_sistema !== 'boolean') {
+    return c.json({ erro: 'administrador_sistema (boolean) é obrigatório' }, 400)
+  }
+  const administrador_sistema = body.administrador_sistema
 
   const atual = await c.env.DB.prepare(`SELECT administrador_sistema FROM usuarios WHERE id = ?`)
     .bind(usuarioAtualId).first<{ administrador_sistema: number }>()
   if (!atual?.administrador_sistema) return c.json({ erro: 'só administradores do sistema concedem isso' }, 403)
+
+  const alvo = await c.env.DB.prepare(`SELECT id FROM usuarios WHERE id = ?`).bind(alvoId).first()
+  if (!alvo) return c.json({ erro: 'usuário alvo não encontrado' }, 404)
 
   if (String(usuarioAtualId) === alvoId && !administrador_sistema) {
     return c.json({ erro: 'você não pode remover seu próprio acesso de administrador' }, 400)
@@ -295,6 +306,12 @@ usuarios.patch('/:id', async (c) => {
   }
   if (tipoFinal === 'jogador' && (corpoFinal === null || patenteFinal === null)) {
     return c.json({ erro: 'jogador precisa ter corpo e patente definidos' }, 400)
+  }
+
+  // TAG pessoal: 2-3 caracteres alfanuméricos (null/vazio ainda é
+  // permitido aqui — é a edição admin, que pode limpar a TAG).
+  if (body.tag != null && !/^[A-Za-z0-9]{2,3}$/.test(body.tag)) {
+    return c.json({ erro: 'TAG deve ter 2 ou 3 caracteres alfanuméricos' }, 400)
   }
 
   const campos: string[] = []
