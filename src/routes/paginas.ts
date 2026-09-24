@@ -11,6 +11,45 @@ async function ehAdmin(db: D1Database, usuarioId: number): Promise<boolean> {
   return Boolean(u?.administrador_sistema)
 }
 
+// GET /paginas — lista todas as páginas (inclusive inativas) pro painel
+// de administração. Admin-only: aqui ninguém enxerga conteúdo de página
+// nenhuma, só metadados pra montar a tabela de gerenciamento.
+paginas.get('/', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  if (!(await ehAdmin(c.env.DB, usuarioId))) {
+    return c.json({ erro: 'só administradores do sistema gerenciam páginas customizadas' }, 403)
+  }
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT pc.id, pc.titulo, pc.caminho, pc.tipo, pc.publica, pc.ativo,
+            pc.grupo_restrito_id, pc.patente_minima_id, pc.criado_em, pc.atualizado_em,
+            g.nome AS grupo_restrito_nome, p.nome AS patente_minima_nome,
+            uc.nick AS criado_por_nick
+     FROM paginas_customizadas pc
+     LEFT JOIN grupos g ON g.id = pc.grupo_restrito_id
+     LEFT JOIN patentes p ON p.id = pc.patente_minima_id
+     LEFT JOIN usuarios uc ON uc.id = pc.criado_por_id
+     ORDER BY pc.titulo`
+  ).all()
+
+  return c.json(results)
+})
+
+// GET /paginas/admin/:id — traz a página completa (com conteudo_html) pra
+// edição no painel, sem passar pelas checagens de acesso de quem visita.
+paginas.get('/admin/:id', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  if (!(await ehAdmin(c.env.DB, usuarioId))) {
+    return c.json({ erro: 'só administradores do sistema gerenciam páginas customizadas' }, 403)
+  }
+
+  const pagina = await c.env.DB.prepare(`SELECT * FROM paginas_customizadas WHERE id = ?`)
+    .bind(c.req.param('id')).first()
+  if (!pagina) return c.json({ erro: 'página não encontrada' }, 404)
+
+  return c.json(pagina)
+})
+
 paginas.post('/', async (c) => {
   const usuarioId = c.get('usuarioId')
   const body = await c.req.json<{
@@ -82,6 +121,83 @@ paginas.get('/:caminho', async (c) => {
   }
 
   return c.json(pagina)
+})
+
+paginas.patch('/:id', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  const id = c.req.param('id')
+
+  if (!(await ehAdmin(c.env.DB, usuarioId))) {
+    return c.json({ erro: 'só administradores do sistema editam páginas customizadas' }, 403)
+  }
+
+  const existente = await c.env.DB.prepare(`SELECT id FROM paginas_customizadas WHERE id = ?`).bind(id).first()
+  if (!existente) return c.json({ erro: 'página não encontrada' }, 404)
+
+  const body = await c.req.json<{
+    titulo?: string
+    caminho?: string
+    tipo?: 'independente' | 'dependente'
+    conteudo_html?: string
+    publica?: boolean
+    grupo_restrito_id?: number | null
+    patente_minima_id?: number | null
+    ativo?: boolean
+  }>()
+
+  if (body.caminho !== undefined) {
+    const outraComMesmoCaminho = await c.env.DB.prepare(
+      `SELECT id FROM paginas_customizadas WHERE caminho = ? AND id != ?`
+    ).bind(body.caminho, id).first()
+    if (outraComMesmoCaminho) return c.json({ erro: `já existe uma página com o caminho '${body.caminho}'` }, 409)
+  }
+
+  const campos: string[] = []
+  const valores: unknown[] = []
+
+  if (body.titulo !== undefined) { campos.push('titulo = ?'); valores.push(body.titulo) }
+  if (body.caminho !== undefined) { campos.push('caminho = ?'); valores.push(body.caminho) }
+  if (body.tipo !== undefined) { campos.push('tipo = ?'); valores.push(body.tipo) }
+  if (body.conteudo_html !== undefined) { campos.push('conteudo_html = ?'); valores.push(body.conteudo_html) }
+  if (body.publica !== undefined) { campos.push('publica = ?'); valores.push(body.publica ? 1 : 0) }
+  if (body.grupo_restrito_id !== undefined) { campos.push('grupo_restrito_id = ?'); valores.push(body.grupo_restrito_id) }
+  if (body.patente_minima_id !== undefined) { campos.push('patente_minima_id = ?'); valores.push(body.patente_minima_id) }
+  if (body.ativo !== undefined) { campos.push('ativo = ?'); valores.push(body.ativo ? 1 : 0) }
+
+  if (!campos.length) return c.json({ erro: 'nada pra atualizar' }, 400)
+
+  campos.push(`atualizado_em = strftime('%Y-%m-%dT%H:%M:%SZ','now')`)
+  campos.push('atualizado_por_id = ?')
+  valores.push(usuarioId)
+  valores.push(id)
+
+  await c.env.DB.prepare(`UPDATE paginas_customizadas SET ${campos.join(', ')} WHERE id = ?`)
+    .bind(...valores).run()
+
+  return c.json({ ok: true })
+})
+
+paginas.delete('/:id', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  const id = c.req.param('id')
+
+  if (!(await ehAdmin(c.env.DB, usuarioId))) {
+    return c.json({ erro: 'só administradores do sistema removem páginas customizadas' }, 403)
+  }
+
+  const existente = await c.env.DB.prepare(`SELECT id FROM paginas_customizadas WHERE id = ?`).bind(id).first()
+  if (!existente) return c.json({ erro: 'página não encontrada' }, 404)
+
+  // Soft-delete: some in ativo = 0 em vez de apagar de verdade, consistente
+  // com o resto do sistema — o histórico da página não some, só deixa de
+  // ficar acessível.
+  await c.env.DB.prepare(
+    `UPDATE paginas_customizadas
+     SET ativo = 0, atualizado_em = strftime('%Y-%m-%dT%H:%M:%SZ','now'), atualizado_por_id = ?
+     WHERE id = ?`
+  ).bind(usuarioId, id).run()
+
+  return c.json({ ok: true })
 })
 
 export default paginas

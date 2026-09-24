@@ -60,6 +60,7 @@
       { id: 'banners', label: 'Banners' },
       { id: 'infracoes', label: 'Infrações' },
       { id: 'gratificacoes', label: 'Gratificações' },
+      { id: 'paginas', label: 'Páginas' },
       { id: 'menu', label: 'Menu' },
       { id: 'configuracoes', label: 'Configurações' },
       { id: 'usuarios', label: 'Usuários' },
@@ -1916,6 +1917,211 @@
     });
   }
 
+  // ---------- Páginas customizadas ----------
+  function formularioPaginaVazio() {
+    return { id: null, titulo: '', caminho: '', tipo: 'dependente', conteudo_html: '', publica: false, grupo_restrito_id: null, patente_minima_id: null }
+  }
+
+  async function carregarPaginas() {
+    const raiz = document.getElementById('conteudo-aba');
+    raiz.innerHTML = '<p class="text-sm text-muted">Carregando…</p>';
+
+    const [paginasResp, gruposResp, patentesResp] = await Promise.all([
+      apiFetch('/paginas'), apiFetch('/grupos'), apiFetch('/patentes'),
+    ]);
+    const lista = paginasResp.ok ? await paginasResp.json() : [];
+    const grupos = gruposResp.ok ? await gruposResp.json() : [];
+    const patentes = patentesResp.ok ? await patentesResp.json() : [];
+    patentes.sort((a, b) => a.corpo.localeCompare(b.corpo) || b.ordem - a.ordem);
+
+    function opcoesGrupo(selecionadoId) {
+      return `<option value="">Nenhum (sem restrição de grupo)</option>` +
+        grupos.map((g) => `<option value="${g.id}" ${selecionadoId === g.id ? 'selected' : ''}>${g.nome}</option>`).join('');
+    }
+    function opcoesPatenteMinima(selecionadoId) {
+      return `<option value="">Nenhuma (sem restrição de patente)</option>` +
+        patentes.map((p) => `<option value="${p.id}" ${selecionadoId === p.id ? 'selected' : ''}>${p.nome}</option>`).join('');
+    }
+
+    function linhaPagina(p) {
+      const badgeTipo = p.tipo === 'independente'
+        ? '<span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400">Independente</span>'
+        : '<span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-400">Dependente</span>';
+      const badgeAtivo = p.ativo
+        ? '<span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-green-500/15 text-green-400">Ativa</span>'
+        : '<span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-500/15 text-red-400">Inativa</span>';
+      const restricoes = [
+        p.publica ? null : (p.grupo_restrito_nome ? `Grupo: ${p.grupo_restrito_nome}` : null),
+        p.publica ? null : (p.patente_minima_nome ? `A partir de: ${p.patente_minima_nome}` : null),
+      ].filter(Boolean);
+      return `
+        <div class="flex items-center justify-between gap-3 px-4 py-3">
+          <div class="min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <p class="text-sm font-semibold truncate">${p.titulo}</p>
+              ${badgeTipo}
+              ${badgeAtivo}
+              ${p.publica ? '<span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-400">Pública</span>' : ''}
+            </div>
+            <p class="text-xs text-muted mt-0.5">/p/${p.caminho}${restricoes.length ? ' · ' + restricoes.join(' · ') : ''}</p>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <button type="button" data-editar-pagina="${p.id}" class="text-muted hover:text-accent transition-colors px-2" title="Editar">
+              <i class="fa-solid fa-pen"></i>
+            </button>
+            <button type="button" data-remover-pagina="${p.id}" class="text-muted hover:text-red-600 transition-colors px-2" title="Remover">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    function formularioPagina(dados) {
+      return `
+        <form id="form-pagina" class="space-y-3">
+          <input type="hidden" id="pagina-id" value="${dados.id ?? ''}">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs text-muted block mb-1">Título</label>
+              <input id="pagina-titulo" required value="${dados.titulo || ''}" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            </div>
+            <div>
+              <label class="text-xs text-muted block mb-1">Caminho (vira a URL /p/{caminho})</label>
+              <input id="pagina-caminho" required pattern="[a-z0-9\\-]+" title="Só letras minúsculas, números e hífen" value="${dados.caminho || ''}" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            </div>
+          </div>
+
+          <div>
+            <label class="text-xs text-muted block mb-1.5">Tipo</label>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <label class="flex items-start gap-2 px-3 py-2 bg-basebg border border-border rounded-lg cursor-pointer">
+                <input type="radio" name="pagina-tipo" value="dependente" ${dados.tipo !== 'independente' ? 'checked' : ''} class="mt-0.5">
+                <span class="text-sm">
+                  <span class="font-semibold block">Dependente</span>
+                  <span class="text-xs text-muted">Usa o layout do sistema — navbar, sidebar e footer, dentro do CSS padrão.</span>
+                </span>
+              </label>
+              <label class="flex items-start gap-2 px-3 py-2 bg-basebg border border-border rounded-lg cursor-pointer">
+                <input type="radio" name="pagina-tipo" value="independente" ${dados.tipo === 'independente' ? 'checked' : ''} class="mt-0.5">
+                <span class="text-sm">
+                  <span class="font-semibold block">Independente</span>
+                  <span class="text-xs text-muted">Página avulsa, sem o CSS/layout do sistema — o HTML abaixo é exibido puro.</span>
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs text-muted block mb-1">Restrita a grupo</label>
+              <select id="pagina-grupo" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                ${opcoesGrupo(dados.grupo_restrito_id)}
+              </select>
+            </div>
+            <div>
+              <label class="text-xs text-muted block mb-1">Patente mínima</label>
+              <select id="pagina-patente" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                ${opcoesPatenteMinima(dados.patente_minima_id)}
+              </select>
+            </div>
+          </div>
+
+          <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" id="pagina-publica" ${dados.publica ? 'checked' : ''}>
+            Pública (ignora as restrições de grupo/patente acima — todo usuário logado acessa)
+          </label>
+
+          <div>
+            <label class="text-xs text-muted block mb-1">Conteúdo (HTML)</label>
+            <div id="pagina-editor-html"></div>
+          </div>
+
+          <div class="flex items-center gap-3">
+            <button type="submit" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">
+              ${dados.id ? 'Salvar alterações' : 'Criar página'}
+            </button>
+            ${dados.id ? '<button type="button" id="pagina-cancelar-edicao" class="text-sm text-muted hover:text-dark transition-colors">Cancelar</button>' : ''}
+          </div>
+          <p id="erro-pagina" class="hidden text-xs text-red-400"></p>
+        </form>
+      `;
+    }
+
+    function renderizar(dadosFormulario) {
+      raiz.innerHTML = `
+        <div class="bg-card border border-border rounded-2xl shadow-sm divide-y divide-border overflow-hidden mb-5">
+          ${lista.length ? lista.map(linhaPagina).join('') : '<p class="text-sm text-muted p-4">Nenhuma página customizada criada ainda.</p>'}
+        </div>
+
+        <div class="bg-card border border-border rounded-2xl shadow-sm p-5 max-w-2xl">
+          <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">
+            ${dadosFormulario.id ? 'Editar página' : 'Nova página'}
+          </h2>
+          ${formularioPagina(dadosFormulario)}
+        </div>
+      `;
+
+      document.getElementById('pagina-editor-html').innerHTML = htmlEditorHtml('pagina-editor', dadosFormulario.conteudo_html || '');
+      ligarEditorHtml('pagina-editor');
+
+      raiz.querySelectorAll('[data-editar-pagina]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const resp = await apiFetch(`/paginas/admin/${btn.dataset.editarPagina}`);
+          if (!resp.ok) return;
+          const p = await resp.json();
+          renderizar({
+            id: p.id, titulo: p.titulo, caminho: p.caminho, tipo: p.tipo, conteudo_html: p.conteudo_html,
+            publica: Boolean(p.publica), grupo_restrito_id: p.grupo_restrito_id, patente_minima_id: p.patente_minima_id,
+          });
+          document.querySelector('.max-w-2xl').scrollIntoView({ behavior: 'smooth' });
+        });
+      });
+
+      raiz.querySelectorAll('[data-remover-pagina]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('Remover esta página? Ela deixa de ficar acessível, mas o registro continua guardado.')) return;
+          await apiFetch(`/paginas/${btn.dataset.removerPagina}`, { method: 'DELETE' });
+          carregarPaginas();
+        });
+      });
+
+      const cancelarBtn = document.getElementById('pagina-cancelar-edicao');
+      if (cancelarBtn) cancelarBtn.addEventListener('click', () => renderizar(formularioPaginaVazio()));
+
+      document.getElementById('form-pagina').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const erroEl = document.getElementById('erro-pagina');
+        erroEl.classList.add('hidden');
+
+        const id = document.getElementById('pagina-id').value;
+        const corpo = {
+          titulo: document.getElementById('pagina-titulo').value.trim(),
+          caminho: document.getElementById('pagina-caminho').value.trim(),
+          tipo: document.querySelector('input[name="pagina-tipo"]:checked').value,
+          conteudo_html: document.getElementById('pagina-editor-textarea').value,
+          publica: document.getElementById('pagina-publica').checked,
+          grupo_restrito_id: document.getElementById('pagina-grupo').value ? Number(document.getElementById('pagina-grupo').value) : null,
+          patente_minima_id: document.getElementById('pagina-patente').value ? Number(document.getElementById('pagina-patente').value) : null,
+        };
+
+        const resposta = id
+          ? await apiFetch(`/paginas/${id}`, { method: 'PATCH', body: JSON.stringify(corpo) })
+          : await apiFetch('/paginas', { method: 'POST', body: JSON.stringify(corpo) });
+
+        if (!resposta.ok) {
+          const dadosErro = await resposta.json().catch(() => ({}));
+          erroEl.textContent = dadosErro.erro || 'Não foi possível salvar essa página.';
+          erroEl.classList.remove('hidden');
+          return;
+        }
+        carregarPaginas();
+      });
+    }
+
+    renderizar(formularioPaginaVazio());
+  }
+
   // ---------- Menu personalizado ----------
   async function carregarMenuAdmin() {
     const raiz = document.getElementById('conteudo-aba');
@@ -1980,6 +2186,7 @@
     banners: carregarBanners,
     infracoes: carregarInfracoes,
     gratificacoes: carregarGratificacoes,
+    paginas: carregarPaginas,
     menu: carregarMenuAdmin,
     configuracoes: carregarConfiguracoes,
     usuarios: carregarUsuarios,

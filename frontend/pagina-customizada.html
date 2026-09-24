@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIASystem</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="/assets/tailwind-config.js"></script>
+<link href="https://kit-pro.fontawesome.com/releases/v7.3.1/css/pro.min.css" rel="stylesheet">
+</head>
+<body class="bg-basebg text-dark font-sans min-h-screen">
+
+<div id="pagina-raiz">
+  <p class="text-sm text-muted p-8 text-center">Carregando…</p>
+</div>
+
+<script src="/assets/api.js"></script>
+<script>
+  // Página customizada: o caminho (/p/{caminho}) chega intacto na barra de
+  // endereço graças à reescrita interna do worker.js, e é lido aqui direto
+  // de location.pathname — o mesmo truque usado por /perfil/, /grupos/ etc.
+  const partes = location.pathname.split('/').filter(Boolean); // ['p', caminho]
+  const caminho = decodeURIComponent(partes[1] || '');
+
+  async function iniciar() {
+    if (!caminho) {
+      document.getElementById('pagina-raiz').innerHTML = `
+        <div class="max-w-lg mx-auto text-center pt-24 px-4">
+          <p class="text-lg font-semibold">Página não encontrada</p>
+        </div>
+      `;
+      return;
+    }
+
+    if (!Auth.estaLogado()) {
+      window.location.href = '/login.html';
+      return;
+    }
+
+    const resp = await apiFetch(`/paginas/${encodeURIComponent(caminho)}`);
+    if (!resp.ok) {
+      const erro = resp.status === 403 ? 'Você não tem acesso a esta página.' : 'Página não encontrada.';
+      document.getElementById('pagina-raiz').innerHTML = `
+        <div class="max-w-lg mx-auto text-center pt-24 px-4">
+          <p class="text-lg font-semibold">${erro}</p>
+          <a href="/index.html" class="text-sm text-accent hover:underline mt-3 inline-block">Voltar ao início</a>
+        </div>
+      `;
+      return;
+    }
+
+    const pagina = await resp.json();
+    document.title = `CIASystem — ${pagina.titulo}`;
+
+    if (pagina.tipo === 'independente') {
+      // Avulsa: sem CSS/layout do sistema — o conteúdo é exibido puro,
+      // como a própria página é dona do que aparece.
+      document.getElementById('pagina-raiz').outerHTML = pagina.conteudo_html;
+      return;
+    }
+
+    // Dependente: entra dentro do layout padrão do sistema (navbar,
+    // sidebar e footer), no mesmo <main> usado pelas outras telas.
+    document.getElementById('pagina-raiz').outerHTML = `
+      <div class="fixed inset-0 -z-10 habbo-floor-bg"></div>
+      <aside id="layout-sidebar" class="w-60 fixed left-0 top-[72px] bottom-0 border-r border-border bg-basebg p-4 overflow-y-auto"></aside>
+      <main class="ml-60 min-h-screen flex flex-col">
+        <div class="max-w-5xl mx-auto flex-1 w-full px-4 pt-10">
+          <div id="pagina-conteudo">${pagina.conteudo_html}</div>
+        </div>
+        <div id="layout-footer"></div>
+      </main>
+    `;
+
+    document.head.insertAdjacentHTML('beforeend', `
+      <link rel="preconnect" href="https://fonts.googleapis.com">
+      <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
+      <link rel="stylesheet" href="/assets/theme.css">
+    `);
+
+    for (const src of ['/assets/footer.js', '/assets/layout.js']) {
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = resolve;
+        script.onerror = reject;
+        document.body.appendChild(script);
+      });
+    }
+
+    montarLayout(null);
+  }
+
+  iniciar();
+</script>
+</body>
+</html>
