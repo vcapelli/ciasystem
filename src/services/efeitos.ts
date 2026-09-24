@@ -11,6 +11,8 @@
 //     CRIA a linha em `usuarios` e devolve o `usuarioId` gerado, pra
 //     a rota fazer o backfill de `requerimento_alvos.usuario_id`.
 
+import { ehContaProtegida, NICK_CONTA_PROTEGIDA } from './protecao-conta'
+
 export type IdentificadorAlvo = { usuarioId: number } | { nickAlvo: string }
 
 export interface EfeitoAplicado {
@@ -20,6 +22,17 @@ export interface EfeitoAplicado {
 }
 
 const AGORA = `strftime('%Y-%m-%dT%H:%M:%SZ','now')`
+
+// Tipos de requerimento que mexem no nick (transferência de conta) ou
+// no status (licença/volta, desligamento, reforma, exoneração) do
+// alvo — os dois campos protegidos na conta do dono do sistema (ver
+// ehContaProtegida). Promoção/rebaixamento/transferência de corpo NÃO
+// entram aqui de propósito: só mexem em patente/cargo, que continuam
+// liberados.
+const TIPOS_QUE_ALTERAM_NICK_OU_STATUS = new Set([
+  'transferencia_conta', 'licenca', 'volta_licenca',
+  'desligamento_honroso', 'reforma', 'desligamento_desonroso', 'exoneracao',
+])
 
 async function buscarPatente(db: D1Database, patenteId: unknown): Promise<{ id: number; corpo: string }> {
   if (!patenteId) throw new Error('dados_especificos.patente_destino_id é obrigatório')
@@ -175,7 +188,16 @@ export async function aplicarEfeitoAprovacao(
   const antes = await db
     .prepare(`SELECT patente_atual_id, corpo, status, tag, nick, exoneracao_ate FROM usuarios WHERE id = ?`)
     .bind(usuarioId)
-    .first()
+    .first<{ nick: string }>()
+
+  // Conta do dono do sistema: nenhum desses tipos pode mexer no nick
+  // (transferência de conta) nem no status (licença, desligamento,
+  // reforma, exoneração) dela — nem por requerimento aprovado por outro
+  // admin. Patente/cargo (promoção, rebaixamento etc.) continuam
+  // permitidos, só esses dois campos são protegidos aqui.
+  if (ehContaProtegida(antes?.nick) && TIPOS_QUE_ALTERAM_NICK_OU_STATUS.has(tipo)) {
+    throw new Error(`a conta ${NICK_CONTA_PROTEGIDA} não pode ter nick nem status alterado por requerimento`)
+  }
 
   switch (tipo) {
     case 'promocao':

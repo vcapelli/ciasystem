@@ -3,6 +3,7 @@ import { buscarJogadorHabblet } from '../services/habblet'
 import { hashSenha } from '../services/senha'
 import { revogarTodasSessoes } from '../services/auth'
 import { registrarEvento } from '../services/logs'
+import { ehContaProtegida, NICK_CONTA_PROTEGIDA } from '../services/protecao-conta'
 
 type Bindings = { DB: D1Database }
 type Variables = { usuarioId: number }
@@ -190,8 +191,12 @@ usuarios.patch('/:id/senha', async (c) => {
   }
 
   const alvoId = c.req.param('id')
-  const alvo = await c.env.DB.prepare(`SELECT id FROM usuarios WHERE id = ?`).bind(alvoId).first()
+  const alvo = await c.env.DB.prepare(`SELECT id, nick FROM usuarios WHERE id = ?`).bind(alvoId).first<{ id: number; nick: string }>()
   if (!alvo) return c.json({ erro: 'usuário não encontrado' }, 404)
+
+  if (ehContaProtegida(alvo.nick)) {
+    return c.json({ erro: `a senha da conta ${NICK_CONTA_PROTEGIDA} não pode ser redefinida por outro administrador` }, 400)
+  }
 
   const body = await c.req.json<{ senha: string }>().catch(() => ({}) as { senha?: string })
   if (!body.senha || body.senha.length < 6) {
@@ -322,8 +327,8 @@ usuarios.patch('/:id', async (c) => {
   if (!(await ehAdmin(c.env.DB, usuarioAtualId))) return c.json({ erro: 'só administradores do sistema editam usuários' }, 403)
 
   const alvoId = c.req.param('id')
-  const atual = await c.env.DB.prepare(`SELECT tipo, corpo, patente_atual_id FROM usuarios WHERE id = ?`)
-    .bind(alvoId).first<{ tipo: string; corpo: string | null; patente_atual_id: number | null }>()
+  const atual = await c.env.DB.prepare(`SELECT nick, tipo, corpo, patente_atual_id FROM usuarios WHERE id = ?`)
+    .bind(alvoId).first<{ nick: string; tipo: string; corpo: string | null; patente_atual_id: number | null }>()
   if (!atual) return c.json({ erro: 'usuário não encontrado' }, 404)
 
   const body = await c.req.json<{
@@ -340,6 +345,18 @@ usuarios.patch('/:id', async (c) => {
     logo_url?: string | null
     figure_fixa?: string | null
   }>()
+
+  // Conta do dono do sistema: nick, status e tipo de conta não podem
+  // ser alterados por aqui (senha tem sua própria trava em /:id/senha).
+  // Bloqueia a requisição inteira em vez de só ignorar os campos —
+  // assim o admin fica sabendo que precisa reenviar sem eles, em vez
+  // de achar que o resto também não foi salvo.
+  if (ehContaProtegida(atual.nick)) {
+    const camposProtegidos = ['nick', 'status', 'tipo'].filter((campo) => (body as Record<string, unknown>)[campo] !== undefined)
+    if (camposProtegidos.length) {
+      return c.json({ erro: `a conta ${NICK_CONTA_PROTEGIDA} não pode ter ${camposProtegidos.join(', ')} alterado(s)` }, 400)
+    }
+  }
 
   // Valida a mesma regra do CHECK constraint antes de tentar salvar,
   // pra devolver um erro legível em vez do erro cru do SQLite.
