@@ -83,7 +83,7 @@
   }
 
   function renderItemLista(email) {
-    const direcao = email.direcao || caixaAtual === 'enviados' ? 'enviado' : 'recebido';
+    const direcao = email.direcao || (caixaAtual === 'enviados' ? 'enviado' : 'recebido');
     const naoLido = caixaAtual === 'recebidos' && !email.lido_em;
     const nomeExibido = direcao === 'recebido' ? email.remetente_nick : (email.destinatarios_nicks || '—');
     const selecionado = email.id === emailSelecionadoId;

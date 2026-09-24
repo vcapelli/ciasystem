@@ -227,7 +227,7 @@
               <p class="text-xs text-muted truncate">Instrutor: ${c.instrutor_nick}</p>
               ${c.comentario ? `<p class="text-xs text-muted mt-0.5">${c.comentario}</p>` : ''}
             </div>
-            <p class="text-xs text-muted shrink-0">${c.data_efetiva}</p>
+            <p class="text-xs text-muted shrink-0">${formatarDataCurta(c.data_efetiva)}</p>
           </div>
         `).join('')}
       </div>

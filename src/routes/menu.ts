@@ -112,6 +112,53 @@ menu.get('/todos', async (c) => {
   return c.json(results)
 })
 
+// PATCH /menu/:id — edita um item existente, incluindo `chave_permissao`
+// (antes só dava pra setar via seed/migração — sem essa rota, mudar a
+// permissão de um item de menu exigia UPDATE manual no banco). Só admin.
+menu.patch('/:id', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  if (!(await ehAdmin(c.env.DB, usuarioId))) {
+    return c.json({ erro: 'só administradores do sistema gerenciam o menu' }, 403)
+  }
+
+  const id = c.req.param('id')
+  const existente = await c.env.DB.prepare(`SELECT id FROM menu_itens WHERE id = ?`).bind(id).first()
+  if (!existente) return c.json({ erro: 'item de menu não encontrado' }, 404)
+
+  const body = await c.req.json<{
+    titulo?: string
+    url?: string | null
+    pagina_customizada_id?: number | null
+    icone?: string | null
+    item_pai_id?: number | null
+    ordem?: number
+    grupo_restrito_id?: number | null
+    patente_minima_id?: number | null
+    chave_permissao?: string | null
+  }>()
+
+  const campos: string[] = []
+  const valores: unknown[] = []
+  const set = (coluna: string, valor: unknown) => { campos.push(`${coluna} = ?`); valores.push(valor) }
+
+  if (body.titulo !== undefined) set('titulo', body.titulo)
+  if (body.url !== undefined) set('url', body.url)
+  if (body.pagina_customizada_id !== undefined) set('pagina_customizada_id', body.pagina_customizada_id)
+  if (body.icone !== undefined) set('icone', body.icone)
+  if (body.item_pai_id !== undefined) set('item_pai_id', body.item_pai_id)
+  if (body.ordem !== undefined) set('ordem', body.ordem)
+  if (body.grupo_restrito_id !== undefined) set('grupo_restrito_id', body.grupo_restrito_id)
+  if (body.patente_minima_id !== undefined) set('patente_minima_id', body.patente_minima_id)
+  if (body.chave_permissao !== undefined) set('chave_permissao', body.chave_permissao)
+
+  if (!campos.length) return c.json({ ok: true })
+
+  valores.push(id)
+  await c.env.DB.prepare(`UPDATE menu_itens SET ${campos.join(', ')} WHERE id = ?`).bind(...valores).run()
+
+  return c.json({ ok: true })
+})
+
 // DELETE /menu/:id — desativa um item do menu (soft delete). Só admin.
 menu.delete('/:id', async (c) => {
   const usuarioId = c.get('usuarioId')

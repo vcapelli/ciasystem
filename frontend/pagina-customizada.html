@@ -55,9 +55,28 @@
     if (pagina.tipo === 'independente') {
       // Avulsa: sem CSS/layout do sistema — o conteúdo é exibido puro,
       // como a própria página é dona do que aparece.
-      document.getElementById('pagina-raiz').outerHTML = pagina.conteudo_html;
+      const raizIndependente = document.getElementById('pagina-raiz');
+      raizIndependente.innerHTML = pagina.conteudo_html;
+      // innerHTML/outerHTML nunca executam <script> embutido (o parser
+      // marca esses nós como inertes) — recria cada um manualmente,
+      // copiando atributos e conteúdo, pra rodar de verdade.
+      raizIndependente.querySelectorAll('script').forEach((scriptAntigo) => {
+        const scriptNovo = document.createElement('script');
+        for (const attr of scriptAntigo.attributes) scriptNovo.setAttribute(attr.name, attr.value);
+        scriptNovo.textContent = scriptAntigo.textContent;
+        scriptAntigo.replaceWith(scriptNovo);
+      });
       return;
     }
+
+    // Fontes/CSS do tema ANTES de inserir o conteúdo — antes eram
+    // adicionadas depois, então a página aparecia sem estilo por um
+    // instante em conexão lenta (flash of unstyled content).
+    document.head.insertAdjacentHTML('beforeend', `
+      <link rel="preconnect" href="https://fonts.googleapis.com">
+      <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
+      <link rel="stylesheet" href="/assets/theme.css">
+    `);
 
     // Dependente: entra dentro do layout padrão do sistema (navbar,
     // sidebar e footer), no mesmo <main> usado pelas outras telas.
@@ -71,12 +90,6 @@
         <div id="layout-footer"></div>
       </main>
     `;
-
-    document.head.insertAdjacentHTML('beforeend', `
-      <link rel="preconnect" href="https://fonts.googleapis.com">
-      <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
-      <link rel="stylesheet" href="/assets/theme.css">
-    `);
 
     for (const src of ['/assets/footer.js', '/assets/layout.js']) {
       await new Promise((resolve, reject) => {

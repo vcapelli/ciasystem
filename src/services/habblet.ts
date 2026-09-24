@@ -40,7 +40,18 @@ function nickParaSegmentoUrl(nick: string): string {
  * de verdade (timeout, 5xx, etc.), que o chamador deve tratar.
  */
 export async function buscarJogadorHabblet(nick: string): Promise<HabbletPlayer | null> {
-  const resposta = await fetch(`${HABBLET_API_BASE}/player/${nickParaSegmentoUrl(nick)}`)
+  // Timeout explícito — sem isso, uma instabilidade na API externa
+  // deixa a request do Worker pendurada indefinidamente, incluindo o
+  // fluxo de login (que depende desta mesma função pra verificar o
+  // código na missão).
+  let resposta: Response
+  try {
+    resposta = await fetch(`${HABBLET_API_BASE}/player/${nickParaSegmentoUrl(nick)}`, {
+      signal: AbortSignal.timeout(8000),
+    })
+  } catch (erro) {
+    throw new Error(`não foi possível contatar a API do Habblet pra buscar '${nick}': ${erro instanceof Error ? erro.message : erro}`)
+  }
 
   if (resposta.status === 404) return null
   if (!resposta.ok) {

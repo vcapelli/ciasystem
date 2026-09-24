@@ -331,6 +331,12 @@ grupos.patch('/:slug/membros/:usuarioId', async (c) => {
     return c.json({ erro: 'sem permissão de administrador neste grupo' }, 403)
   }
 
+  // Readmissão (reativar `ativo`) sem informar `administrador_grupo`
+  // explicitamente reseta o cargo de admin do grupo — antes o COALESCE
+  // preservava o valor antigo, então quem tinha sido removido como
+  // admin recuperava o poder de graça ao ser readmitido como membro
+  // comum. Só preserva o valor antigo quando NÃO é uma readmissão.
+  const resetAdminNaReadmissao = body.ativo === true && body.administrador_grupo === undefined
   await c.env.DB.prepare(
     `UPDATE usuario_grupos SET
       nivel_id = COALESCE(?, nivel_id),
@@ -340,7 +346,7 @@ grupos.patch('/:slug/membros/:usuarioId', async (c) => {
   )
     .bind(
       body.nivel_id ?? null,
-      body.administrador_grupo === undefined ? null : (body.administrador_grupo ? 1 : 0),
+      body.administrador_grupo !== undefined ? (body.administrador_grupo ? 1 : 0) : (resetAdminNaReadmissao ? 0 : null),
       body.ativo === undefined ? null : (body.ativo ? 1 : 0),
       alvoId, grupo.id
     )
@@ -848,8 +854,18 @@ grupos.patch('/:slug/meta', async (c) => {
     return c.json({ erro: 'defina uma quantidade de aulas por semana maior que zero pra ativar a meta' }, 400)
   }
 
-  await c.env.DB.prepare(`UPDATE grupos SET meta_semanal_ativa = ?, meta_semanal_quantidade = ? WHERE id = ?`)
-    .bind(body.ativa ? 1 : 0, body.quantidade ?? null, grupo.id).run()
+  // Antes, mandar só `niveis_ids` (sem `ativa`/`quantidade`) apagava a
+  // meta em silêncio — `undefined` virava `0`/`null` no UPDATE. Agora
+  // só entra no SET o que veio de fato no corpo (campo omitido não é
+  // tocado; `null` explícito em `quantidade` ainda limpa o valor).
+  const camposMeta: string[] = []
+  const valoresMeta: unknown[] = []
+  if (body.ativa !== undefined) { camposMeta.push('meta_semanal_ativa = ?'); valoresMeta.push(body.ativa ? 1 : 0) }
+  if ('quantidade' in body) { camposMeta.push('meta_semanal_quantidade = ?'); valoresMeta.push(body.quantidade ?? null) }
+  if (camposMeta.length) {
+    valoresMeta.push(grupo.id)
+    await c.env.DB.prepare(`UPDATE grupos SET ${camposMeta.join(', ')} WHERE id = ?`).bind(...valoresMeta).run()
+  }
 
   if (body.niveis_ids) {
     await c.env.DB.prepare(`DELETE FROM grupo_meta_niveis WHERE grupo_id = ?`).bind(grupo.id).run()

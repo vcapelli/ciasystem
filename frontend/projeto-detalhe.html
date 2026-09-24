@@ -276,7 +276,12 @@
     document.getElementById('btn-arquivar')?.addEventListener('click', async () => {
       const motivo = prompt('Motivo do arquivamento (opcional):') || undefined;
       if (!confirm('Arquivar este processo?')) return;
-      await apiFetch(`/projetos/${projetoId}/arquivar`, { method: 'POST', body: JSON.stringify({ motivo }) });
+      const resp = await apiFetch(`/projetos/${projetoId}/arquivar`, { method: 'POST', body: JSON.stringify({ motivo }) });
+      if (!resp.ok) {
+        const dados = await resp.json().catch(() => ({}));
+        alert(dados.erro || 'Não foi possível arquivar o processo.');
+        return;
+      }
       render();
     });
 
@@ -295,14 +300,24 @@
       e.preventDefault();
       const usuarioId = document.getElementById('resp-usuario-id').value;
       if (!usuarioId) return;
-      await apiFetch(`/projetos/${projetoId}/responsavel`, { method: 'POST', body: JSON.stringify({ usuario_id: Number(usuarioId) }) });
+      const resp = await apiFetch(`/projetos/${projetoId}/responsavel`, { method: 'POST', body: JSON.stringify({ usuario_id: Number(usuarioId) }) });
+      if (!resp.ok) {
+        const dados = await resp.json().catch(() => ({}));
+        alert(dados.erro || 'Não foi possível definir o responsável.');
+        return;
+      }
       render();
     });
 
     document.getElementById('btn-devolver-parecer')?.addEventListener('click', async () => {
       const motivo = prompt('Motivo da devolução (opcional):') || undefined;
       if (!confirm('Devolver o parecer ao responsável? Os votos já registrados serão apagados.')) return;
-      await apiFetch(`/projetos/${projetoId}/devolver-parecer`, { method: 'POST', body: JSON.stringify({ motivo }) });
+      const resp = await apiFetch(`/projetos/${projetoId}/devolver-parecer`, { method: 'POST', body: JSON.stringify({ motivo }) });
+      if (!resp.ok) {
+        const dados = await resp.json().catch(() => ({}));
+        alert(dados.erro || 'Não foi possível devolver o parecer.');
+        return;
+      }
       render();
     });
 
@@ -396,13 +411,23 @@
 
     document.getElementById('btn-desarquivar-implementacao')?.addEventListener('click', async () => {
       if (!confirm('Desarquivar direto pra "aguardando implementação"?')) return;
-      await apiFetch(`/projetos/${projetoId}/desarquivar`, { method: 'POST', body: JSON.stringify({ destino: 'aguardando_implementacao' }) });
+      const resp = await apiFetch(`/projetos/${projetoId}/desarquivar`, { method: 'POST', body: JSON.stringify({ destino: 'aguardando_implementacao' }) });
+      if (!resp.ok) {
+        const dados = await resp.json().catch(() => ({}));
+        alert(dados.erro || 'Não foi possível desarquivar o processo.');
+        return;
+      }
       render();
     });
 
     document.getElementById('btn-desarquivar-votacao')?.addEventListener('click', async () => {
       if (!confirm('Desarquivar e reiniciar a votação do zero (os votos antigos serão apagados)?')) return;
-      await apiFetch(`/projetos/${projetoId}/desarquivar`, { method: 'POST', body: JSON.stringify({ destino: 'em_votacao' }) });
+      const resp = await apiFetch(`/projetos/${projetoId}/desarquivar`, { method: 'POST', body: JSON.stringify({ destino: 'em_votacao' }) });
+      if (!resp.ok) {
+        const dados = await resp.json().catch(() => ({}));
+        alert(dados.erro || 'Não foi possível desarquivar o processo.');
+        return;
+      }
       render();
     });
   }

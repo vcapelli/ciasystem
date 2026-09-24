@@ -220,13 +220,13 @@ listagens.get('/:tipo', async (c) => {
     soldados: `nome = 'Soldado'`,
     'corpo-de-pracas': `sub_corpo IN ('pracas', 'pracas_especiais') AND nome != 'Soldado'`,
     'corpo-de-oficiais': `sub_corpo = 'oficiais'`,
-    'corpo-executivo': `corpo = 'executivo' OR nome = 'Alto Comando Militar'`,
+    'corpo-executivo': `corpo = 'executivo' OR eh_suprema = 1`,
   }
   const FILTRO_PATENTES_JOIN: Record<string, string> = {
     soldados: `p.nome = 'Soldado'`,
     'corpo-de-pracas': `p.sub_corpo IN ('pracas', 'pracas_especiais') AND p.nome != 'Soldado'`,
     'corpo-de-oficiais': `p.sub_corpo = 'oficiais'`,
-    'corpo-executivo': `p.corpo = 'executivo' OR p.nome = 'Alto Comando Militar'`,
+    'corpo-executivo': `p.corpo = 'executivo' OR p.eh_suprema = 1`,
   }
   const filtroPatentes = FILTRO_PATENTES[tipo]
   if (!filtroPatentes) return c.json({ erro: `listagem '${tipo}' não existe` }, 404)
@@ -249,12 +249,23 @@ listagens.get('/:tipo', async (c) => {
   // mesma patente em licença, abre 1 vaga temporária) — o número mostrado
   // é sempre o limite normal, mesmo se colar exatamente que o card também
   // lista quem está de licença no rodapé.
+  const membrosComIdentificacao = comIdentificacao as (MembroListagem & { patente_atual_id: number })[]
   const grupos = patentes.map((p) => ({
     titulo: p.nome,
     cor: p.cor || (p.ordem === patentes[0]?.ordem ? 'dourado' : 'escuro'),
     vagas: p.vagas,
-    itens: (comIdentificacao as (MembroListagem & { patente_atual_id: number })[]).filter((m) => m.patente_atual_id === p.id),
+    itens: membrosComIdentificacao.filter((m) => m.patente_atual_id === p.id),
   }))
+
+  // Alguém com `patente_atual_id` apontando pra uma patente desativada
+  // (`ativo = 0`) não some mais em silêncio — antes ficava de fora de
+  // todo grupo (só patentes ativas viram grupo) sem nenhum aviso. Junta
+  // esses casos num grupo à parte, só quando existirem.
+  const idsPatentesAtivas = new Set(patentes.map((p) => p.id))
+  const comPatenteDesativada = membrosComIdentificacao.filter((m) => !idsPatentesAtivas.has(m.patente_atual_id))
+  if (comPatenteDesativada.length) {
+    grupos.push({ titulo: 'Patente desativada', cor: 'escuro', vagas: null, itens: comPatenteDesativada })
+  }
 
   return c.json({ tipoVisual: 'agrupado', grupos })
 })

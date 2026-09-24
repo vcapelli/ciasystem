@@ -132,23 +132,36 @@ protegido.use('*', async (c, next) => {
 // tabela sem agregar nada). Roda em waitUntil pra não atrasar a
 // resposta, e nunca deixa uma falha de log derrubar a request real.
 protegido.use('*', async (c, next) => {
-  await next()
   const metodo = c.req.method
-  if (metodo === 'GET' || metodo === 'HEAD' || metodo === 'OPTIONS') return
+  // Antes, se o handler jogasse uma exceção não tratada, `await next()`
+  // interrompia esta função antes de chegar no registro do evento — a
+  // ação nunca aparecia em `logs_eventos`, só no console do Worker.
+  // Com try/finally, o log sempre roda (com o erro anotado quando
+  // houver), e a exceção continua sendo relançada normalmente pro
+  // tratamento de erro padrão do Hono.
+  let erro: unknown = null
+  try {
+    await next()
+  } catch (e) {
+    erro = e
+    throw e
+  } finally {
+    if (metodo !== 'GET' && metodo !== 'HEAD' && metodo !== 'OPTIONS') {
+      const usuarioId = c.get('usuarioId') ?? null
+      const ip = c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || null
+      const userAgent = c.req.header('User-Agent') || null
+      const caminho = new URL(c.req.url).pathname
+      const status = erro ? 500 : c.res.status
 
-  const usuarioId = c.get('usuarioId') ?? null
-  const ip = c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || null
-  const userAgent = c.req.header('User-Agent') || null
-  const caminho = new URL(c.req.url).pathname
-  const status = c.res.status
-
-  c.executionCtx.waitUntil(
-    registrarEvento(c.env.DB, usuarioId, `${metodo} ${caminho}`, {
-      ip: ip ?? undefined,
-      userAgent: userAgent ?? undefined,
-      detalhes: { status },
-    }).catch(() => {})
-  )
+      c.executionCtx.waitUntil(
+        registrarEvento(c.env.DB, usuarioId, `${metodo} ${caminho}`, {
+          ip: ip ?? undefined,
+          userAgent: userAgent ?? undefined,
+          detalhes: erro ? { status, erro: erro instanceof Error ? erro.message : String(erro) } : { status },
+        }).catch(() => {})
+      )
+    }
+  }
 })
 
 protegido.route('/requerimentos', requerimentos)

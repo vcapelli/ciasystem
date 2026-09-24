@@ -116,7 +116,7 @@
     const grupos = gruposResp.ok ? await gruposResp.json() : [];
     const cursosDeGrupos = cursosDeGruposResp.ok ? await cursosDeGruposResp.json() : [];
 
-    const oficiais = todasPatentes.filter((p) => p.sub_corpo === 'oficiais' || p.nome === 'Alto Comando Militar').sort((a, b) => b.ordem - a.ordem);
+    const oficiais = todasPatentes.filter((p) => p.sub_corpo === 'oficiais' || p.eh_suprema).sort((a, b) => b.ordem - a.ordem);
     const pracas = todasPatentes.filter((p) => p.sub_corpo === 'pracas' || p.sub_corpo === 'pracas_especiais').sort((a, b) => b.ordem - a.ordem);
     const executivo = todasPatentes.filter((p) => p.corpo === 'executivo').sort((a, b) => b.ordem - a.ordem);
 
@@ -253,7 +253,12 @@
           else if (tipo === 'grupo') corpo.grupo_id = Number(campoValor);
           else corpo.descricao = campoValor;
 
-          await apiFetch('/requisitos-patente', { method: 'POST', body: JSON.stringify(corpo) });
+          const resp = await apiFetch('/requisitos-patente', { method: 'POST', body: JSON.stringify(corpo) });
+          if (!resp.ok) {
+            const d = await resp.json().catch(() => ({}));
+            alert(d.erro || 'Não foi possível adicionar o requisito.');
+            return;
+          }
           carregarHierarquia();
         });
       });
@@ -261,7 +266,12 @@
 
     raiz.querySelectorAll('[data-remover-requisito]').forEach((btn) => {
       btn.addEventListener('click', async () => {
-        await apiFetch(`/requisitos-patente/${btn.dataset.removerRequisito}`, { method: 'DELETE' });
+        const resp = await apiFetch(`/requisitos-patente/${btn.dataset.removerRequisito}`, { method: 'DELETE' });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível remover o requisito.');
+          return;
+        }
         carregarHierarquia();
       });
     });
@@ -586,7 +596,12 @@
     raiz.querySelectorAll('[data-remover-permissao]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         if (!confirm('Remover essa permissão?')) return;
-        await apiFetch(`/permissoes-requerimentos/${btn.dataset.removerPermissao}`, { method: 'DELETE' });
+        const resp = await apiFetch(`/permissoes-requerimentos/${btn.dataset.removerPermissao}`, { method: 'DELETE' });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível remover.');
+          return;
+        }
         carregarPermissoes();
       });
     });
@@ -623,7 +638,12 @@
     raiz.querySelectorAll('[data-remover-permissao-ip]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         if (!confirm('Remover esse acesso à listagem de IPs?')) return;
-        await apiFetch(`/ip-listagem/permissoes/${btn.dataset.removerPermissaoIp}`, { method: 'DELETE' });
+        const resp = await apiFetch(`/ip-listagem/permissoes/${btn.dataset.removerPermissaoIp}`, { method: 'DELETE' });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível remover.');
+          return;
+        }
         carregarPermissoes();
       });
     });
@@ -793,6 +813,23 @@
           <p id="modal-excluir-erro" class="hidden text-xs text-red-500 mt-2"></p>
         </div>
       </div>
+
+      <div id="modal-senha-usuario" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div class="bg-card rounded-2xl shadow-xl max-w-md w-full p-5">
+          <h2 class="text-sm font-bold mb-2"><i class="fa-solid fa-key"></i> Definir/redefinir senha</h2>
+          <p class="text-sm text-muted mb-3">
+            Cria (ou substitui) a senha de acesso de <b id="modal-senha-nick"></b>. Isso encerra todas as sessões
+            ativas dessa conta — a pessoa precisa entrar de novo com a senha nova.
+          </p>
+          <input id="modal-senha-input" type="password" placeholder="Nova senha (mínimo 6 caracteres)" minlength="6" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-accent">
+          <div class="flex justify-end gap-2">
+            <button id="modal-senha-cancelar" class="text-sm font-semibold px-4 py-2 rounded-lg bg-basebg border border-border hover:bg-border/40 transition-colors">Cancelar</button>
+            <button id="modal-senha-confirmar" class="text-sm font-semibold px-4 py-2 rounded-lg bg-accent hover:bg-accent-dark text-white transition-colors">Salvar senha</button>
+          </div>
+          <p id="modal-senha-erro" class="hidden text-xs text-red-500 mt-2"></p>
+          <p id="modal-senha-sucesso" class="hidden text-xs text-green-600 mt-2"></p>
+        </div>
+      </div>
     `;
 
     document.getElementById('nco-logo').addEventListener('input', (e) => {
@@ -846,8 +883,8 @@
         lista.innerHTML = usuariosLista.length ? usuariosLista.map((u) => `
           <div class="flex items-center justify-between px-4 py-3">
             <div>
-              <p class="text-sm font-semibold">${u.nick}${u.tag ? ` [${u.tag}]` : ''}</p>
-              <p class="text-xs text-muted">${u.patente_nome || '—'}</p>
+              <p class="text-sm font-semibold">${escapeHtml(u.nick)}${u.tag ? ` [${escapeHtml(u.tag)}]` : ''}</p>
+              <p class="text-xs text-muted">${escapeHtml(u.patente_nome || '—')}</p>
             </div>
             <div class="flex items-center gap-4">
               <label class="flex items-center gap-2 text-xs text-muted">
@@ -855,6 +892,7 @@
                 <input type="checkbox" data-toggle-admin="${u.id}" ${u.administrador_sistema ? 'checked' : ''}>
               </label>
               <button type="button" data-editar-usuario="${u.id}" class="text-xs font-semibold text-accent hover:underline">Editar</button>
+              <button type="button" data-senha-usuario="${u.id}" data-nick="${escapeHtml(u.nick)}" class="text-xs font-semibold text-accent hover:underline">Senha</button>
               <button type="button" data-excluir-usuario="${u.id}" data-nick="${u.nick}" class="text-muted hover:text-red-600 transition-colors" title="Excluir conta">
                 <i class="fa-solid fa-trash"></i>
               </button>
@@ -887,8 +925,63 @@
             abrirModalExcluirUsuario(btn.dataset.excluirUsuario, btn.dataset.nick);
           });
         });
+
+        lista.querySelectorAll('[data-senha-usuario]').forEach((btn) => {
+          btn.addEventListener('click', () => abrirModalSenhaUsuario(btn.dataset.senhaUsuario, btn.dataset.nick));
+        });
       }, 250);
     });
+  }
+
+  // Admin do sistema cria ou redefine a senha de acesso de qualquer
+  // usuário, sem depender do fluxo de código na missão do Habblet.
+  function abrirModalSenhaUsuario(id, nick) {
+    const modal = document.getElementById('modal-senha-usuario');
+    const input = document.getElementById('modal-senha-input');
+    const erroEl = document.getElementById('modal-senha-erro');
+    const sucessoEl = document.getElementById('modal-senha-sucesso');
+    const btnConfirmar = document.getElementById('modal-senha-confirmar');
+
+    document.getElementById('modal-senha-nick').textContent = nick;
+    input.value = '';
+    erroEl.classList.add('hidden');
+    sucessoEl.classList.add('hidden');
+    btnConfirmar.disabled = false;
+    btnConfirmar.textContent = 'Salvar senha';
+    modal.classList.remove('hidden');
+    input.focus();
+
+    document.getElementById('modal-senha-cancelar').onclick = () => modal.classList.add('hidden');
+
+    btnConfirmar.onclick = async () => {
+      const senha = input.value;
+      erroEl.classList.add('hidden');
+      sucessoEl.classList.add('hidden');
+      if (senha.length < 6) {
+        erroEl.textContent = 'A senha precisa ter pelo menos 6 caracteres.';
+        erroEl.classList.remove('hidden');
+        return;
+      }
+      btnConfirmar.disabled = true;
+      btnConfirmar.textContent = 'Salvando…';
+      const resp = await apiFetch(`/usuarios/${id}/senha`, {
+        method: 'PATCH',
+        body: JSON.stringify({ senha }),
+      });
+      if (!resp.ok) {
+        const d = await resp.json().catch(() => ({}));
+        erroEl.textContent = d.erro || 'Não foi possível definir a senha.';
+        erroEl.classList.remove('hidden');
+        btnConfirmar.disabled = false;
+        btnConfirmar.textContent = 'Salvar senha';
+        return;
+      }
+      sucessoEl.textContent = 'Senha definida — sessões antigas dessa conta foram encerradas.';
+      sucessoEl.classList.remove('hidden');
+      btnConfirmar.textContent = 'Salvar senha';
+      btnConfirmar.disabled = false;
+      input.value = '';
+    };
   }
 
   // Segunda confirmação — modal pedindo pra digitar o nick de novo.
@@ -1186,7 +1279,12 @@
     container.querySelectorAll('[data-excluir-medalha]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         if (!confirm('Excluir? Quem já recebeu continua com ela — só some do catálogo pra novas distribuições.')) return;
-        await apiFetch(`/${tipo}/${btn.dataset.excluirMedalha}`, { method: 'DELETE' });
+        const resp = await apiFetch(`/${tipo}/${btn.dataset.excluirMedalha}`, { method: 'DELETE' });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível excluir.');
+          return;
+        }
         montarListaMedalhas(tipo);
       });
     });
@@ -1376,7 +1474,12 @@
 
     raiz.querySelectorAll('.btn-estilo-footer').forEach((btn) => {
       btn.addEventListener('click', async () => {
-        await apiFetch('/configuracoes', { method: 'PATCH', body: JSON.stringify({ footer_estilo: btn.dataset.estilo }) });
+        const resp = await apiFetch('/configuracoes', { method: 'PATCH', body: JSON.stringify({ footer_estilo: btn.dataset.estilo }) });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível trocar o estilo.');
+          return;
+        }
         carregarFooterAdmin();
       });
     });
@@ -1400,7 +1503,7 @@
     raiz.querySelectorAll('[data-salvar-link]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const id = btn.dataset.salvarLink;
-        await apiFetch(`/footer/links/${id}`, {
+        const resp = await apiFetch(`/footer/links/${id}`, {
           method: 'PATCH',
           body: JSON.stringify({
             titulo: raiz.querySelector(`[data-link-titulo="${id}"]`).value.trim(),
@@ -1408,12 +1511,22 @@
             ordem: Number(raiz.querySelector(`[data-link-ordem="${id}"]`).value),
           }),
         });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível salvar.');
+          return;
+        }
         carregarFooterAdmin();
       });
     });
     raiz.querySelectorAll('[data-excluir-link]').forEach((btn) => {
       btn.addEventListener('click', async () => {
-        await apiFetch(`/footer/links/${btn.dataset.excluirLink}`, { method: 'DELETE' });
+        const resp = await apiFetch(`/footer/links/${btn.dataset.excluirLink}`, { method: 'DELETE' });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível excluir.');
+          return;
+        }
         carregarFooterAdmin();
       });
     });
@@ -1424,7 +1537,7 @@
         alert('URL inválida: não é permitido usar links "javascript:" ou "data:".');
         return;
       }
-      await apiFetch('/footer/links', {
+      const resp = await apiFetch('/footer/links', {
         method: 'POST',
         body: JSON.stringify({
           titulo: document.getElementById('novo-link-titulo').value.trim(),
@@ -1432,13 +1545,18 @@
           ordem: Number(document.getElementById('novo-link-ordem').value) || 0,
         }),
       });
+      if (!resp.ok) {
+        const d = await resp.json().catch(() => ({}));
+        alert(d.erro || 'Não foi possível adicionar.');
+        return;
+      }
       carregarFooterAdmin();
     });
 
     raiz.querySelectorAll('[data-salvar-rede]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const id = btn.dataset.salvarRede;
-        await apiFetch(`/footer/redes-sociais/${id}`, {
+        const resp = await apiFetch(`/footer/redes-sociais/${id}`, {
           method: 'PATCH',
           body: JSON.stringify({
             nome: raiz.querySelector(`[data-rede-nome="${id}"]`).value.trim(),
@@ -1446,18 +1564,28 @@
             icone: raiz.querySelector(`[data-rede-icone="${id}"]`).value.trim() || null,
           }),
         });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível salvar.');
+          return;
+        }
         carregarFooterAdmin();
       });
     });
     raiz.querySelectorAll('[data-excluir-rede]').forEach((btn) => {
       btn.addEventListener('click', async () => {
-        await apiFetch(`/footer/redes-sociais/${btn.dataset.excluirRede}`, { method: 'DELETE' });
+        const resp = await apiFetch(`/footer/redes-sociais/${btn.dataset.excluirRede}`, { method: 'DELETE' });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível excluir.');
+          return;
+        }
         carregarFooterAdmin();
       });
     });
     document.getElementById('form-nova-rede').addEventListener('submit', async (e) => {
       e.preventDefault();
-      await apiFetch('/footer/redes-sociais', {
+      const resp = await apiFetch('/footer/redes-sociais', {
         method: 'POST',
         body: JSON.stringify({
           nome: document.getElementById('nova-rede-nome').value.trim(),
@@ -1465,6 +1593,11 @@
           icone: document.getElementById('nova-rede-icone').value.trim() || undefined,
         }),
       });
+      if (!resp.ok) {
+        const d = await resp.json().catch(() => ({}));
+        alert(d.erro || 'Não foi possível adicionar.');
+        return;
+      }
       carregarFooterAdmin();
     });
   }
@@ -1500,11 +1633,20 @@
     `;
 
     raiz.querySelectorAll('[data-grupo-visualizacao]').forEach((select) => {
+      let valorAnterior = select.value;
       select.addEventListener('change', async () => {
-        await apiFetch(`/documentos/${select.dataset.grupoVisualizacao}`, {
+        const novoValor = select.value;
+        const resp = await apiFetch(`/documentos/${select.dataset.grupoVisualizacao}`, {
           method: 'PATCH',
-          body: JSON.stringify({ grupo_visualizacao_solicitacoes_id: select.value ? Number(select.value) : null }),
+          body: JSON.stringify({ grupo_visualizacao_solicitacoes_id: novoValor ? Number(novoValor) : null }),
         });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível salvar.');
+          select.value = valorAnterior;
+          return;
+        }
+        valorAnterior = novoValor;
       });
     });
 
@@ -1597,7 +1739,12 @@
     raiz.querySelectorAll('[data-remover-permissao-doc]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         if (!confirm('Remover essa permissão?')) return;
-        await apiFetch(`/documentos-permissoes/${btn.dataset.removerPermissaoDoc}`, { method: 'DELETE' });
+        const resp = await apiFetch(`/documentos-permissoes/${btn.dataset.removerPermissaoDoc}`, { method: 'DELETE' });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível remover.');
+          return;
+        }
         carregarPermissoesDocumentos();
       });
     });
@@ -1676,13 +1823,18 @@
     raiz.querySelectorAll('[data-salvar-categoria]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const id = btn.dataset.salvarCategoria;
-        await apiFetch(`/documentos-categorias/${id}`, {
+        const resp = await apiFetch(`/documentos-categorias/${id}`, {
           method: 'PATCH',
           body: JSON.stringify({
             nome: raiz.querySelector(`[data-campo-nome="${id}"]`).value.trim(),
             banner_url: raiz.querySelector(`[data-campo-banner="${id}"]`).value.trim() || null,
           }),
         });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível salvar.');
+          return;
+        }
         carregarCategoriasDocumento();
       });
     });
@@ -1763,10 +1915,15 @@
     raiz.querySelectorAll('.btn-decidir-sugestao').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const motivo = prompt('Motivo da decisão (opcional):') || undefined;
-        await apiFetch(`/sugestoes/${btn.dataset.decidir}/decidir`, {
+        const resp = await apiFetch(`/sugestoes/${btn.dataset.decidir}/decidir`, {
           method: 'POST',
           body: JSON.stringify({ status: btn.dataset.status, motivo_decisao: motivo }),
         });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível decidir.');
+          return;
+        }
         carregarSugestoes();
       });
     });
@@ -1804,20 +1961,30 @@
 
     document.getElementById('form-novo-banner-admin').addEventListener('submit', async (e) => {
       e.preventDefault();
-      await apiFetch('/banners-perfil', {
+      const resp = await apiFetch('/banners-perfil', {
         method: 'POST',
         body: JSON.stringify({
           imagem_url: document.getElementById('novo-banner-url-admin').value.trim(),
           nome: document.getElementById('novo-banner-nome-admin').value.trim() || undefined,
         }),
       });
+      if (!resp.ok) {
+        const d = await resp.json().catch(() => ({}));
+        alert(d.erro || 'Não foi possível adicionar.');
+        return;
+      }
       carregarBanners();
     });
 
     raiz.querySelectorAll('[data-remover-banner]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         if (!confirm('Remover esse banner da lista?')) return;
-        await apiFetch(`/banners-perfil/${btn.dataset.removerBanner}`, { method: 'DELETE' });
+        const resp = await apiFetch(`/banners-perfil/${btn.dataset.removerBanner}`, { method: 'DELETE' });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível remover.');
+          return;
+        }
         carregarBanners();
       });
     });
@@ -1853,14 +2020,24 @@
 
     document.getElementById('form-nova-infracao').addEventListener('submit', async (e) => {
       e.preventDefault();
-      await apiFetch('/crimes', { method: 'POST', body: JSON.stringify({ nome: document.getElementById('nova-infracao-nome').value.trim() }) });
+      const resp = await apiFetch('/crimes', { method: 'POST', body: JSON.stringify({ nome: document.getElementById('nova-infracao-nome').value.trim() }) });
+      if (!resp.ok) {
+        const d = await resp.json().catch(() => ({}));
+        alert(d.erro || 'Não foi possível adicionar.');
+        return;
+      }
       carregarInfracoes();
     });
 
     raiz.querySelectorAll('[data-remover-crime]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         if (!confirm('Remover essa infração?')) return;
-        await apiFetch(`/crimes/${btn.dataset.removerCrime}`, { method: 'DELETE' });
+        const resp = await apiFetch(`/crimes/${btn.dataset.removerCrime}`, { method: 'DELETE' });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível remover.');
+          return;
+        }
         carregarInfracoes();
       });
     });
@@ -1923,7 +2100,12 @@
     raiz.querySelectorAll('[data-remover-motivo-gratificacao]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         if (!confirm('Remover esse motivo? Gratificações já concedidas com ele continuam intactas — só deixa de aparecer pra novos requerimentos.')) return;
-        await apiFetch(`/motivos-gratificacao/${btn.dataset.removerMotivoGratificacao}`, { method: 'DELETE' });
+        const resp = await apiFetch(`/motivos-gratificacao/${btn.dataset.removerMotivoGratificacao}`, { method: 'DELETE' });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível remover.');
+          return;
+        }
         carregarGratificacoes();
       });
     });
@@ -2093,7 +2275,12 @@
       raiz.querySelectorAll('[data-remover-pagina]').forEach((btn) => {
         btn.addEventListener('click', async () => {
           if (!confirm('Remover esta página? Ela deixa de ficar acessível, mas o registro continua guardado.')) return;
-          await apiFetch(`/paginas/${btn.dataset.removerPagina}`, { method: 'DELETE' });
+          const resp = await apiFetch(`/paginas/${btn.dataset.removerPagina}`, { method: 'DELETE' });
+          if (!resp.ok) {
+            const d = await resp.json().catch(() => ({}));
+            alert(d.erro || 'Não foi possível remover.');
+            return;
+          }
           carregarPaginas();
         });
       });
@@ -2174,20 +2361,30 @@
         alert('URL inválida: não é permitido usar links "javascript:" ou "data:".');
         return;
       }
-      await apiFetch('/menu', {
+      const resp = await apiFetch('/menu', {
         method: 'POST',
         body: JSON.stringify({
           titulo: document.getElementById('novo-item-titulo').value.trim(),
           url: urlItem,
         }),
       });
+      if (!resp.ok) {
+        const d = await resp.json().catch(() => ({}));
+        alert(d.erro || 'Não foi possível adicionar.');
+        return;
+      }
       carregarMenuAdmin();
     });
 
     raiz.querySelectorAll('[data-remover-item-menu]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         if (!confirm('Remover esse item do menu?')) return;
-        await apiFetch(`/menu/${btn.dataset.removerItemMenu}`, { method: 'DELETE' });
+        const resp = await apiFetch(`/menu/${btn.dataset.removerItemMenu}`, { method: 'DELETE' });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível remover.');
+          return;
+        }
         carregarMenuAdmin();
       });
     });

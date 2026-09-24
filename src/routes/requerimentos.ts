@@ -49,10 +49,10 @@ requerimentos.post('/', async (c) => {
   if (!autor.administrador_sistema) {
     const patenteDestinoId = (body.dados_especificos as { patente_destino_id?: number } | undefined)?.patente_destino_id
     if (patenteDestinoId) {
-      const patenteDestino = await c.env.DB.prepare(`SELECT nome FROM patentes WHERE id = ?`)
-        .bind(patenteDestinoId).first<{ nome: string }>()
-      if (patenteDestino?.nome === 'Alto Comando Militar') {
-        return c.json({ erro: 'só administradores do sistema podem promover alguém a Alto Comando Militar' }, 403)
+      const patenteDestino = await c.env.DB.prepare(`SELECT nome, eh_suprema FROM patentes WHERE id = ?`)
+        .bind(patenteDestinoId).first<{ nome: string; eh_suprema: number }>()
+      if (patenteDestino?.eh_suprema) {
+        return c.json({ erro: `só administradores do sistema podem promover alguém a ${patenteDestino.nome}` }, 403)
       }
     }
   }

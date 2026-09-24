@@ -87,16 +87,33 @@ decretos.post('/', async (c) => {
   }
 
   const ano = new Date().getUTCFullYear()
-  const ultimo = await c.env.DB.prepare(`SELECT COALESCE(MAX(numero), 0) AS max FROM decretos WHERE ano = ?`)
-    .bind(ano).first<{ max: number }>()
-  const numero = (ultimo?.max ?? 0) + 1
 
-  const { meta } = await c.env.DB.prepare(
-    `INSERT INTO decretos (numero, ano, titulo, resumo, conteudo, grupo_id, categoria_id, autor_id, operado_por_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(numero, ano, body.titulo.trim(), body.resumo.trim(), body.conteudo.trim(), body.grupo_id, body.categoria_id, autor.autorId, autor.operadoPorId).run()
+  // O número vem de uma subquery dentro do próprio INSERT (em vez de
+  // um SELECT MAX()+1 separado) pra reduzir a janela de corrida entre
+  // ler o próximo número e gravar — ainda não é atômico de verdade
+  // (D1/SQLite não têm transação read-then-write isolada aqui), mas o
+  // UNIQUE(ano, numero) garante que uma colisão nunca grava dois
+  // decretos com o mesmo número: quem perder a corrida recebe 409 em
+  // vez do 500 cru de antes.
+  let numero: number
+  let lastRowId: number | bigint
+  try {
+    const { meta } = await c.env.DB.prepare(
+      `INSERT INTO decretos (numero, ano, titulo, resumo, conteudo, grupo_id, categoria_id, autor_id, operado_por_id)
+       VALUES ((SELECT COALESCE(MAX(numero), 0) + 1 FROM decretos WHERE ano = ?), ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(ano, ano, body.titulo.trim(), body.resumo.trim(), body.conteudo.trim(), body.grupo_id, body.categoria_id, autor.autorId, autor.operadoPorId).run()
+    lastRowId = meta.last_row_id
+    const inserido = await c.env.DB.prepare(`SELECT numero FROM decretos WHERE id = ?`).bind(lastRowId).first<{ numero: number }>()
+    numero = inserido!.numero
+  } catch (err) {
+    const mensagem = err instanceof Error ? err.message : String(err)
+    if (mensagem.includes('UNIQUE')) {
+      return c.json({ erro: 'numeração em disputa com outro decreto publicado ao mesmo tempo — tente de novo' }, 409)
+    }
+    throw err
+  }
 
-  return c.json({ id: meta.last_row_id, numero, ano }, 201)
+  return c.json({ id: lastRowId, numero, ano }, 201)
 })
 
 // GET /decretos?pagina=N&categoria_id=N — lista paginada (10 por

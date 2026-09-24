@@ -783,7 +783,7 @@ async function montarFormularioRequerimento(config) {
     const resp = await apiFetch(`/patentes?corpo=${config.patenteCorpo}`);
     let todasPatentes = resp.ok ? await resp.json() : [];
     if (!meAtual?.administrador_sistema) {
-      todasPatentes = todasPatentes.filter((p) => p.nome !== 'Alto Comando Militar');
+      todasPatentes = todasPatentes.filter((p) => !p.eh_suprema);
     }
     patentesCacheCompleta = todasPatentes;
     document.getElementById('req-patente').innerHTML = patentesCacheCompleta.map((p) => `<option value="${p.id}">${p.nome}</option>`).join('');

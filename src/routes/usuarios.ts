@@ -1,6 +1,8 @@
 import { Hono } from 'hono'
 import { buscarJogadorHabblet } from '../services/habblet'
 import { hashSenha } from '../services/senha'
+import { revogarTodasSessoes } from '../services/auth'
+import { registrarEvento } from '../services/logs'
 
 type Bindings = { DB: D1Database }
 type Variables = { usuarioId: number }
@@ -169,6 +171,42 @@ usuarios.post('/alterar-senha', async (c) => {
   await c.env.DB.prepare(
     `UPDATE usuarios SET senha_hash = ?, senha_atualizada_em = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
   ).bind(hash, usuarioId).run()
+
+  return c.json({ ok: true })
+})
+
+// PATCH /usuarios/:id/senha — administrador do sistema cria ou
+// redefine a senha de acesso de QUALQUER usuário, sem precisar do
+// código na missão do Habblet (o admin já provou quem é ao logar, e
+// está agindo sobre a conta de outra pessoa — ex: alguém perdeu acesso
+// ao próprio Habblet, ou uma conta institucional precisa de senha
+// pela primeira vez). Sempre revoga as sessões ativas do alvo depois:
+// se a senha estava comprometida (motivo mais comum pra pedir um
+// reset), continuar logado com o token antigo anularia o reset.
+usuarios.patch('/:id/senha', async (c) => {
+  const usuarioAtualId = c.get('usuarioId')
+  if (!(await ehAdmin(c.env.DB, usuarioAtualId))) {
+    return c.json({ erro: 'só administradores do sistema podem definir a senha de outro usuário' }, 403)
+  }
+
+  const alvoId = c.req.param('id')
+  const alvo = await c.env.DB.prepare(`SELECT id FROM usuarios WHERE id = ?`).bind(alvoId).first()
+  if (!alvo) return c.json({ erro: 'usuário não encontrado' }, 404)
+
+  const body = await c.req.json<{ senha: string }>().catch(() => ({}) as { senha?: string })
+  if (!body.senha || body.senha.length < 6) {
+    return c.json({ erro: 'a senha precisa ter pelo menos 6 caracteres' }, 400)
+  }
+
+  const hash = await hashSenha(body.senha)
+  await c.env.DB.prepare(
+    `UPDATE usuarios SET senha_hash = ?, senha_atualizada_em = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
+  ).bind(hash, alvoId).run()
+
+  await revogarTodasSessoes(c.env.DB, Number(alvoId))
+  await registrarEvento(c.env.DB, usuarioAtualId, 'senha_definida_por_admin', {
+    referenciaTipo: 'usuario', referenciaId: Number(alvoId),
+  })
 
   return c.json({ ok: true })
 })
@@ -504,6 +542,12 @@ usuarios.delete('/:id', async (c) => {
     db.prepare(`DELETE FROM paginas_customizadas WHERE criado_por_id = ?`).bind(id),
     db.prepare(`UPDATE paginas_customizadas SET atualizado_por_id = NULL WHERE atualizado_por_id = ?`).bind(id),
     db.prepare(`DELETE FROM menu_itens WHERE criado_por_id = ?`).bind(id),
+
+    // --- Projetos (propostas, correções, sugestões via módulo novo) ---
+    db.prepare(`DELETE FROM projeto_votos WHERE usuario_id = ?`).bind(id),
+    db.prepare(`DELETE FROM projeto_historico WHERE criado_por_id = ?`).bind(id),
+    db.prepare(`UPDATE projetos SET responsavel_id = NULL, responsavel_definido_por_id = NULL WHERE responsavel_id = ? OR responsavel_definido_por_id = ?`).bind(id, id),
+    db.prepare(`DELETE FROM projetos WHERE autor_id = ?`).bind(id),
 
     // --- Sugestões e tickets ---
     db.prepare(`DELETE FROM sugestoes WHERE autor_id = ?`).bind(id),

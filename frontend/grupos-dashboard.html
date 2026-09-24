@@ -192,7 +192,12 @@
     document.querySelectorAll('.btn-deletar-noticia').forEach((btn) => {
       btn.addEventListener('click', async () => {
         if (!confirm('Excluir essa notícia?')) return;
-        await apiFetch(`/grupos/${slug}/noticias/${btn.dataset.id}`, { method: 'DELETE' });
+        const resp = await apiFetch(`/grupos/${slug}/noticias/${btn.dataset.id}`, { method: 'DELETE' });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível excluir.');
+          return;
+        }
         btn.closest('[data-noticia-id]').remove();
       });
     });
@@ -216,7 +221,13 @@
           return;
         }
         const { id } = await resp.json();
-        await apiFetch(`/grupos/${slug}/noticias/${id}/publicar`, { method: 'POST' });
+        const respPublicar = await apiFetch(`/grupos/${slug}/noticias/${id}/publicar`, { method: 'POST' });
+        if (!respPublicar.ok) {
+          const d = await respPublicar.json().catch(() => ({}));
+          erroEl.textContent = d.erro || 'Não foi possível publicar.';
+          erroEl.classList.remove('hidden');
+          return;
+        }
         montarNoticias(souAdminDoGrupo, me);
       });
     }
@@ -254,10 +265,15 @@
       `;
       ligarEditorHtml('editor-regimento');
       editArea.querySelector('#btn-salvar-regimento').addEventListener('click', async () => {
-        await apiFetch(`/grupos/${slug}/paginas/regimento-interno`, {
+        const resp = await apiFetch(`/grupos/${slug}/paginas/regimento-interno`, {
           method: 'PATCH',
           body: JSON.stringify({ titulo: 'Regimento Interno', conteudo_html: document.getElementById('editor-regimento-textarea').value }),
         });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível salvar.');
+          return;
+        }
         montarRegimentoInterno(souAdminDoGrupo);
       });
     });
@@ -307,9 +323,14 @@
     advertencia: { rotuloCargo: 'Cargo', permissao: true },
   };
 
-  function formatarDataExtensoRegistro(valorInputDate) {
+  // Só formata pra EXIBIÇÃO — o que vai pro backend em `data_efetiva`
+  // é sempre o valor ISO (YYYY-MM-DD) puro do <input type="date">,
+  // nunca esse texto livre (antes os dois eram confundidos e o texto
+  // já formatado é que ia parar no banco).
+  function formatarDataExtensoRegistro(valorIso) {
+    if (!valorIso) return '—';
     const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-    const [ano, mes, dia] = valorInputDate.split('-').map(Number);
+    const [ano, mes, dia] = valorIso.split('-').map(Number);
     return `${String(dia).padStart(2,'0')} ${MESES[mes - 1]} ${ano}`;
   }
 
@@ -332,7 +353,7 @@
         <div class="flex items-center justify-between px-4 py-2.5 border-b border-border">
           <p class="text-sm font-bold">${TIPO_REGISTRO_LABEL[r.tipo] || r.tipo}</p>
           <div class="flex items-center gap-3">
-            <p class="text-xs text-muted">${r.data_efetiva || new Date(r.criado_em).toLocaleDateString('pt-BR')}</p>
+            <p class="text-xs text-muted">${r.data_efetiva ? formatarDataExtensoRegistro(r.data_efetiva) : new Date(r.criado_em).toLocaleDateString('pt-BR')}</p>
             ${souAdminDoGrupo ? `<button class="btn-deletar-registro hover:text-red-600 transition-colors text-muted" data-id="${r.id}" title="Excluir"><i class="fa-solid fa-trash text-xs"></i></button>` : ''}
           </div>
         </div>
@@ -431,7 +452,12 @@
     document.querySelectorAll('.btn-deletar-registro').forEach((btn) => {
       btn.addEventListener('click', async () => {
         if (!confirm('Excluir esse requerimento interno? Isso só apaga o registro — não desfaz o efeito já aplicado.')) return;
-        await apiFetch(`/grupos/${slug}/registros/${btn.dataset.id}`, { method: 'DELETE' });
+        const resp = await apiFetch(`/grupos/${slug}/registros/${btn.dataset.id}`, { method: 'DELETE' });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível excluir.');
+          return;
+        }
         document.querySelector(`[data-registro-id="${btn.dataset.id}"]`).remove();
       });
     });
@@ -454,7 +480,7 @@
           nivel_novo_id: Number(document.getElementById('nr-cargo').value),
           motivo: document.getElementById('nr-observacoes').value.trim() || undefined,
           permissao: document.getElementById('nr-permissao').value.trim() || undefined,
-          data_efetiva: dataInput ? formatarDataExtensoRegistro(dataInput) : undefined,
+          data_efetiva: dataInput || undefined,
         }),
       });
       if (!resp.ok) {
@@ -496,7 +522,7 @@
             ${avatarPessoaPequeno(rel.instrutor_nick, figInstrutor)}
             <p><b>Instrutor:</b> ${rel.instrutor_nick}</p>
           </div>
-          <p><b>Data:</b> ${rel.data_efetiva}</p>
+          <p><b>Data:</b> ${formatarDataExtensoRegistro(rel.data_efetiva)}</p>
           <div>
             <p class="font-semibold mb-1">Aluno${rel.alunos.length > 1 ? 's' : ''}:</p>
             <div class="space-y-1">
@@ -584,7 +610,12 @@
     document.querySelectorAll('.btn-deletar-relatorio').forEach((btn) => {
       btn.addEventListener('click', async () => {
         if (!confirm('Excluir esse relatório de aula?')) return;
-        await apiFetch(`/grupos/${slug}/aulas-relatorios/${btn.dataset.id}`, { method: 'DELETE' });
+        const resp = await apiFetch(`/grupos/${slug}/aulas-relatorios/${btn.dataset.id}`, { method: 'DELETE' });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível excluir.');
+          return;
+        }
         document.querySelector(`[data-relatorio-id="${btn.dataset.id}"]`).remove();
       });
     });
@@ -614,7 +645,7 @@
           alunos_ids: alunos,
           aprovado: document.getElementById('rel-resultado').value === '1',
           comentario: document.getElementById('rel-comentario').value.trim() || undefined,
-          data_efetiva: dataInput ? formatarDataExtensoRegistro(dataInput) : undefined,
+          data_efetiva: dataInput || undefined,
         }),
       });
       if (!resp.ok) {
@@ -711,10 +742,15 @@
       form.querySelector('form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const niveisSelecionados = [...form.querySelectorAll('[data-nivel-id]')].filter((chk) => chk.checked).map((chk) => Number(chk.dataset.nivelId));
-        await apiFetch(`/grupos/${slug}/aulas-categorias`, {
+        const resp = await apiFetch(`/grupos/${slug}/aulas-categorias`, {
           method: 'POST',
           body: JSON.stringify({ nome: document.getElementById('nome-nova-categoria-aula').value.trim(), niveis_ids: niveisSelecionados }),
         });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível criar.');
+          return;
+        }
         montarAulas(grupo, souAdminDoGrupo);
       });
     });
@@ -738,9 +774,14 @@
         form.querySelector('form').addEventListener('submit', async (e) => {
           e.preventDefault();
           const niveisSelecionados = [...form.querySelectorAll('[data-nivel-id]')].filter((chk) => chk.checked).map((chk) => Number(chk.dataset.nivelId));
-          await apiFetch(`/grupos/${slug}/aulas-categorias/${catId}`, {
+          const resp = await apiFetch(`/grupos/${slug}/aulas-categorias/${catId}`, {
             method: 'PATCH', body: JSON.stringify({ niveis_ids: niveisSelecionados }),
           });
+          if (!resp.ok) {
+            const d = await resp.json().catch(() => ({}));
+            alert(d.erro || 'Não foi possível salvar.');
+            return;
+          }
           montarAulas(grupo, souAdminDoGrupo);
         });
       });
@@ -749,7 +790,12 @@
     container.querySelectorAll('[data-excluir-categoria-aula]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         if (!confirm('Excluir essa categoria? As aulas dela ficam sem categoria.')) return;
-        await apiFetch(`/grupos/${slug}/aulas-categorias/${btn.dataset.excluirCategoriaAula}`, { method: 'DELETE' });
+        const resp = await apiFetch(`/grupos/${slug}/aulas-categorias/${btn.dataset.excluirCategoriaAula}`, { method: 'DELETE' });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível excluir.');
+          return;
+        }
         montarAulas(grupo, souAdminDoGrupo);
       });
     });
@@ -855,10 +901,15 @@
       `;
       ligarEditorHtml('editor-editar-aula');
       editArea.querySelector('#btn-salvar-aula').addEventListener('click', async () => {
-        await apiFetch(`/grupos/${slug}/aulas/${aula.id}`, {
+        const resp = await apiFetch(`/grupos/${slug}/aulas/${aula.id}`, {
           method: 'PATCH',
           body: JSON.stringify({ conteudo: document.getElementById('editor-editar-aula-textarea').value }),
         });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível salvar.');
+          return;
+        }
         montarAulaIndividual(grupo, souAdminDoGrupo, container);
       });
     });
@@ -1099,7 +1150,7 @@
     config.querySelectorAll('[data-salvar-nivel]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const id = btn.dataset.salvarNivel;
-        await apiFetch(`/grupos/${slug}/niveis/${id}`, {
+        const resp = await apiFetch(`/grupos/${slug}/niveis/${id}`, {
           method: 'PATCH',
           body: JSON.stringify({
             nome: config.querySelector(`[data-nivel-nome="${id}"]`).value.trim(),
@@ -1107,6 +1158,11 @@
             abreviacao: config.querySelector(`[data-nivel-abreviacao="${id}"]`).value.trim(),
           }),
         });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível salvar.');
+          return;
+        }
         montarConfigHierarquia(grupo);
       });
     });
@@ -1124,7 +1180,7 @@
     });
     document.getElementById('form-novo-nivel').addEventListener('submit', async (e) => {
       e.preventDefault();
-      await apiFetch(`/grupos/${slug}/niveis`, {
+      const resp = await apiFetch(`/grupos/${slug}/niveis`, {
         method: 'POST',
         body: JSON.stringify({
           nome: document.getElementById('novo-nivel-nome').value.trim(),
@@ -1132,6 +1188,11 @@
           abreviacao: document.getElementById('novo-nivel-abreviacao').value.trim() || undefined,
         }),
       });
+      if (!resp.ok) {
+        const d = await resp.json().catch(() => ({}));
+        alert(d.erro || 'Não foi possível adicionar.');
+        return;
+      }
       montarConfigHierarquia(grupo);
     });
     config.querySelectorAll('[data-toggle-admin-grupo]').forEach((chk) => {

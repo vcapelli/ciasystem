@@ -387,10 +387,15 @@
       `;
       ligarEditorHtml('editor-conteudo-solicitacao');
       document.getElementById('btn-salvar-rascunho').addEventListener('click', async () => {
-        await apiFetch(`/documentos/${documentoId}/revisoes/${r.id}/historico`, {
+        const resp = await apiFetch(`/documentos/${documentoId}/revisoes/${r.id}/historico`, {
           method: 'POST',
           body: JSON.stringify({ descricao: 'Rascunho salvo.', conteudo_proposto: document.getElementById('editor-conteudo-solicitacao-textarea').value }),
         });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível salvar o rascunho.');
+          return;
+        }
         montarSolicitacao(me);
       });
     } else {
@@ -464,7 +469,12 @@
     const btnAprovar = document.getElementById('btn-assinar-aprovar');
     if (btnAprovar) {
       btnAprovar.addEventListener('click', async () => {
-        await apiFetch(`/documentos/${documentoId}/revisoes/${r.id}/assinar`, { method: 'POST', body: JSON.stringify({ status: 'aprovado' }) });
+        const resp = await apiFetch(`/documentos/${documentoId}/revisoes/${r.id}/assinar`, { method: 'POST', body: JSON.stringify({ status: 'aprovado' }) });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível aprovar.');
+          return;
+        }
         montarSolicitacao(me);
       });
     }
@@ -472,7 +482,12 @@
     if (btnReprovar) {
       btnReprovar.addEventListener('click', async () => {
         const comentario = prompt('Motivo da reprovação (opcional) — isso reinicia toda a votação:') || undefined;
-        await apiFetch(`/documentos/${documentoId}/revisoes/${r.id}/assinar`, { method: 'POST', body: JSON.stringify({ status: 'reprovado', comentario }) });
+        const resp = await apiFetch(`/documentos/${documentoId}/revisoes/${r.id}/assinar`, { method: 'POST', body: JSON.stringify({ status: 'reprovado', comentario }) });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível reprovar.');
+          return;
+        }
         montarSolicitacao(me);
       });
     }
@@ -482,9 +497,14 @@
       btnAgendar.addEventListener('click', async () => {
         const valor = document.getElementById('input-agendar').value;
         if (!valor) return;
-        await apiFetch(`/documentos/${documentoId}/revisoes/${r.id}/agendar`, {
+        const resp = await apiFetch(`/documentos/${documentoId}/revisoes/${r.id}/agendar`, {
           method: 'POST', body: JSON.stringify({ agendado_para: new Date(valor).toISOString() }),
         });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível agendar.');
+          return;
+        }
         montarSolicitacao(me);
       });
     }
@@ -493,7 +513,12 @@
     if (btnImplementar) {
       btnImplementar.addEventListener('click', async () => {
         if (!confirm('Implementar essa revisão agora? Isso substitui o conteúdo vigente do documento.')) return;
-        await apiFetch(`/documentos/${documentoId}/revisoes/${r.id}/implementar`, { method: 'POST' });
+        const resp = await apiFetch(`/documentos/${documentoId}/revisoes/${r.id}/implementar`, { method: 'POST' });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível implementar essa revisão.');
+          return;
+        }
         window.location.href = `/documentos/${slugDocumento}`;
       });
     }
@@ -503,9 +528,14 @@
       formHistorico.addEventListener('submit', async (e) => {
         e.preventDefault();
         const input = formHistorico.querySelector('input');
-        await apiFetch(`/documentos/${documentoId}/revisoes/${r.id}/historico`, {
+        const resp = await apiFetch(`/documentos/${documentoId}/revisoes/${r.id}/historico`, {
           method: 'POST', body: JSON.stringify({ descricao: input.value.trim() }),
         });
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          alert(d.erro || 'Não foi possível adicionar.');
+          return;
+        }
         montarSolicitacao(me);
       });
     }
