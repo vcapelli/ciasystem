@@ -63,6 +63,16 @@
     return `${String(d.getDate()).padStart(2,'0')} ${MESES[d.getMonth()]} ${d.getFullYear()}`;
   }
 
+  // Data de HOJE no fuso do navegador, pra preencher <input type="date">
+  // — 'new Date().toISOString().slice(0,10)' converte pra UTC antes de
+  // cortar, então em fuso negativo (ex: BRT/UTC-3) qualquer horário a
+  // partir das 21h local já cai no dia seguinte em UTC, e o campo abre
+  // marcado com a data errada. Usa os getters LOCAIS em vez disso.
+  function hojeLocalISO() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+
   const _cacheFigurePorNick = {};
   async function buscarFigurePorNick(nick) {
     if (!nick || nick === '—') return null;
@@ -416,7 +426,7 @@
     ligarSeletorUsuarios('nr-seletor-nick', {});
     document.getElementById('nr-tipo').addEventListener('change', (e) => repintarCamposTipo(e.target.value));
     repintarCamposTipo('admissao');
-    document.getElementById('nr-data').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('nr-data').value = hojeLocalISO();
 
     document.querySelectorAll('.btn-deletar-registro').forEach((btn) => {
       btn.addEventListener('click', async () => {
@@ -583,7 +593,7 @@
 
     ligarSeletorUsuarios('rel-seletor-instrutor', { iniciais: [{ id: me.id, nick: me.nick }] });
     ligarSeletorUsuarios('rel-seletor-alunos', {});
-    document.getElementById('rel-data').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('rel-data').value = hojeLocalISO();
 
     document.getElementById('form-relatorio-aula').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -624,17 +634,26 @@
 
     if (subPagina) { await montarAulaIndividual(grupo, souAdminDoGrupo, container); return; }
 
-    const [aulasResp, categoriasResp] = await Promise.all([
-      apiFetch(`/grupos/${slug}/aulas`), apiFetch(`/grupos/${slug}/aulas-categorias`),
+    const [aulasResp, categoriasResp, niveisResp] = await Promise.all([
+      apiFetch(`/grupos/${slug}/aulas`), apiFetch(`/grupos/${slug}/aulas-categorias`), apiFetch(`/grupos/${slug}/niveis`),
     ]);
     const aulas = aulasResp.ok ? await aulasResp.json() : [];
     const categorias = categoriasResp.ok ? await categoriasResp.json() : [];
+    const niveis = niveisResp.ok ? await niveisResp.json() : [];
 
     const semCategoria = aulas.filter((a) => !a.categoria_id);
     const grupos = [
       ...categorias.map((cat) => ({ categoria: cat, itens: aulas.filter((a) => a.categoria_id === cat.id) })),
-      ...(semCategoria.length ? [{ categoria: { id: null, nome: 'Sem categoria' }, itens: semCategoria }] : []),
+      ...(semCategoria.length ? [{ categoria: { id: null, nome: 'Sem categoria', niveis_ids: [] }, itens: semCategoria }] : []),
     ];
+
+    function checkboxesNiveis(idPrefixo, niveisMarcados) {
+      return [...niveis].sort((a,b) => a.ordem - b.ordem).map((n) => `
+        <label class="flex items-center gap-2 bg-basebg border border-border rounded-lg px-3 py-1.5 text-xs">
+          <input type="checkbox" data-${idPrefixo}-nivel="${n.id}" ${niveisMarcados.includes(n.id) ? 'checked' : ''}> ${n.nome}
+        </label>
+      `).join('');
+    }
 
     container.innerHTML = `
       ${souAdminDoGrupo ? `
@@ -649,8 +668,13 @@
         <div class="bg-card border border-border rounded-2xl shadow-sm overflow-hidden mb-3">
           <div class="flex items-center gap-3 px-4 py-3 bg-basebg border-b border-border">
             <p class="text-sm font-bold uppercase tracking-wide">${categoria.nome}</p>
-            ${souAdminDoGrupo && categoria.id ? `<button data-excluir-categoria-aula="${categoria.id}" class="text-muted hover:text-red-600 transition-colors ml-auto px-1"><i class="fa-solid fa-trash text-xs"></i></button>` : ''}
+            ${categoria.id && categoria.niveis_ids?.length ? `<span class="text-[0.65rem] text-muted" title="Só visível pra: ${categoria.niveis_ids.map((id) => niveis.find((n) => n.id === id)?.nome || '?').join(', ')}"><i class="fa-solid fa-lock"></i> restrita</span>` : ''}
+            ${souAdminDoGrupo && categoria.id ? `
+              <button data-editar-categoria-aula="${categoria.id}" class="text-muted hover:text-accent transition-colors ml-auto px-1" title="Editar acesso"><i class="fa-solid fa-gear text-xs"></i></button>
+              <button data-excluir-categoria-aula="${categoria.id}" class="text-muted hover:text-red-600 transition-colors px-1" title="Excluir"><i class="fa-solid fa-trash text-xs"></i></button>
+            ` : ''}
           </div>
+          <div id="form-editar-categoria-${categoria.id}" class="hidden"></div>
           <div class="divide-y divide-border">
             ${itens.length ? itens.map((a) => `
               <a href="/grupos/${slug}/aulas/${a.slug}" class="flex items-center justify-between px-4 py-2.5 hover:bg-basebg transition-colors">
@@ -675,17 +699,50 @@
       if (!abrindo) return;
       form.classList.remove('hidden');
       form.innerHTML = `
-        <form class="bg-card border border-border rounded-2xl shadow-sm p-4 flex gap-2">
-          <input id="nome-nova-categoria-aula" placeholder="Nome da categoria" required class="flex-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
-          <button type="submit" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Criar</button>
+        <form class="bg-card border border-border rounded-2xl shadow-sm p-4 space-y-2">
+          <div class="flex gap-2">
+            <input id="nome-nova-categoria-aula" placeholder="Nome da categoria" required class="flex-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            <button type="submit" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Criar</button>
+          </div>
+          <p class="text-xs text-muted">Cargos com acesso (deixe tudo desmarcado pra liberar a categoria e as aulas dela pra qualquer membro):</p>
+          <div class="flex flex-wrap gap-1.5">${checkboxesNiveis('nova-cat', [])}</div>
         </form>
       `;
       form.querySelector('form').addEventListener('submit', async (e) => {
         e.preventDefault();
+        const niveisSelecionados = [...form.querySelectorAll('[data-nova-cat-nivel]')].filter((chk) => chk.checked).map((chk) => Number(chk.dataset.novaCatNivel));
         await apiFetch(`/grupos/${slug}/aulas-categorias`, {
-          method: 'POST', body: JSON.stringify({ nome: document.getElementById('nome-nova-categoria-aula').value.trim() }),
+          method: 'POST',
+          body: JSON.stringify({ nome: document.getElementById('nome-nova-categoria-aula').value.trim(), niveis_ids: niveisSelecionados }),
         });
         montarAulas(grupo, souAdminDoGrupo);
+      });
+    });
+
+    container.querySelectorAll('[data-editar-categoria-aula]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const catId = btn.dataset.editarCategoriaAula;
+        const categoria = categorias.find((c) => String(c.id) === catId);
+        const form = document.getElementById(`form-editar-categoria-${catId}`);
+        const abrindo = form.classList.contains('hidden');
+        container.querySelectorAll('[id^="form-editar-categoria-"]').forEach((f) => f.classList.add('hidden'));
+        if (!abrindo) return;
+        form.classList.remove('hidden');
+        form.innerHTML = `
+          <form class="p-4 border-b border-border space-y-2">
+            <p class="text-xs text-muted">Cargos com acesso a essa categoria (deixe tudo desmarcado pra liberar pra qualquer membro):</p>
+            <div class="flex flex-wrap gap-1.5">${checkboxesNiveis(`editar-cat-${catId}`, categoria?.niveis_ids || [])}</div>
+            <button type="submit" class="text-xs font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-3 py-1.5 transition-colors">Salvar</button>
+          </form>
+        `;
+        form.querySelector('form').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const niveisSelecionados = [...form.querySelectorAll(`[data-editar-cat-${catId}-nivel]`)].filter((chk) => chk.checked).map((chk) => Number(chk.dataset[`editarCat${catId}Nivel`]));
+          await apiFetch(`/grupos/${slug}/aulas-categorias/${catId}`, {
+            method: 'PATCH', body: JSON.stringify({ niveis_ids: niveisSelecionados }),
+          });
+          montarAulas(grupo, souAdminDoGrupo);
+        });
       });
     });
 

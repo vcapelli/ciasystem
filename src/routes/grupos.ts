@@ -21,6 +21,15 @@ async function pertenceAoGrupo(db: D1Database, usuarioId: number, grupoId: numbe
   return membro !== null
 }
 
+// Cargos liberados pra ver uma categoria de aulas — vazio = sem
+// restrição, visível a qualquer membro (comportamento padrão de antes
+// dessa feature existir).
+async function niveisDaCategoriaAula(db: D1Database, categoriaId: number): Promise<number[]> {
+  const { results } = await db.prepare(`SELECT nivel_id FROM grupo_aulas_categoria_niveis WHERE categoria_id = ?`)
+    .bind(categoriaId).all<{ nivel_id: number }>()
+  return results.map((r) => r.nivel_id)
+}
+
 // --- Leitura do hub ---
 
 // GET /grupos — lista os grupos ativos, com contagem de membros (pra
@@ -522,20 +531,48 @@ grupos.delete('/:slug/aulas/:aulaId', async (c) => {
 
 // --- Categorias de aula ---
 
+// Lista as categorias visíveis pro usuário logado — uma categoria com
+// cargos configurados em grupo_aulas_categoria_niveis só aparece pra
+// quem está num desses cargos (admin do grupo sempre vê tudo, pra
+// poder gerenciar categorias que ele mesmo não teria acesso de ver).
 grupos.get('/:slug/aulas-categorias', async (c) => {
+  const usuarioId = c.get('usuarioId')
   const slug = c.req.param('slug')
   const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
   if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
+  if (!(await pertenceAoGrupo(c.env.DB, usuarioId, grupo.id))) {
+    return c.json({ erro: 'só membros deste grupo (ou administradores) podem ver isso' }, 403)
+  }
 
-  const { results } = await c.env.DB.prepare(`SELECT * FROM grupo_aulas_categorias WHERE grupo_id = ? ORDER BY ordem, nome`)
-    .bind(grupo.id).all()
-  return c.json(results)
+  const { results: categorias } = await c.env.DB.prepare(`SELECT * FROM grupo_aulas_categorias WHERE grupo_id = ? ORDER BY ordem, nome`)
+    .bind(grupo.id).all<{ id: number }>()
+
+  const { results: restricoes } = await c.env.DB.prepare(
+    `SELECT can.categoria_id, can.nivel_id FROM grupo_aulas_categoria_niveis can
+     JOIN grupo_aulas_categorias cat ON cat.id = can.categoria_id
+     WHERE cat.grupo_id = ?`
+  ).bind(grupo.id).all<{ categoria_id: number; nivel_id: number }>()
+  const niveisPorCategoria = new Map<number, number[]>()
+  for (const r of restricoes) {
+    if (!niveisPorCategoria.has(r.categoria_id)) niveisPorCategoria.set(r.categoria_id, [])
+    niveisPorCategoria.get(r.categoria_id)!.push(r.nivel_id)
+  }
+  const comNiveis = categorias.map((cat) => ({ ...cat, niveis_ids: niveisPorCategoria.get(cat.id) ?? [] }))
+
+  const souAdmin = await ehAdminDoGrupo(c.env.DB, usuarioId, grupo.id)
+  if (souAdmin) return c.json(comNiveis)
+
+  const membro = await c.env.DB.prepare(`SELECT nivel_id FROM usuario_grupos WHERE usuario_id = ? AND grupo_id = ? AND ativo = 1`)
+    .bind(usuarioId, grupo.id).first<{ nivel_id: number }>()
+
+  const visiveis = comNiveis.filter((cat) => !cat.niveis_ids.length || (membro && cat.niveis_ids.includes(membro.nivel_id)))
+  return c.json(visiveis)
 })
 
 grupos.post('/:slug/aulas-categorias', async (c) => {
   const usuarioId = c.get('usuarioId')
   const slug = c.req.param('slug')
-  const body = await c.req.json<{ nome: string; ordem?: number }>()
+  const body = await c.req.json<{ nome: string; ordem?: number; niveis_ids?: number[] }>()
 
   const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
   if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
@@ -545,13 +582,20 @@ grupos.post('/:slug/aulas-categorias', async (c) => {
 
   const { meta } = await c.env.DB.prepare(`INSERT INTO grupo_aulas_categorias (grupo_id, nome, ordem) VALUES (?, ?, ?)`)
     .bind(grupo.id, body.nome, body.ordem ?? 0).run()
-  return c.json({ id: meta.last_row_id }, 201)
+
+  const categoriaId = meta.last_row_id
+  for (const nivelId of body.niveis_ids ?? []) {
+    await c.env.DB.prepare(`INSERT INTO grupo_aulas_categoria_niveis (categoria_id, nivel_id) VALUES (?, ?)`)
+      .bind(categoriaId, nivelId).run()
+  }
+
+  return c.json({ id: categoriaId }, 201)
 })
 
 grupos.patch('/:slug/aulas-categorias/:catId', async (c) => {
   const usuarioId = c.get('usuarioId')
   const { slug, catId } = c.req.param()
-  const body = await c.req.json<{ nome?: string; ordem?: number }>()
+  const body = await c.req.json<{ nome?: string; ordem?: number; niveis_ids?: number[] }>()
 
   const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
   if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
@@ -561,6 +605,17 @@ grupos.patch('/:slug/aulas-categorias/:catId', async (c) => {
 
   await c.env.DB.prepare(`UPDATE grupo_aulas_categorias SET nome = COALESCE(?, nome), ordem = COALESCE(?, ordem) WHERE id = ? AND grupo_id = ?`)
     .bind(body.nome ?? null, body.ordem ?? null, catId, grupo.id).run()
+
+  // Undefined = não mexe na restrição; um array (mesmo vazio) substitui
+  // a seleção inteira — array vazio = "libera pra todo mundo de novo".
+  if (body.niveis_ids !== undefined) {
+    await c.env.DB.prepare(`DELETE FROM grupo_aulas_categoria_niveis WHERE categoria_id = ?`).bind(catId).run()
+    for (const nivelId of body.niveis_ids) {
+      await c.env.DB.prepare(`INSERT INTO grupo_aulas_categoria_niveis (categoria_id, nivel_id) VALUES (?, ?)`)
+        .bind(catId, nivelId).run()
+    }
+  }
+
   return c.json({ ok: true })
 })
 
@@ -590,19 +645,33 @@ grupos.get('/:slug/aulas', async (c) => {
   }
 
   const { results } = await c.env.DB.prepare(`SELECT * FROM grupo_aulas WHERE grupo_id = ? AND ativo = 1 ORDER BY ordem`)
-    .bind(grupo.id).all<{ id: number; nivel_minimo_id: number | null }>()
+    .bind(grupo.id).all<{ id: number; nivel_minimo_id: number | null; categoria_id: number | null }>()
 
+  const souAdmin = await ehAdminDoGrupo(c.env.DB, usuarioId, grupo.id)
   const membro = await c.env.DB.prepare(
-    `SELECT gn.ordem FROM usuario_grupos ug JOIN grupo_niveis gn ON gn.id = ug.nivel_id
+    `SELECT ug.nivel_id, gn.ordem FROM usuario_grupos ug JOIN grupo_niveis gn ON gn.id = ug.nivel_id
      WHERE ug.usuario_id = ? AND ug.grupo_id = ? AND ug.ativo = 1`
-  ).bind(usuarioId, grupo.id).first<{ ordem: number }>()
+  ).bind(usuarioId, grupo.id).first<{ nivel_id: number; ordem: number }>()
 
+  // Dois filtros independentes que se combinam: o corte por ordem da
+  // aula individual (nivel_minimo_id, já existia) e a restrição por
+  // cargo da categoria dela (grupo_aulas_categoria_niveis, nova) — a
+  // aula só aparece se passar nos dois. Admin do grupo vê tudo, pra
+  // conseguir gerenciar mesmo o que ele não teria acesso de ver.
   const visiveis = []
   for (const aula of results) {
-    if (aula.nivel_minimo_id === null) { visiveis.push(aula); continue }
-    if (!membro) continue
-    const minimo = await c.env.DB.prepare(`SELECT ordem FROM grupo_niveis WHERE id = ?`).bind(aula.nivel_minimo_id).first<{ ordem: number }>()
-    if (minimo && membro.ordem <= minimo.ordem) visiveis.push(aula)
+    if (!souAdmin) {
+      if (aula.nivel_minimo_id !== null) {
+        if (!membro) continue
+        const minimo = await c.env.DB.prepare(`SELECT ordem FROM grupo_niveis WHERE id = ?`).bind(aula.nivel_minimo_id).first<{ ordem: number }>()
+        if (!minimo || membro.ordem > minimo.ordem) continue
+      }
+      if (aula.categoria_id !== null) {
+        const niveisPermitidos = await niveisDaCategoriaAula(c.env.DB, aula.categoria_id)
+        if (niveisPermitidos.length && (!membro || !niveisPermitidos.includes(membro.nivel_id))) continue
+      }
+    }
+    visiveis.push(aula)
   }
 
   return c.json(visiveis)
@@ -621,17 +690,26 @@ grupos.get('/:slug/aulas/:aulaSlug', async (c) => {
   }
 
   const aula = await c.env.DB.prepare(`SELECT * FROM grupo_aulas WHERE grupo_id = ? AND slug = ? AND ativo = 1`)
-    .bind(grupo.id, aulaSlug).first<{ nivel_minimo_id: number | null }>()
+    .bind(grupo.id, aulaSlug).first<{ nivel_minimo_id: number | null; categoria_id: number | null }>()
   if (!aula) return c.json({ erro: 'aula não encontrada' }, 404)
 
-  if (aula.nivel_minimo_id !== null) {
+  if (!(await ehAdminDoGrupo(c.env.DB, usuarioId, grupo.id))) {
     const membro = await c.env.DB.prepare(
-      `SELECT gn.ordem FROM usuario_grupos ug JOIN grupo_niveis gn ON gn.id = ug.nivel_id
+      `SELECT ug.nivel_id, gn.ordem FROM usuario_grupos ug JOIN grupo_niveis gn ON gn.id = ug.nivel_id
        WHERE ug.usuario_id = ? AND ug.grupo_id = ? AND ug.ativo = 1`
-    ).bind(usuarioId, grupo.id).first<{ ordem: number }>()
-    const minimo = await c.env.DB.prepare(`SELECT ordem FROM grupo_niveis WHERE id = ?`).bind(aula.nivel_minimo_id).first<{ ordem: number }>()
-    if (!membro || !minimo || membro.ordem > minimo.ordem) {
-      return c.json({ erro: 'você não tem acesso a esta aula' }, 403)
+    ).bind(usuarioId, grupo.id).first<{ nivel_id: number; ordem: number }>()
+
+    if (aula.nivel_minimo_id !== null) {
+      const minimo = await c.env.DB.prepare(`SELECT ordem FROM grupo_niveis WHERE id = ?`).bind(aula.nivel_minimo_id).first<{ ordem: number }>()
+      if (!membro || !minimo || membro.ordem > minimo.ordem) {
+        return c.json({ erro: 'você não tem acesso a esta aula' }, 403)
+      }
+    }
+    if (aula.categoria_id !== null) {
+      const niveisPermitidos = await niveisDaCategoriaAula(c.env.DB, aula.categoria_id)
+      if (niveisPermitidos.length && (!membro || !niveisPermitidos.includes(membro.nivel_id))) {
+        return c.json({ erro: 'você não tem acesso a esta aula' }, 403)
+      }
     }
   }
 
