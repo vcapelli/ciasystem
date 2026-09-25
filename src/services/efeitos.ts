@@ -220,9 +220,9 @@ export async function aplicarEfeitoAprovacao(
   // --- Alvo já existe: os demais tipos, todos "de progressão" ---
   const usuarioId = alvo.usuarioId
   const antes = await db
-    .prepare(`SELECT patente_atual_id, corpo, status, tag, nick, exoneracao_ate FROM usuarios WHERE id = ?`)
+    .prepare(`SELECT patente_atual_id, corpo, status, tag, nick, exoneracao_ate, eh_convidado FROM usuarios WHERE id = ?`)
     .bind(usuarioId)
-    .first<{ nick: string }>()
+    .first<{ nick: string; eh_convidado: number }>()
 
   // Conta do dono do sistema: nenhum desses tipos pode mexer no nick
   // (transferência de conta) nem no status (licença, desligamento,
@@ -348,6 +348,15 @@ export async function aplicarEfeitoAprovacao(
       const acao = dadosEspecificos?.acao as string | undefined
       if (acao !== 'exclusao') {
         throw new Error(`requerimento de convidado sobre alvo existente só aceita ação 'exclusao' (recebido: '${acao}')`)
+      }
+      // Trava crítica: sem isso, qualquer autenticado (o tipo 'convidado'
+      // não passa por checagem de hierarquia — é assim de propósito só
+      // pra inclusão) conseguiria mandar 'exclusao' com o id de QUALQUER
+      // usuário real (ex: um Comandante-Geral) e desligá-lo instantaneamente
+      // (status='desligado_honroso'), sem nenhuma permissão. Confirma no
+      // servidor que o alvo é mesmo um convidado antes de aplicar.
+      if (!antes?.eh_convidado) {
+        throw new Error(`esse usuário não é um convidado — exclusão de convidado só se aplica a contas com eh_convidado=1`)
       }
       await db
         .prepare(`UPDATE usuarios SET status = 'desligado_honroso', atualizado_em = ${AGORA} WHERE id = ?`)

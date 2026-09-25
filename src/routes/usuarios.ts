@@ -514,6 +514,14 @@ usuarios.delete('/:id', async (c) => {
   const alvo = await c.env.DB.prepare(`SELECT id, nick FROM usuarios WHERE id = ?`).bind(alvoId).first<{ id: number; nick: string }>()
   if (!alvo) return c.json({ erro: 'usuário não encontrado' }, 404)
 
+  // A conta do dono do sistema não pode ser excluída por aqui — sem essa
+  // trava, qualquer outro admin conseguiria apagar a conta inteira do
+  // vcapelli (nick, senha, admin, histórico), o que é bem mais grave do
+  // que os campos que a proteção de nick/senha/status/tipo já cobre.
+  if (ehContaProtegida(alvo.nick)) {
+    return c.json({ erro: `a conta ${NICK_CONTA_PROTEGIDA} não pode ser excluída` }, 400)
+  }
+
   const db = c.env.DB
   const id = alvoId
   const stmts = [
