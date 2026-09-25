@@ -9,7 +9,7 @@ const TITULOS_TIPO_REQ = {
   transferencia_corpo: 'Transferência de Corpo', venda_cargo: 'Venda de Cargo', integracao: 'Integração', tag: 'TAG',
   turno_tarefa: 'Turno/Tarefa', reforma: 'Reforma', desligamento_honroso: 'Desligamento Honroso',
   desligamento_desonroso: 'Desligamento Desonroso', exoneracao: 'Exoneração',
-  bonificacao: 'Bonificação', cancelamento: 'Cancelamento',
+  bonificacao: 'Bonificação', cancelamento: 'Cancelamento', convidado: 'Convidado',
 };
 
 function tituloTipoReq(tipo) {

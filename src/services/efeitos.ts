@@ -31,7 +31,7 @@ const AGORA = `strftime('%Y-%m-%dT%H:%M:%SZ','now')`
 // liberados.
 const TIPOS_QUE_ALTERAM_NICK_OU_STATUS = new Set([
   'transferencia_conta', 'licenca', 'volta_licenca',
-  'desligamento_honroso', 'reforma', 'desligamento_desonroso', 'exoneracao',
+  'desligamento_honroso', 'reforma', 'desligamento_desonroso', 'exoneracao', 'convidado',
 ])
 
 async function buscarPatente(db: D1Database, patenteId: unknown): Promise<{ id: number; corpo: string }> {
@@ -131,6 +131,40 @@ export async function aplicarEfeitoAprovacao(
         .first<{ id: number }>()
       if (!soldado) throw new Error('patente Soldado não encontrada — a Fase 1 foi aplicada?')
       const usuarioId = await criarUsuarioDeEntrada(db, alvo.nickAlvo, soldado.id, 'militar')
+      const depois = await db.prepare(`SELECT patente_atual_id, corpo, status, tag, nick, exoneracao_ate FROM usuarios WHERE id = ?`).bind(usuarioId).first()
+      return { usuarioId, antes: null, depois }
+    }
+
+    if (tipo === 'convidado') {
+      // Convidado: só a ação 'inclusao' cria conta nova por nick (a
+      // 'exclusao' sempre mira um usuarioId já existente — vem do
+      // branch "alvo já existe" logo abaixo). Conta sem patente/corpo,
+      // eh_convidado = 1 marca pra listagem/telas saberem que não tem
+      // "dias no posto"/"dias na polícia" (ver seção 14 do doc-mestre).
+      //
+      // tipo = 'conta_oficial' (não 'jogador'): a tabela usuarios tem um
+      // CHECK de banco que exige corpo/patente_atual_id NOT NULL sempre
+      // que tipo='jogador', e só permite ambos NULL quando
+      // tipo='conta_oficial' — não é só uma regra de aplicação. Convidado
+      // reaproveita esse branch permitido, distinguindo-se de uma conta
+      // institucional de verdade só pelo eh_convidado=1 (ver
+      // 0053_requerimento_convidado.sql e usuarios.ts, que já filtram
+      // eh_convidado nos lugares que assumem conta_oficial = institucional).
+      const acao = dadosEspecificos?.acao as string | undefined
+      if (acao !== 'inclusao') {
+        throw new Error(`requerimento de convidado sem alvo existente só aceita ação 'inclusao' (recebido: '${acao}')`)
+      }
+      const existente = await db.prepare(`SELECT id FROM usuarios WHERE nick = ?`).bind(alvo.nickAlvo).first<{ id: number }>()
+      if (existente) throw new Error(`já existe uma conta com o nick '${alvo.nickAlvo}'`)
+
+      const { meta } = await db
+        .prepare(
+          `INSERT INTO usuarios (nick, tipo, corpo, patente_atual_id, status, eh_convidado, data_ingresso)
+           VALUES (?, 'conta_oficial', NULL, NULL, 'ativo', 1, ${AGORA})`
+        )
+        .bind(alvo.nickAlvo)
+        .run()
+      const usuarioId = Number(meta.last_row_id)
       const depois = await db.prepare(`SELECT patente_atual_id, corpo, status, tag, nick, exoneracao_ate FROM usuarios WHERE id = ?`).bind(usuarioId).first()
       return { usuarioId, antes: null, depois }
     }
@@ -304,6 +338,23 @@ export async function aplicarEfeitoAprovacao(
         .bind(usuarioId)
         .run()
       break
+
+    // Convidado num alvo que já existe é sempre a ação 'exclusao' (a
+    // 'inclusao' cria conta nova e nunca chega aqui — ver o branch
+    // "porta de entrada" acima). Reaproveita o status 'desligado_honroso'
+    // já existente em vez de um valor novo — a listagem de convidados
+    // simplesmente filtra por esse status pra saber quem ainda conta.
+    case 'convidado': {
+      const acao = dadosEspecificos?.acao as string | undefined
+      if (acao !== 'exclusao') {
+        throw new Error(`requerimento de convidado sobre alvo existente só aceita ação 'exclusao' (recebido: '${acao}')`)
+      }
+      await db
+        .prepare(`UPDATE usuarios SET status = 'desligado_honroso', atualizado_em = ${AGORA} WHERE id = ?`)
+        .bind(usuarioId)
+        .run()
+      break
+    }
 
     case 'exoneracao': {
       const exoneracaoAte = (dadosEspecificos?.exoneracao_ate as string | undefined) ?? null

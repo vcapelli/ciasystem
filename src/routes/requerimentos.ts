@@ -16,7 +16,7 @@ type Variables = { usuarioId: number }
 // no ato). Aprovar/reprovar/cancelar manualmente e excluir do histórico
 // continuam exigindo permissão normal (ver podeGerirRequerimento) ou
 // administrador_sistema.
-const TIPOS_AUTO_APROVADOS = ['instrucao_inicial', 'contratacao', 'integracao', 'tag', 'venda_cargo']
+const TIPOS_AUTO_APROVADOS = ['instrucao_inicial', 'contratacao', 'integracao', 'tag', 'venda_cargo', 'convidado']
 
 const requerimentos = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
@@ -165,9 +165,12 @@ requerimentos.post('/', async (c) => {
     if (!autor.administrador_sistema) {
       return c.json({ erro: 'só administradores do sistema postam em nome de uma conta institucional' }, 403)
     }
-    const conta = await c.env.DB.prepare(`SELECT tipo FROM usuarios WHERE id = ?`)
-      .bind(body.postar_como_conta_id).first<{ tipo: string }>()
-    if (!conta || conta.tipo !== 'conta_oficial') {
+    const conta = await c.env.DB.prepare(`SELECT tipo, eh_convidado FROM usuarios WHERE id = ?`)
+      .bind(body.postar_como_conta_id).first<{ tipo: string; eh_convidado: number }>()
+    // Convidado usa tipo='conta_oficial' por baixo dos panos (ver
+    // efeitos.ts) mas não é uma conta institucional de verdade — barra
+    // explicitamente pra ninguém postar "como" um convidado.
+    if (!conta || conta.tipo !== 'conta_oficial' || conta.eh_convidado) {
       return c.json({ erro: 'essa conta não é institucional' }, 400)
     }
     autorRegistradoId = body.postar_como_conta_id

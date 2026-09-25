@@ -279,6 +279,25 @@ usuarios.get('/recentes', async (c) => {
   return c.json(comFigure)
 })
 
+// GET /usuarios/convidados — listagem de Convidados (eh_convidado = 1),
+// pra página dedicada de listagem. Sem patente/corpo (não fazem parte
+// da hierarquia — não tem "dias no posto"/"dias na polícia"), e quem
+// já foi desligado (status = 'desligado_honroso', a ação 'exclusao' do
+// requerimento de convidado) some daqui. Sem figure de propósito — a
+// lista pode crescer bastante e cada figure é uma chamada à API do
+// Habblet (mesmo motivo do GET / genérico). Precisa vir ANTES de
+// `/:id` abaixo, senão o Hono casa "convidados" como se fosse um :id.
+usuarios.get('/convidados', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, nick, tag, status, data_ingresso, criado_em
+     FROM usuarios
+     WHERE eh_convidado = 1 AND status NOT IN ('desligado_honroso', 'desligado_desonroso')
+     ORDER BY data_ingresso DESC`
+  ).all()
+
+  return c.json(results)
+})
+
 // GET /usuarios/:id — registro completo (todos os campos editáveis),
 // pro painel de admin. Só admin.
 usuarios.get('/:id', async (c) => {
@@ -414,20 +433,31 @@ usuarios.patch('/:id', async (c) => {
 usuarios.get('/', async (c) => {
   const busca = c.req.query('busca')
   const apenasAdmin = c.req.query('apenas_admin') === '1'
+  const apenasConvidados = c.req.query('apenas_convidados') === '1'
   const tipo = c.req.query('tipo')
   const filtroAdmin = apenasAdmin ? `AND u.administrador_sistema = 1` : ''
-  const filtroTipo = tipo ? `AND u.tipo = '${tipo === 'conta_oficial' ? 'conta_oficial' : 'jogador'}'` : ''
+  const filtroConvidado = apenasConvidados ? `AND u.eh_convidado = 1 AND u.status NOT IN ('desligado_honroso', 'desligado_desonroso')` : ''
+  // Convidado usa tipo='conta_oficial' por baixo dos panos (é o único
+  // valor que o CHECK do banco permite com corpo/patente NULL — ver
+  // efeitos.ts), então tipo=conta_oficial precisa excluir eh_convidado=1
+  // explicitamente pra não misturar convidados na lista de "postar como
+  // conta institucional" e afins.
+  const filtroTipo = tipo
+    ? tipo === 'conta_oficial'
+      ? `AND u.tipo = 'conta_oficial' AND u.eh_convidado = 0`
+      : `AND u.tipo = 'jogador'`
+    : ''
 
   const query = busca
     ? c.env.DB.prepare(
         `SELECT u.id, u.nick, u.tag, u.corpo, u.status, u.administrador_sistema, p.nome AS patente_nome
          FROM usuarios u LEFT JOIN patentes p ON p.id = u.patente_atual_id
-         WHERE u.nick LIKE ? ${filtroAdmin} ${filtroTipo} ORDER BY u.nick LIMIT 20`
+         WHERE u.nick LIKE ? ${filtroAdmin} ${filtroConvidado} ${filtroTipo} ORDER BY u.nick LIMIT 20`
       ).bind(`%${busca}%`)
     : c.env.DB.prepare(
         `SELECT u.id, u.nick, u.tag, u.corpo, u.status, u.administrador_sistema, p.nome AS patente_nome
          FROM usuarios u LEFT JOIN patentes p ON p.id = u.patente_atual_id
-         WHERE 1=1 ${filtroAdmin} ${filtroTipo} ORDER BY p.ordem DESC LIMIT 100`
+         WHERE 1=1 ${filtroAdmin} ${filtroConvidado} ${filtroTipo} ORDER BY p.ordem DESC LIMIT 100`
       )
 
   const { results } = await query.all()
@@ -440,7 +470,7 @@ usuarios.get('/nick/:nick', async (c) => {
   const nick = c.req.param('nick')
 
   const usuario = await c.env.DB.prepare(
-    `SELECT u.id, u.nick, u.tag, u.tipo, u.corpo, u.status, u.biografia, u.data_ingresso, u.data_ultimo_ato_funcional,
+    `SELECT u.id, u.nick, u.tag, u.tipo, u.corpo, u.status, u.eh_convidado, u.biografia, u.data_ingresso, u.data_ultimo_ato_funcional,
             u.cor_avatar_fundo, u.avatar_fundo_imagem_url, u.avatar_direction, u.avatar_head_direction, u.avatar_gesture,
             u.banner_perfil_id, b.imagem_url AS banner_imagem_url, u.logo_url, u.figure_fixa,
             p.nome AS patente_nome, p.ordem AS patente_ordem

@@ -23,6 +23,7 @@ export type TipoRequerimento =
   | 'exoneracao'
   | 'bonificacao'
   | 'cancelamento'
+  | 'convidado'
 
 export type StatusRequerimento = 'pendente' | 'aprovado' | 'reprovado' | 'cancelado'
 

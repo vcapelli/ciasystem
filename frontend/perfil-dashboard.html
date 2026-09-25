@@ -52,7 +52,7 @@
     venda_cargo: 'fa-solid fa-sack-dollar', contratacao: 'fa-solid fa-user-plus', integracao: 'fa-solid fa-right-to-bracket', tag: 'fa-solid fa-tag',
     turno_tarefa: 'fa-solid fa-clock', reforma: 'fa-solid fa-medal', desligamento_honroso: 'fa-solid fa-door-open',
     desligamento_desonroso: 'fa-solid fa-door-open', exoneracao: 'fa-solid fa-ban', bonificacao: 'fa-solid fa-star',
-    cancelamento: 'fa-solid fa-xmark',
+    cancelamento: 'fa-solid fa-xmark', convidado: 'fa-solid fa-user-group',
   };
 
   // Monta a URL do avatar do perfil com a pose escolhida pelo próprio
@@ -619,9 +619,11 @@
 
             <div class="text-sm mt-4 space-y-1.5">
               <p><b>Status:</b> <span class="capitalize">${(perfil.status || '').replace(/_/g, ' ')}</span></p>
-              <p><b>Patente/Cargo:</b> ${perfil.patente_nome || 'Conta institucional'}</p>
+              <p><b>Patente/Cargo:</b> ${perfil.eh_convidado ? 'Convidado' : (perfil.patente_nome || 'Conta institucional')}</p>
+              ${perfil.eh_convidado ? '' : `
               <p><b>Dias no posto:</b> ${diasNoPosto ?? '—'}</p>
               <p><b>Dias na polícia:</b> ${diasNaPolicia ?? '—'}</p>
+              `}
             </div>
           </div>
 
