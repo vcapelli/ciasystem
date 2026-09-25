@@ -20,7 +20,7 @@ function renderAvatarTweet(nick, figure, tamanho) {
     <span class="${classeTamanho} rounded-full bg-basebg border border-border overflow-hidden inline-block shrink-0">
       ${avatar
         ? `<img src="${avatar}" class="w-full h-[190%] object-cover object-top ${margemTopo} transition-transform duration-300 hover:-translate-y-[8px]" alt="">`
-        : `<span class="w-full h-full flex items-center justify-center text-[0.6rem] font-bold">${nick.slice(0,2).toUpperCase()}</span>`}
+        : `<span class="w-full h-full flex items-center justify-center text-[0.6rem] font-bold">${escapeHtml((nick || '?').slice(0,2).toUpperCase())}</span>`}
     </span>
   `;
 }
@@ -40,12 +40,15 @@ async function preencherFigurasTweets(tweets) {
 }
 
 function renderComentario(r) {
+  // r.conteudo é texto livre digitado pelo próprio usuário (até 150
+  // caracteres) — sem escapar, era XSS armazenado visto por qualquer
+  // um que abrisse os comentários desse tweet.
   return `
     <div class="flex items-start gap-2 px-4 py-2">
       ${renderAvatarTweet(r.autor_nick, r.autor_figure, 'pequeno')}
       <div class="min-w-0">
-        <p class="text-xs font-semibold">${r.autor_nick}</p>
-        <p class="text-xs whitespace-pre-wrap break-words">${r.conteudo}</p>
+        <p class="text-xs font-semibold">${escapeHtml(r.autor_nick)}</p>
+        <p class="text-xs whitespace-pre-wrap break-words">${escapeHtml(r.conteudo)}</p>
       </div>
     </div>
   `;
@@ -56,22 +59,25 @@ function renderComentario(r) {
 // post original por baixo.
 function renderCardTweet(t, cabecalhoRepostagem, me) {
   const podeDeletar = me && (t.autor_id === me.id || me.administrador_sistema);
+  // t.conteudo é texto livre (até 500 caracteres, ver feed.html) — o
+  // vetor mais visível de XSS armazenado do sistema antes desta
+  // correção, porque o Feed é visto por todo mundo rotineiramente.
   return `
     <div>
       ${cabecalhoRepostagem ? `
         <p class="text-xs text-muted font-semibold flex items-center gap-1.5 mb-1.5 px-1">
-          <i class="fa-solid fa-retweet"></i> ${cabecalhoRepostagem} repostou:
+          <i class="fa-solid fa-retweet"></i> ${escapeHtml(cabecalhoRepostagem)} repostou:
         </p>
       ` : ''}
       <div class="bg-card border border-border rounded-2xl p-4" data-tweet-id="${t.id}">
         <div class="flex items-center gap-2.5 mb-1">
           ${renderAvatarTweet(t.autor_nick, t.autor_figure, 'grande')}
           <div>
-            <p class="font-semibold text-sm">${t.autor_nick}${t.autor_patente_nome ? ` <span class="text-muted font-normal">· ${t.autor_patente_nome}</span>` : ''}</p>
+            <p class="font-semibold text-sm">${escapeHtml(t.autor_nick)}${t.autor_patente_nome ? ` <span class="text-muted font-normal">· ${t.autor_patente_nome}</span>` : ''}</p>
           </div>
         </div>
         <p class="text-xs text-muted flex items-center gap-1 mb-2"><i class="fa-regular fa-clock"></i> ${tempoRelativoTweet(t.criado_em)}</p>
-        ${t.conteudo ? `<p class="text-sm whitespace-pre-wrap">${t.conteudo}</p>` : ''}
+        ${t.conteudo ? `<p class="text-sm whitespace-pre-wrap">${escapeHtml(t.conteudo)}</p>` : ''}
         <hr class="border-border my-3">
         <div class="flex items-center justify-between text-xs text-muted">
           <div class="flex items-center gap-6">
@@ -129,11 +135,11 @@ function _ligarTooltipPessoasTweet(botao, tweetId, tipo) {
       <p class="text-xs font-semibold px-3 py-2 border-b border-border">${tipo === 'curtidas' ? 'Curtiram' : 'Retuitaram'} (${lista.length})</p>
       <div class="max-h-48 overflow-y-auto">
         ${lista.length ? lista.map((p) => `
-          <a href="/perfil/${p.nick}" class="flex items-center gap-2 px-3 py-2 hover:bg-basebg transition-colors">
+          <a href="/perfil/${encodeURIComponent(p.nick)}" class="flex items-center gap-2 px-3 py-2 hover:bg-basebg transition-colors">
             ${renderAvatarTweet(p.nick, p.autor_figure, 'pequeno')}
             <span class="min-w-0">
-              <p class="text-xs font-semibold truncate">${p.nick}</p>
-              <p class="text-[0.65rem] text-muted truncate">${p.patente_nome || '—'}</p>
+              <p class="text-xs font-semibold truncate">${escapeHtml(p.nick)}</p>
+              <p class="text-[0.65rem] text-muted truncate">${escapeHtml(p.patente_nome || '—')}</p>
             </span>
           </a>
         `).join('') : `<p class="text-xs text-muted p-3">${tipo === 'curtidas' ? 'Ninguém curtiu ainda.' : 'Ninguém retuitou ainda.'}</p>`}

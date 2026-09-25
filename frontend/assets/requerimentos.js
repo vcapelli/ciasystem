@@ -95,7 +95,12 @@ function renderCardRequerimento(r, patentesMapa, meAtual, apendiceExtra = '', mo
   const cor = COR_STATUS_REQ[r.status] || COR_STATUS_REQ.pendente;
   const alvos = r.alvos_json ? JSON.parse(r.alvos_json) : [];
   const alvoPrincipal = alvos[0];
-  const alvosTexto = alvos.map((a) => a.nick).join(' / ') || '—';
+  // Todo texto livre digitado por usuário (nick, TAG, motivo,
+  // fundamentação, provas, motivo de recusa, nick de quem decidiu)
+  // passa por escapeHtml antes de entrar no template — sem isso, era
+  // XSS armazenado exibido pra qualquer um que abrisse o painel de
+  // requerimentos, home ou perfil (onde esse card é usado).
+  const alvosTexto = alvos.map((a) => escapeHtml(a.nick)).join(' / ') || '—';
   let dadosEspecificos = {};
   try { dadosEspecificos = r.dados_especificos ? JSON.parse(r.dados_especificos) : {}; } catch {}
   // Apêndice de alerta (não bloqueante): requisitos de patente que
@@ -109,7 +114,7 @@ function renderCardRequerimento(r, patentesMapa, meAtual, apendiceExtra = '', mo
   const avatarAutor = r.autor_figure ? avatarUrl(r.autor_figure, 'mini', '2') : null;
   const autorPatenteTexto = r.autor_patente_nome || (r.autor_tipo === 'conta_oficial' ? 'Conta institucional' : '—');
   const prefixoId = PREFIXO_IDENTIFICACAO_REQ[r.tipo] ?? '';
-  const tagUsada = dadosEspecificos.tag_utilizada || r.autor_tag || '—';
+  const tagUsada = escapeHtml(dadosEspecificos.tag_utilizada || r.autor_tag || '—');
   // Enquanto o requerimento de licença ainda está pendente, o
   // apêndice "{Licença: ... até ...}" vindo do backend
   // (buscarApendiceLicenca) ainda não existe — só passa a existir
@@ -130,12 +135,16 @@ function renderCardRequerimento(r, patentesMapa, meAtual, apendiceExtra = '', mo
   // reflete quando o registro foi migrado pro sistema novo.
   const dataIdentificacao = (r.tipo === 'integracao' && dadosEspecificos.data) ? dadosEspecificos.data : r.criado_em;
 
+  const nickPrincipalSeguro = alvoPrincipal ? escapeHtml(alvoPrincipal.nick) : null;
+  const tagAlvoSegura = escapeHtml(alvoPrincipal?.tag || '---');
+  const crimeOuMotivoSeguro = escapeHtml(r.crime_nome || r.fundamentacao || '');
+
   const identificacao = r.tipo === 'exoneracao'
-    ? (alvoPrincipal ? `${alvoPrincipal.nick} [${alvoPrincipal.tag || '---'}] [${tagUsada}] {${r.crime_nome || r.fundamentacao || ''}} - ${formatarDataCurtaReq(r.criado_em)} até ${dadosEspecificos.exoneracao_ate ? formatarDataCurtaReq(dadosEspecificos.exoneracao_ate) : 'Indeterminado'}` : null)
-    : (alvoPrincipal ? `${alvoPrincipal.nick} [${prefixoId}${tagUsada}] ${formatarDataCurtaReq(dataIdentificacao)}${apendiceExtra}${apendicePreviaLicenca}` : null);
+    ? (alvoPrincipal ? `${nickPrincipalSeguro} [${tagAlvoSegura}] [${tagUsada}] {${crimeOuMotivoSeguro}} - ${formatarDataCurtaReq(r.criado_em)} até ${dadosEspecificos.exoneracao_ate ? formatarDataCurtaReq(dadosEspecificos.exoneracao_ate) : 'Indeterminado'}` : null)
+    : (alvoPrincipal ? `${nickPrincipalSeguro} [${prefixoId}${tagUsada}] ${formatarDataCurtaReq(dataIdentificacao)}${apendiceExtra}${apendicePreviaLicenca}` : null);
 
   const linhasExtras = [];
-  linhasExtras.push(`<b>${ehInstrucaoInicial ? 'Nick e TAG do Instrutor' : 'Requerido por'}:</b> ${r.autor_nick || '—'}${r.autor_tag ? ` [${r.autor_tag}]` : ''}`);
+  linhasExtras.push(`<b>${ehInstrucaoInicial ? 'Nick e TAG do Instrutor' : 'Requerido por'}:</b> ${escapeHtml(r.autor_nick || '—')}${r.autor_tag ? ` [${escapeHtml(r.autor_tag)}]` : ''}`);
   linhasExtras.push(`<b>${ehInstrucaoInicial ? 'Recruta(s) aprovado(s)' : 'Alvo'}:</b> ${alvosTexto}`);
   if (dadosEspecificos.patente_destino_id && patentesMapa[dadosEspecificos.patente_destino_id]) {
     const nomeDestino = patentesMapa[dadosEspecificos.patente_destino_id];
@@ -143,15 +152,20 @@ function renderCardRequerimento(r, patentesMapa, meAtual, apendiceExtra = '', mo
     const nomeAntiga = idAntiga ? patentesMapa[idAntiga] : null;
     linhasExtras.push(`<b>Destino:</b> ${nomeAntiga && nomeAntiga !== nomeDestino ? `${nomeAntiga} > ${nomeDestino}` : nomeDestino}`);
   }
-  if (dadosEspecificos.novo_nick) linhasExtras.push(`<b>Novo nickname:</b> ${dadosEspecificos.novo_nick}`);
-  if (r.tag_aplicada) linhasExtras.push(`<b>Nova TAG:</b> ${r.tag_aplicada}`);
-  if (r.crime_nome) linhasExtras.push(`<b>Infração:</b> ${r.crime_nome}`);
-  if (dadosEspecificos.provas) linhasExtras.push(`<b>Provas:</b> ${dadosEspecificos.provas}`);
+  if (dadosEspecificos.novo_nick) linhasExtras.push(`<b>Novo nickname:</b> ${escapeHtml(dadosEspecificos.novo_nick)}`);
+  if (r.tag_aplicada) linhasExtras.push(`<b>Nova TAG:</b> ${escapeHtml(r.tag_aplicada)}`);
+  if (r.crime_nome) linhasExtras.push(`<b>Infração:</b> ${escapeHtml(r.crime_nome)}`);
+  if (dadosEspecificos.provas) linhasExtras.push(`<b>Provas:</b> ${escapeHtml(dadosEspecificos.provas)}`);
   if (dadosEspecificos.data_retorno) linhasExtras.push(`<b>Data de retorno:</b> ${formatarDataCurtaReq(dadosEspecificos.data_retorno)}`);
   if (r.tipo === 'integracao' && dadosEspecificos.data) linhasExtras.push(`<b>Data de ingresso (histórica):</b> ${formatarDataCurtaReq(dadosEspecificos.data)}`);
   if (r.tipo === 'integracao' && dadosEspecificos.data_ultimo_ato_funcional) linhasExtras.push(`<b>Data do último requerimento (histórica):</b> ${formatarDataCurtaReq(dadosEspecificos.data_ultimo_ato_funcional)}`);
   if (dadosEspecificos.exoneracao_ate) linhasExtras.push(`<b>Exoneração até:</b> ${formatarDataCurtaReq(dadosEspecificos.exoneracao_ate)}`);
-  if (r.fundamentacao) linhasExtras.push(`<b>Motivo:</b> ${r.fundamentacao}`);
+  if (r.tipo === 'bonificacao' && dadosEspecificos.categoria === 'medalha') {
+    const rotulosMedalha = { temporaria: 'Temporária', efetiva: 'Efetiva', honraria_particular: 'Honraria Particular', honra: 'Medalha de Honra' };
+    const rotulo = rotulosMedalha[dadosEspecificos.medalha_tipo] || dadosEspecificos.medalha_tipo || '—';
+    linhasExtras.push(`<b>Medalha:</b> ${rotulo}${dadosEspecificos.medalha_expira_em ? ` (até ${formatarDataCurtaReq(dadosEspecificos.medalha_expira_em)})` : ''}`);
+  }
+  if (r.fundamentacao) linhasExtras.push(`<b>Motivo:</b> ${escapeHtml(r.fundamentacao)}`);
 
   return `
     <div class="bg-card border border-border text-dark rounded-2xl shadow-sm overflow-hidden" style="border-left: 4px solid ${cor.barra}">
@@ -166,22 +180,22 @@ function renderCardRequerimento(r, patentesMapa, meAtual, apendiceExtra = '', mo
       <div class="flex gap-4 px-4 py-4">
         <div class="w-28 shrink-0 text-center">
           <span class="h-16 w-16 mx-auto rounded-full bg-basebg border border-border overflow-hidden inline-block">
-            ${avatarAutor ? `<img src="${avatarAutor}" class="w-full h-[190%] object-cover object-top -mt-4 transition-transform duration-300 hover:-translate-y-[10px]" alt="">` : `<span class="w-full h-full flex items-center justify-center text-sm font-bold">${(r.autor_nick || '?').slice(0,2).toUpperCase()}</span>`}
+            ${avatarAutor ? `<img src="${avatarAutor}" class="w-full h-[190%] object-cover object-top -mt-4 transition-transform duration-300 hover:-translate-y-[10px]" alt="">` : `<span class="w-full h-full flex items-center justify-center text-sm font-bold">${escapeHtml((r.autor_nick || '?').slice(0,2).toUpperCase())}</span>`}
           </span>
-          <p class="text-sm font-semibold mt-1.5">${r.autor_nick || '—'}</p>
+          <p class="text-sm font-semibold mt-1.5">${escapeHtml(r.autor_nick || '—')}</p>
           <p class="text-[0.65rem] text-muted mt-2">Patente/Cargo:</p>
           <p class="text-xs font-semibold">${autorPatenteTexto}</p>
         </div>
 
         <div class="flex-1 text-sm space-y-1.5 min-w-0">
-          <p class="text-muted">${r.autor_patente_nome || (r.autor_tipo === 'conta_oficial' ? 'Conta institucional' : '')} <b class="text-dark">${r.autor_nick || ''}</b> escreveu:</p>
+          <p class="text-muted">${r.autor_patente_nome || (r.autor_tipo === 'conta_oficial' ? 'Conta institucional' : '')} <b class="text-dark">${escapeHtml(r.autor_nick || '')}</b> escreveu:</p>
           ${linhasExtras.map((l) => `<p>${l}</p>`).join('')}
           ${identificacao ? `<p class="font-semibold">• ${identificacao}</p>` : ''}
           <p class="flex items-center gap-1.5 text-green-600 pt-1"><i class="fa-solid fa-circle-check"></i> Li e concordo com as normas de ${tituloTipoReq(r.tipo).toLowerCase()}.</p>
 
           <div class="pt-1">
             <p class="text-[0.65rem] text-muted">Assinatura:</p>
-            <p class="assinatura text-xl leading-tight">${r.autor_nick || ''}</p>
+            <p class="assinatura text-xl leading-tight">${escapeHtml(r.autor_nick || '')}</p>
           </div>
         </div>
       </div>
@@ -193,7 +207,7 @@ function renderCardRequerimento(r, patentesMapa, meAtual, apendiceExtra = '', mo
         </div>
         <div>
           <p class="text-[0.65rem] text-muted">Usuário responsável:</p>
-          <p class="assinatura text-base ${alvoPrincipal?.decidido_por_nick ? 'text-dark' : 'text-muted italic text-xs font-sans'}">${alvoPrincipal?.decidido_por_nick || 'Não preenchido'}</p>
+          <p class="assinatura text-base ${alvoPrincipal?.decidido_por_nick ? 'text-dark' : 'text-muted italic text-xs font-sans'}">${escapeHtml(alvoPrincipal?.decidido_por_nick || 'Não preenchido')}</p>
         </div>
         <div>
           <p class="text-[0.65rem] text-muted">Data da decisão:</p>
@@ -204,7 +218,7 @@ function renderCardRequerimento(r, patentesMapa, meAtual, apendiceExtra = '', mo
       ${alvoPrincipal?.motivo_recusa ? `
         <div class="px-4 pb-3">
           <p class="text-[0.65rem] text-muted">Motivo da recusa:</p>
-          <p class="text-xs mt-0.5 text-red-600">${alvoPrincipal.motivo_recusa}</p>
+          <p class="text-xs mt-0.5 text-red-600">${escapeHtml(alvoPrincipal.motivo_recusa)}</p>
         </div>
       ` : ''}
 
@@ -223,7 +237,7 @@ function renderCardRequerimento(r, patentesMapa, meAtual, apendiceExtra = '', mo
 
       ${alvos.length > 1 ? `
         <div class="flex flex-wrap gap-1.5 px-4 pb-4">
-          ${alvos.map((a) => `<span class="text-xs px-2 py-0.5 rounded-full ${(COR_STATUS_REQ[a.status] || COR_STATUS_REQ.pendente).badge}">${a.nick} · ${a.status}</span>`).join('')}
+          ${alvos.map((a) => `<span class="text-xs px-2 py-0.5 rounded-full ${(COR_STATUS_REQ[a.status] || COR_STATUS_REQ.pendente).badge}">${escapeHtml(a.nick)} · ${a.status}</span>`).join('')}
         </div>
       ` : ''}
 
@@ -466,6 +480,30 @@ async function montarFormularioRequerimento(config) {
                 </div>
               </div>
 
+              <div id="req-campo-medalha" class="hidden space-y-3 sm:col-span-2">
+                <div>
+                  <label class="block text-xs text-muted mb-1">Categoria</label>
+                  <select id="req-medalha-categoria" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                    <option value="gratificacao">Gratificação</option>
+                    <option value="medalha">Medalha</option>
+                  </select>
+                </div>
+                <div id="req-campo-medalha-tipo" class="hidden">
+                  <label class="block text-xs text-muted mb-1">Tipo de medalha</label>
+                  <select id="req-medalha-tipo" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                    <option value="temporaria">Temporária</option>
+                    <option value="efetiva">Efetiva</option>
+                    <option value="honraria_particular">Honraria Particular</option>
+                    <option value="honra">Medalha de Honra</option>
+                  </select>
+                  <p class="text-xs text-muted mt-1">Pode ser concedida a qualquer nick — cadastrado no CIASystem ou não — sem limitação de patente/cargo, inclusive a si mesmo. Entra como pendente, como qualquer requerimento.</p>
+                </div>
+                <div id="req-campo-medalha-validade" class="hidden">
+                  <label class="block text-xs text-muted mb-1">Válida até</label>
+                  <input id="req-medalha-validade" type="date" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                </div>
+              </div>
+
               <div class="sm:col-span-2">
                 <label class="block text-xs text-muted mb-1">Motivo / fundamentação</label>
                 <textarea id="req-motivo" rows="3" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"></textarea>
@@ -551,10 +589,32 @@ async function montarFormularioRequerimento(config) {
   const campoExoneracao = document.getElementById('req-campo-exoneracao');
   const campoNovoNick = document.getElementById('req-campo-novo-nick');
   const previewEl = document.getElementById('req-alvo-preview');
+  const campoMedalha = document.getElementById('req-campo-medalha');
+  const campoMedalhaTipo = document.getElementById('req-campo-medalha-tipo');
+  const campoMedalhaValidade = document.getElementById('req-campo-medalha-validade');
+  const selectMedalhaCategoria = document.getElementById('req-medalha-categoria');
+  const selectMedalhaTipo = document.getElementById('req-medalha-tipo');
 
   document.getElementById('req-exoneracao-tipo')?.addEventListener('change', (e) => {
     document.getElementById('req-campo-exoneracao-data').classList.toggle('hidden', e.target.value !== 'temporaria');
   });
+
+  // Categoria (Gratificação/Medalha) dentro do mesmo tipo 'bonificacao'
+  // — Medalha libera um tipo (temporária/efetiva/honraria/honra) e,
+  // quando temporária, uma data de validade. Ver config.tiposComMedalha.
+  function categoriaMedalhaAtiva() {
+    return Boolean(campoMedalha) && (config.tiposComMedalha || []).includes(selectTipo.value) && selectMedalhaCategoria.value === 'medalha';
+  }
+  function atualizarCamposMedalha() {
+    if (!campoMedalha) return;
+    const ativo = (config.tiposComMedalha || []).includes(selectTipo.value);
+    campoMedalha.classList.toggle('hidden', !ativo);
+    const ehMedalha = ativo && selectMedalhaCategoria.value === 'medalha';
+    campoMedalhaTipo.classList.toggle('hidden', !ehMedalha);
+    campoMedalhaValidade.classList.toggle('hidden', !(ehMedalha && selectMedalhaTipo.value === 'temporaria'));
+  }
+  selectMedalhaCategoria?.addEventListener('change', atualizarCamposMedalha);
+  selectMedalhaTipo?.addEventListener('change', atualizarCamposMedalha);
 
   function atualizarAvisoPostarComo() {
     const aviso = document.getElementById('req-aviso-postar-como');
@@ -590,11 +650,15 @@ async function montarFormularioRequerimento(config) {
   }
 
   function renderPreviewHabblet(dados) {
+    // dados.nick/dados.motto vêm da API do Habblet (missão do jogo é
+    // texto livre, controlável por qualquer jogador) — sem escapar
+    // aqui, um motto malicioso executava na sessão de qualquer
+    // operador que buscasse esse nick, com o JWT em localStorage.
     const avatar = dados.figure ? avatarUrl(dados.figure, 'grande', '2') : null;
     previewEl.innerHTML = `
       ${avatar ? `<img src="${avatar}" class="max-h-40 object-contain mb-2" alt="">` : ''}
-      <p class="font-display font-bold text-lg">${dados.nick}</p>
-      ${dados.motto ? `<p class="text-xs text-muted mt-1 italic">"${dados.motto}"</p>` : ''}
+      <p class="font-display font-bold text-lg">${escapeHtml(dados.nick)}</p>
+      ${dados.motto ? `<p class="text-xs text-muted mt-1 italic">"${escapeHtml(dados.motto)}"</p>` : ''}
       <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-accent/15 text-accent mt-2">Ainda não cadastrado no CIASystem</span>
     `;
   }
@@ -823,6 +887,7 @@ async function montarFormularioRequerimento(config) {
     campoDataIntegracao.classList.toggle('hidden', !(config.tiposComDataIntegracao || []).includes(tipoAtual));
     campoExoneracao.classList.toggle('hidden', !(config.tiposComExoneracao || []).includes(tipoAtual));
     if (campoNovoNick) campoNovoNick.classList.toggle('hidden', !config.usaNovoNick);
+    atualizarCamposMedalha();
     atualizarOpcoesPatenteFiltradas();
   }
   selectTipo.addEventListener('change', atualizarCamposCondicionais);
@@ -868,13 +933,25 @@ async function montarFormularioRequerimento(config) {
       if (meAtual && alvo.toLowerCase() === meAtual.nick.toLowerCase() && !config.permiteAutoAlvo) {
         erroEl.textContent = 'Você não pode ser o alvo do próprio requerimento.'; erroEl.classList.remove('hidden'); return;
       }
-    } else {
-      if (!alvoSelecionadoId) { erroEl.textContent = 'Selecione um usuário na busca.'; erroEl.classList.remove('hidden'); return; }
+    } else if (alvoSelecionadoId) {
       alvo = alvoSelecionadoId;
+    } else if (categoriaMedalhaAtiva() && inputAlvo.value.trim()) {
+      // Medalha aceita conceder a alguém ainda não cadastrado — se a
+      // busca não encontrou (ou não foi usada), aceita o nick digitado
+      // direto; o backend cria a conta "externa" na aprovação.
+      alvo = inputAlvo.value.trim();
+    } else {
+      erroEl.textContent = 'Selecione um usuário na busca.'; erroEl.classList.remove('hidden'); return;
     }
 
     if (tipo === 'volta_licenca' && alvoAtualStatus !== 'licenca') {
       erroEl.textContent = 'Esse alvo não está de licença — não é possível registrar volta de licença.';
+      erroEl.classList.remove('hidden');
+      return;
+    }
+
+    if (categoriaMedalhaAtiva() && !document.getElementById('req-motivo').value.trim()) {
+      erroEl.textContent = 'Preencha o motivo — é ele que aparece no card da medalha na listagem de Honrarias.';
       erroEl.classList.remove('hidden');
       return;
     }
@@ -912,6 +989,15 @@ async function montarFormularioRequerimento(config) {
     }
     if (config.usaNovoNick && document.getElementById('req-novo-nick').value.trim()) {
       dadosEspecificos.novo_nick = document.getElementById('req-novo-nick').value.trim();
+    }
+    if ((config.tiposComMedalha || []).includes(tipo)) {
+      dadosEspecificos.categoria = selectMedalhaCategoria.value;
+      if (dadosEspecificos.categoria === 'medalha') {
+        dadosEspecificos.medalha_tipo = selectMedalhaTipo.value;
+        if (dadosEspecificos.medalha_tipo === 'temporaria' && document.getElementById('req-medalha-validade').value) {
+          dadosEspecificos.medalha_expira_em = document.getElementById('req-medalha-validade').value;
+        }
+      }
     }
 
     const body = {

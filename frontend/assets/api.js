@@ -103,6 +103,23 @@ function escapeHtml(texto) {
 }
 
 /**
+ * Allow-list de protocolo pra `href` vindo de dado configurável (item
+ * de menu personalizado, link do rodapé, rede social — tudo que um
+ * admin cadastra por um formulário, não código fixo). Sem isso,
+ * `javascript:alert(document.cookie)` cadastrado como URL executava no
+ * clique de qualquer usuário logado que visse aquele link. Aceita
+ * caminho relativo (começa com `/`), âncora (`#`) e `http(s)://` — tudo
+ * mais vira `#` (link inerte).
+ */
+function sanitizarUrl(url) {
+  const valor = (url || '').trim();
+  if (!valor) return '#';
+  if (valor.startsWith('/') || valor.startsWith('#')) return valor;
+  if (/^https?:\/\//i.test(valor)) return valor;
+  return '#';
+}
+
+/**
  * Wrapper de fetch autenticado. Se o access_token expirou (401),
  * tenta renovar com o refresh_token e refaz a chamada UMA vez antes
  * de desistir e mandar pro login.

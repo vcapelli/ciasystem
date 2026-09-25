@@ -129,8 +129,8 @@ export async function requireAuth(
   if (!usuario) {
     return c.json({ erro: 'usuário não encontrado' }, 401)
   }
-  if (usuario.status === 'exonerado') {
-    return c.json({ erro: 'conta exonerada — acesso bloqueado' }, 403)
+  if (usuario.status === 'exonerado' || usuario.status === 'desligado_desonroso') {
+    return c.json({ erro: 'conta desligada — acesso bloqueado' }, 403)
   }
 
   c.set('usuarioId', usuarioId)

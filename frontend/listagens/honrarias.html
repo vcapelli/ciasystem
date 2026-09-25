@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CIASystem — Gratificação</title>
+<title>CIASystem — Honrarias</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
@@ -18,9 +18,9 @@
   <aside id="layout-sidebar" class="w-60 fixed left-0 top-[72px] bottom-0 border-r border-border bg-basebg p-4 overflow-y-auto"></aside>
 
   <main class="ml-60 min-h-screen flex flex-col">
-  <div class="flex-1 min-w-0 px-6 pt-8">
-    <h1 class="text-xl font-display font-bold mb-4">Gratificação</h1>
-    <div id="form-requerimento-raiz">
+  <div class="max-w-5xl mx-auto flex-1 w-full px-6 pt-8">
+    <h1 class="text-xl font-display font-bold mb-4">Honrarias</h1>
+    <div id="honrarias-raiz">
       <p class="text-sm text-muted">Carregando…</p>
     </div>
     </div>
@@ -31,14 +31,10 @@
 <script src="/assets/footer.js"></script>
 <script src="/assets/layout.js"></script>
 <script src="/assets/requerimentos.js"></script>
+<script src="/assets/honrarias.js"></script>
 <script>
-  montarLayout('/requerimentos/gratificacao.html').then((me) => {
-    if (me) montarFormularioRequerimento({
-    tipos: [{ value: 'bonificacao', label: 'Gratificação' }],
-    alvoLivre: false,
-    permiteAutoAlvo: true,
-    tiposComMedalha: ['bonificacao'],
-  });
+  montarLayout('/listagens/honrarias.html').then((me) => {
+    if (me) montarHonrarias();
   });
 </script>
 </body>

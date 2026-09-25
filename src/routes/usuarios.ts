@@ -437,14 +437,16 @@ usuarios.get('/', async (c) => {
   const tipo = c.req.query('tipo')
   const filtroAdmin = apenasAdmin ? `AND u.administrador_sistema = 1` : ''
   const filtroConvidado = apenasConvidados ? `AND u.eh_convidado = 1 AND u.status NOT IN ('desligado_honroso', 'desligado_desonroso')` : ''
-  // Convidado usa tipo='conta_oficial' por baixo dos panos (é o único
-  // valor que o CHECK do banco permite com corpo/patente NULL — ver
-  // efeitos.ts), então tipo=conta_oficial precisa excluir eh_convidado=1
-  // explicitamente pra não misturar convidados na lista de "postar como
-  // conta institucional" e afins.
+  // Convidado e conta "externa" (criada automaticamente ao conceder uma
+  // Medalha a um nick ainda não cadastrado — ver 0055) usam
+  // tipo='conta_oficial' por baixo dos panos (é o único valor que o
+  // CHECK do banco permite com corpo/patente NULL — ver efeitos.ts),
+  // então tipo=conta_oficial precisa excluir eh_convidado=1 e
+  // eh_externo=1 explicitamente pra não misturar essas contas na lista
+  // de "postar como conta institucional" e afins.
   const filtroTipo = tipo
     ? tipo === 'conta_oficial'
-      ? `AND u.tipo = 'conta_oficial' AND u.eh_convidado = 0`
+      ? `AND u.tipo = 'conta_oficial' AND u.eh_convidado = 0 AND u.eh_externo = 0`
       : `AND u.tipo = 'jogador'`
     : ''
 

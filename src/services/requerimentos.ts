@@ -61,27 +61,30 @@ export async function podeGerirRequerimento(
  * (usada em conjunto com services/hierarquia.ts::podeAgirSobre).
  * `null` = tipo não representa uma ação de hierarquia sobre outro
  * usuário (ex: instrucao_inicial, tag, turno_tarefa não têm "alvo
- * hierárquico" no sentido de promover/rebaixar/etc).
+ * hierárquico" no sentido de promover/rebaixar/etc) OU foi
+ * deliberadamente liberado de checagem de hierarquia.
+ *
+ * Decisão explícita de Vitor (25/09/2026): advertência, exoneração e
+ * licença/volta de licença/reserva NÃO têm mais checagem de hierarquia
+ * — qualquer usuário autenticado pode submeter esses requerimentos,
+ * sem limitação de patente (isso contraria o texto original do
+ * doc-mestre, seção 8, que reservava exoneração a COR/BOPE/GSI — a
+ * instrução mais recente do Vitor tem prioridade). A fila de
+ * aprovação/decisão (`podeGerirRequerimento`) continua existindo
+ * normalmente — isso só remove o teto de "quem pode agir sobre quem",
+ * não quem pode aprovar depois.
  */
 export function acaoHierarquiaDoTipo(
   tipo: string
-): 'promover' | 'rebaixar' | 'advertir' | 'demitir' | 'exonerar' | 'licenciar' | null {
+): 'promover' | 'rebaixar' | 'demitir' | null {
   switch (tipo) {
     case 'promocao':
       return 'promover'
     case 'rebaixamento':
       return 'rebaixar'
-    case 'advertencia':
-      return 'advertir'
     case 'desligamento_honroso':
     case 'desligamento_desonroso':
       return 'demitir'
-    case 'exoneracao':
-      return 'exonerar'
-    case 'licenca':
-    case 'volta_licenca':
-    case 'reserva':
-      return 'licenciar'
     default:
       return null
   }

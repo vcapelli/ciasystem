@@ -38,26 +38,30 @@ async function montarFooter() {
     const avatar = u.figure ? avatarUrl(u.figure, 'mini', '2') : null;
     return `
       <div class="group relative">
-        <a href="/perfil/${u.nick}" class="h-9 w-9 rounded-full bg-basebg border border-border overflow-hidden inline-block">
+        <a href="/perfil/${encodeURIComponent(u.nick)}" class="h-9 w-9 rounded-full bg-basebg border border-border overflow-hidden inline-block">
           ${avatar
             ? `<img src="${avatar}" class="w-full h-[190%] object-cover object-top -mt-2 transition-transform duration-300 group-hover:-translate-y-[6px]" alt="">`
-            : `<span class="w-full h-full flex items-center justify-center text-[0.65rem] font-bold">${u.nick.slice(0,2).toUpperCase()}</span>`}
+            : `<span class="w-full h-full flex items-center justify-center text-[0.65rem] font-bold">${escapeHtml(u.nick.slice(0,2).toUpperCase())}</span>`}
         </a>
-        <span class="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap bg-dark text-white text-[0.65rem] px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity">${u.nick}</span>
+        <span class="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap bg-dark text-white text-[0.65rem] px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity">${escapeHtml(u.nick)}</span>
       </div>
     `;
   }
 
+  // l.url/l.titulo (Links Úteis) e r.url/r.nome (Redes Sociais) são
+  // cadastrados por admin em admin.html e gravados livremente no banco
+  // — mesma trava de sanitizarUrl/escapeHtml do Menu personalizado em
+  // layout.js, pelo mesmo motivo (bloquear `javascript:` e HTML injetado).
   function renderLinksUteis() {
     return links.length
-      ? `<ul class="space-y-1.5">${links.map((l) => `<li><a href="${l.url}" class="text-xs text-muted hover:text-accent transition-colors">${l.titulo}</a></li>`).join('')}</ul>`
+      ? `<ul class="space-y-1.5">${links.map((l) => `<li><a href="${sanitizarUrl(l.url)}" class="text-xs text-muted hover:text-accent transition-colors">${escapeHtml(l.titulo)}</a></li>`).join('')}</ul>`
       : '<p class="text-xs text-muted">—</p>';
   }
 
   function renderRedesSociais() {
     return redes.length
       ? `<div class="flex gap-3">${redes.map((r) => `
-          <a href="${r.url}" target="_blank" rel="noopener" title="${r.nome}" class="h-8 w-8 rounded-lg bg-basebg border border-border flex items-center justify-center text-muted hover:text-accent transition-colors">
+          <a href="${sanitizarUrl(r.url)}" target="_blank" rel="noopener" title="${escapeHtml(r.nome)}" class="h-8 w-8 rounded-lg bg-basebg border border-border flex items-center justify-center text-muted hover:text-accent transition-colors">
             <i class="${r.icone || 'fa-solid fa-link'}"></i>
           </a>
         `).join('')}</div>`

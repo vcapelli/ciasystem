@@ -228,6 +228,11 @@ function linkAtivo(url, paginaAtiva) {
   return url === paginaAtiva ? 'bg-accent/10 text-accent font-semibold' : 'text-muted hover:bg-black/5 hover:text-dark';
 }
 
+// item.titulo/item.url (e f.*) vêm do Menu personalizado, configurado
+// por admin via admin.html e gravado em `menu_itens` — texto livre e
+// URL livre, então passam por escapeHtml/sanitizarUrl antes de virar
+// HTML (sem isso, um `javascript:` na URL ou HTML no título executava
+// no clique/carregamento pra qualquer usuário logado).
 function renderItemMenu(item, paginaAtiva, souAdmin) {
   if (item.filhos) {
     const filhosVisiveis = item.filhos.filter((f) => !f.somenteAdmin || souAdmin);
@@ -235,19 +240,19 @@ function renderItemMenu(item, paginaAtiva, souAdmin) {
     return `
       <details class="group" ${abrir ? 'open' : ''}>
         <summary class="flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer text-sm text-muted hover:bg-black/5 hover:text-dark transition-colors">
-          <i class="${item.icone || ''} text-gray-400 w-4 text-center"></i><span>${item.titulo}</span>
+          <i class="${item.icone || ''} text-gray-400 w-4 text-center"></i><span>${escapeHtml(item.titulo)}</span>
         </summary>
         <div class="ml-6 mt-1 space-y-0.5">
           ${filhosVisiveis.map((f) => `
-            <a href="${f.url}" class="block px-3 py-1.5 rounded-lg text-sm transition-colors ${linkAtivo(f.url, paginaAtiva)}">${f.titulo}</a>
+            <a href="${sanitizarUrl(f.url)}" class="block px-3 py-1.5 rounded-lg text-sm transition-colors ${linkAtivo(f.url, paginaAtiva)}">${escapeHtml(f.titulo)}</a>
           `).join('')}
         </div>
       </details>
     `;
   }
   return `
-    <a href="${item.url}" class="flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-colors ${linkAtivo(item.url, paginaAtiva)}">
-      <i class="${item.icone || ''} text-gray-400 w-4 text-center"></i><span>${item.titulo}</span>
+    <a href="${sanitizarUrl(item.url)}" class="flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-colors ${linkAtivo(item.url, paginaAtiva)}">
+      <i class="${item.icone || ''} text-gray-400 w-4 text-center"></i><span>${escapeHtml(item.titulo)}</span>
     </a>
   `;
 }
@@ -264,8 +269,8 @@ function renderSidebar(itensExtras, paginaAtiva, souAdmin) {
         <p class="px-3 text-xs uppercase tracking-wide text-muted mb-2">Mais</p>
         <div class="space-y-1">
           ${extras.map((item) => `
-            <a href="${item.url || '#'}" class="flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-muted hover:bg-black/5 hover:text-dark transition-colors">
-              <i class="${item.icone || 'fa-solid fa-link'} text-gray-400 w-4 text-center"></i><span>${item.titulo}</span>
+            <a href="${sanitizarUrl(item.url)}" class="flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-muted hover:bg-black/5 hover:text-dark transition-colors">
+              <i class="${item.icone || 'fa-solid fa-link'} text-gray-400 w-4 text-center"></i><span>${escapeHtml(item.titulo)}</span>
             </a>
           `).join('')}
         </div>

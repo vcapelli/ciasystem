@@ -38,8 +38,15 @@ requerimentos.post('/', async (c) => {
 
   // Ninguém pode ser alvo do próprio requerimento (promover a si mesmo,
   // contratar a si mesmo, etc.) — exceto 'tag' (criar/alterar a própria
-  // TAG) e 'transferencia_conta' (trocar o próprio nick).
-  const TIPOS_PERMITEM_AUTO_ALVO = ['tag', 'transferencia_conta', 'desligamento_honroso']
+  // TAG), 'transferencia_conta' (trocar o próprio nick), 'integracao'
+  // (migrar o próprio cadastro pro CIASystem — pedido explícito do
+  // Vitor em 25/09/2026; continua exclusivo de admin, ver checagem
+  // logo abaixo, só deixou de barrar quando o alvo é o próprio autor) e
+  // 'bonificacao' (idem, 25/09/2026 — cobre tanto gratificação comum
+  // quanto o subtipo Medalha; dar uma medalha a si mesmo é o caso de
+  // uso explícito, mas isso também libera auto-alvo pra gratificação
+  // comum, já que os dois são o mesmo tipo de requerimento).
+  const TIPOS_PERMITEM_AUTO_ALVO = ['tag', 'transferencia_conta', 'desligamento_honroso', 'integracao', 'bonificacao']
   if (!TIPOS_PERMITEM_AUTO_ALVO.includes(body.tipo) && body.alvos.some((item) => item === autorId)) {
     return c.json({ erro: 'você não pode ser o alvo do próprio requerimento' }, 400)
   }
@@ -165,12 +172,13 @@ requerimentos.post('/', async (c) => {
     if (!autor.administrador_sistema) {
       return c.json({ erro: 'só administradores do sistema postam em nome de uma conta institucional' }, 403)
     }
-    const conta = await c.env.DB.prepare(`SELECT tipo, eh_convidado FROM usuarios WHERE id = ?`)
-      .bind(body.postar_como_conta_id).first<{ tipo: string; eh_convidado: number }>()
-    // Convidado usa tipo='conta_oficial' por baixo dos panos (ver
-    // efeitos.ts) mas não é uma conta institucional de verdade — barra
-    // explicitamente pra ninguém postar "como" um convidado.
-    if (!conta || conta.tipo !== 'conta_oficial' || conta.eh_convidado) {
+    const conta = await c.env.DB.prepare(`SELECT tipo, eh_convidado, eh_externo FROM usuarios WHERE id = ?`)
+      .bind(body.postar_como_conta_id).first<{ tipo: string; eh_convidado: number; eh_externo: number }>()
+    // Convidado e conta "externa" (criada só pra receber uma Medalha —
+    // ver 0055) usam tipo='conta_oficial' por baixo dos panos (ver
+    // efeitos.ts) mas não são contas institucionais de verdade — barra
+    // explicitamente pra ninguém postar "como" uma delas.
+    if (!conta || conta.tipo !== 'conta_oficial' || conta.eh_convidado || conta.eh_externo) {
       return c.json({ erro: 'essa conta não é institucional' }, 400)
     }
     autorRegistradoId = body.postar_como_conta_id
@@ -265,7 +273,15 @@ requerimentos.post('/', async (c) => {
           ...(body.dados_especificos ?? {}),
           ...((body.tipo === 'tag' || body.tipo === 'integracao') && body.tag_aplicada ? { tag: body.tag_aplicada } : {}),
         }
-        const efeito = await aplicarEfeitoAprovacao(c.env.DB, body.tipo, identificador, dadosParaEfeito)
+        // bonificacao nunca está em TIPOS_AUTO_APROVADOS (sempre passa
+        // pela fila de aprovação — ver decidir abaixo), então o
+        // contexto aqui nunca chega a ser usado por ela; passado só
+        // porque a assinatura da função agora exige.
+        const efeito = await aplicarEfeitoAprovacao(c.env.DB, body.tipo, identificador, dadosParaEfeito, {
+          decididoPorId: autorId,
+          requerimentoId,
+          requerimentoAlvoId: alvoId,
+        })
 
         if (alvo.usuario_id === null) {
           await c.env.DB.prepare(`UPDATE requerimento_alvos SET usuario_id = ? WHERE id = ?`)
@@ -396,8 +412,8 @@ requerimentos.post('/:id/alvos/:alvoId/decidir', async (c) => {
     .bind(decididoPorId).first<{ administrador_sistema: number }>()
   if (!decisor) return c.json({ erro: 'usuário decisor não encontrado' }, 404)
 
-  const requerimento = await c.env.DB.prepare(`SELECT tipo, dados_especificos, tag_aplicada FROM requerimentos WHERE id = ?`)
-    .bind(id).first<{ tipo: string; dados_especificos: string | null; tag_aplicada: string | null }>()
+  const requerimento = await c.env.DB.prepare(`SELECT tipo, dados_especificos, tag_aplicada, fundamentacao FROM requerimentos WHERE id = ?`)
+    .bind(id).first<{ tipo: string; dados_especificos: string | null; tag_aplicada: string | null; fundamentacao: string | null }>()
   if (!requerimento) return c.json({ erro: 'requerimento não encontrado' }, 404)
 
   // Transferência de Conta é sempre exclusiva de administrador do
@@ -411,9 +427,21 @@ requerimentos.post('/:id/alvos/:alvoId/decidir', async (c) => {
     if (!pode) return c.json({ erro: 'sem permissão para gerir requerimentos deste tipo' }, 403)
   }
 
-  const alvo = await c.env.DB.prepare(`SELECT usuario_id, nick_alvo FROM requerimento_alvos WHERE id = ? AND requerimento_id = ?`)
-    .bind(alvoId, id).first<{ usuario_id: number | null; nick_alvo: string | null }>()
+  const alvo = await c.env.DB.prepare(`SELECT usuario_id, nick_alvo, status FROM requerimento_alvos WHERE id = ? AND requerimento_id = ?`)
+    .bind(alvoId, id).first<{ usuario_id: number | null; nick_alvo: string | null; status: string }>()
   if (!alvo) return c.json({ erro: 'alvo não encontrado neste requerimento' }, 404)
+
+  // Trava crítica: sem isso, um duplo-clique (ou uma chamada repetida)
+  // em "Aprovar" reaplicaria o efeito (resetando data_ultimo_ato, por
+  // exemplo) e, pior, decidir de novo um alvo já aprovado só sobrescreve
+  // o status sem reverter o efeito anterior — o requerimento passaria a
+  // aparecer "reprovado" com a mudança de patente/status continuando
+  // aplicada pra sempre. Um alvo só pode ser decidido uma vez; pra
+  // desfazer uma decisão já tomada, usa /cancelar (que reverte de
+  // verdade via reverterEfeitoAlvo).
+  if (alvo.status !== 'pendente') {
+    return c.json({ erro: `este alvo já foi decidido (status atual: ${alvo.status}) — use cancelar em vez de decidir de novo` }, 400)
+  }
 
   let detalhesHistorico: unknown = null
   let usuarioIdFinal: number | null = alvo.usuario_id
@@ -421,10 +449,18 @@ requerimentos.post('/:id/alvos/:alvoId/decidir', async (c) => {
   if (status === 'aprovado') {
     const dadosEspecificos = requerimento.dados_especificos ? JSON.parse(requerimento.dados_especificos) : {}
     if ((requerimento.tipo === 'tag' || requerimento.tipo === 'integracao') && requerimento.tag_aplicada) dadosEspecificos.tag = requerimento.tag_aplicada
+    // Medalha (subtipo de bonificacao) usa o próprio campo "Motivo /
+    // fundamentação" do formulário como motivo da medalha — sem exigir
+    // um campo duplicado só pra isso (ver concederMedalha em efeitos.ts).
+    if (requerimento.tipo === 'bonificacao' && requerimento.fundamentacao) dadosEspecificos.motivo = requerimento.fundamentacao
     const identificador = alvo.usuario_id !== null ? { usuarioId: alvo.usuario_id } : { nickAlvo: alvo.nick_alvo! }
 
     try {
-      const efeito = await aplicarEfeitoAprovacao(c.env.DB, requerimento.tipo, identificador, dadosEspecificos)
+      const efeito = await aplicarEfeitoAprovacao(c.env.DB, requerimento.tipo, identificador, dadosEspecificos, {
+        decididoPorId,
+        requerimentoId: id,
+        requerimentoAlvoId: Number(alvoId),
+      })
       detalhesHistorico = { antes: efeito.antes, depois: efeito.depois }
       usuarioIdFinal = efeito.usuarioId
 
@@ -480,6 +516,21 @@ requerimentos.post('/:id/alvos/:alvoId/decidir', async (c) => {
 // Reverte o efeito aplicado a UM alvo, usando o snapshot "antes"
 // gravado no histórico no momento da aprovação. Usado por cancelar,
 // excluir, e pela expiração automática de exoneração temporária.
+// Janela de cancelamento (seção 10.5 do doc-mestre): 24h pra
+// promoção/gratificação, 48h pra punição administrativa, e
+// reforma/desligamento honroso nunca abrem janela de auto-cancelamento
+// (sempre exigem administrador_sistema). Tipos fora dessas 3 listas
+// (contratação, TAG, licença, transferência, integração, convidado,
+// instrução inicial, venda de cargo) não têm regra explícita no
+// doc-mestre — usam 48h como padrão razoável.
+// `null` = nunca abre janela pra não-admin (sempre exige admin).
+function janelaCancelamentoHoras(tipo: string): number | null {
+  if (['promocao', 'bonificacao'].includes(tipo)) return 24
+  if (['rebaixamento', 'advertencia', 'desligamento_desonroso', 'exoneracao'].includes(tipo)) return 48
+  if (['reforma', 'desligamento_honroso'].includes(tipo)) return null
+  return 48
+}
+
 requerimentos.post('/:id/cancelar', async (c) => {
   const usuarioId = c.get('usuarioId')
   const id = c.req.param('id')
@@ -489,27 +540,40 @@ requerimentos.post('/:id/cancelar', async (c) => {
     .bind(usuarioId).first<{ administrador_sistema: number }>()
   if (!usuario) return c.json({ erro: 'usuário não encontrado' }, 404)
 
-  const requerimento = await c.env.DB.prepare(`SELECT tipo, criado_em FROM requerimentos WHERE id = ?`)
-    .bind(id).first<{ tipo: string; criado_em: string }>()
+  const requerimento = await c.env.DB.prepare(`SELECT tipo FROM requerimentos WHERE id = ?`)
+    .bind(id).first<{ tipo: string }>()
   if (!requerimento) return c.json({ erro: 'requerimento não encontrado' }, 404)
+
+  // Alvos já aprovados: reverte o efeito (volta pra como estava antes)
+  // antes de marcar como cancelado. Alvos ainda pendentes: só cancela.
+  const { results: alvosAprovados } = await c.env.DB.prepare(
+    `SELECT id, usuario_id, decidido_em FROM requerimento_alvos WHERE requerimento_id = ? AND status = 'aprovado'`
+  ).bind(id).all<{ id: number; usuario_id: number | null; decidido_em: string | null }>()
 
   if (!usuario.administrador_sistema) {
     const pode = await podeGerirRequerimento(c.env.DB, usuarioId, requerimento.tipo, 'cancelar')
     if (!pode) return c.json({ erro: 'sem permissão para cancelar requerimentos deste tipo' }, 403)
 
-    // Janela de 72h a partir da criação do requerimento — passado
-    // isso, só administrador do sistema pode cancelar (bypassa acima).
-    const horasDesdeACriacao = (Date.now() - new Date(requerimento.criado_em).getTime()) / (1000 * 60 * 60)
-    if (horasDesdeACriacao > 72) {
-      return c.json({ erro: 'prazo de 72h para cancelar este requerimento já expirou — só administradores do sistema podem cancelar agora' }, 403)
+    // A janela conta da APROVAÇÃO (decidido_em de cada alvo), nunca da
+    // criação — um requerimento que ficou dias pendente na fila não
+    // pode chegar "quase vencido" (ou já vencido) no momento em que
+    // finalmente é aprovado. Sem nenhum alvo aprovado ainda (tudo
+    // pendente/reprovado), não há efeito nenhum pra reverter, então a
+    // janela nem se aplica — cancelar um requerimento ainda pendente
+    // equivale a desistir dele, sem prazo.
+    const janela = janelaCancelamentoHoras(requerimento.tipo)
+    if (janela === null && alvosAprovados.length > 0) {
+      return c.json({ erro: `requerimentos do tipo '${requerimento.tipo}' só podem ser cancelados por administradores do sistema` }, 403)
+    }
+    if (janela !== null && alvosAprovados.length > 0) {
+      const decisoesValidas = alvosAprovados.map((a) => a.decidido_em).filter((d): d is string => !!d)
+      const referencia = decisoesValidas.length ? Math.max(...decisoesValidas.map((d) => new Date(d).getTime())) : Date.now()
+      const horasDesdeAAprovacao = (Date.now() - referencia) / (1000 * 60 * 60)
+      if (horasDesdeAAprovacao > janela) {
+        return c.json({ erro: `prazo de ${janela}h para cancelar este requerimento (a partir da aprovação) já expirou — só administradores do sistema podem cancelar agora` }, 403)
+      }
     }
   }
-
-  // Alvos já aprovados: reverte o efeito (volta pra como estava antes)
-  // antes de marcar como cancelado. Alvos ainda pendentes: só cancela.
-  const { results: alvosAprovados } = await c.env.DB.prepare(
-    `SELECT id, usuario_id FROM requerimento_alvos WHERE requerimento_id = ? AND status = 'aprovado'`
-  ).bind(id).all<{ id: number; usuario_id: number | null }>()
 
   // Se reverter falhar, a operação inteira para aqui — o requerimento
   // continua "aprovado" (nada some do histórico e nada fica marcado

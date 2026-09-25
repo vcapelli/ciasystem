@@ -12,6 +12,7 @@
 //     a rota fazer o backfill de `requerimento_alvos.usuario_id`.
 
 import { ehContaProtegida, NICK_CONTA_PROTEGIDA } from './protecao-conta'
+import { revogarTodasSessoes } from './auth'
 
 export type IdentificadorAlvo = { usuarioId: number } | { nickAlvo: string }
 
@@ -19,6 +20,53 @@ export interface EfeitoAplicado {
   usuarioId: number
   antes: unknown
   depois: unknown
+}
+
+// Quem decidiu (aprovou) o alvo, e a referência de volta pro
+// requerimento/alvo — só usado hoje pelo subtipo Medalha de
+// 'bonificacao' (ver concederMedalha), pra gravar medalhas.concedida_por_id
+// e ligar a medalha ao requerimento (permite desfazer ao
+// cancelar/excluir). Os demais tipos ignoram esse parâmetro.
+export interface ContextoDecisao {
+  decididoPorId: number
+  requerimentoId: number | string
+  requerimentoAlvoId: number
+}
+
+const TIPOS_MEDALHA = ['temporaria', 'efetiva', 'honraria_particular', 'honra']
+
+/**
+ * Concede a medalha em si (INSERT em `medalhas`) — usada pelo subtipo
+ * 'medalha' de um requerimento de bonificacao aprovado, tanto quando o
+ * alvo já existia quanto quando acabou de ser criado (porta de
+ * entrada). `dadosEspecificos.motivo` vem de `requerimentos.fundamentacao`
+ * (injetado pela rota antes de chamar aplicarEfeitoAprovacao — ver
+ * routes/requerimentos.ts) — reaproveita o mesmo campo "Motivo /
+ * fundamentação" que o formulário já coleta, sem duplicar UI.
+ */
+async function concederMedalha(
+  db: D1Database,
+  usuarioId: number,
+  dadosEspecificos: Record<string, unknown> | null,
+  contexto?: ContextoDecisao
+): Promise<void> {
+  const medalhaTipo = dadosEspecificos?.medalha_tipo as string | undefined
+  if (!medalhaTipo || !TIPOS_MEDALHA.includes(medalhaTipo)) {
+    throw new Error(`dados_especificos.medalha_tipo é obrigatório e deve ser um de: ${TIPOS_MEDALHA.join(', ')}`)
+  }
+  const motivo = (dadosEspecificos?.motivo as string | undefined)?.trim()
+  if (!motivo) throw new Error(`motivo/fundamentação é obrigatório pra conceder uma medalha`)
+  if (!contexto) throw new Error(`contexto (decididoPorId/requerimentoId/requerimentoAlvoId) é obrigatório pra conceder medalha via requerimento`)
+
+  const expiraEm = medalhaTipo === 'temporaria' ? (dadosEspecificos?.medalha_expira_em as string | undefined) ?? null : null
+
+  await db
+    .prepare(
+      `INSERT INTO medalhas (usuario_id, tipo, motivo, concedida_por_id, expira_em, requerimento_id, requerimento_alvo_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    )
+    .bind(usuarioId, medalhaTipo, motivo, contexto.decididoPorId, expiraEm, contexto.requerimentoId, contexto.requerimentoAlvoId)
+    .run()
 }
 
 const AGORA = `strftime('%Y-%m-%dT%H:%M:%SZ','now')`
@@ -121,7 +169,8 @@ export async function aplicarEfeitoAprovacao(
   db: D1Database,
   tipo: string,
   alvo: IdentificadorAlvo,
-  dadosEspecificos: Record<string, unknown> | null
+  dadosEspecificos: Record<string, unknown> | null,
+  contexto?: ContextoDecisao
 ): Promise<EfeitoAplicado> {
   // --- Portas de entrada: o alvo pode ainda não existir ---
   if ('nickAlvo' in alvo) {
@@ -181,7 +230,41 @@ export async function aplicarEfeitoAprovacao(
       // então cancelar essa integração depois volta a conta pro estado
       // anterior de verdade em vez de tentar apagá-la.
       const existente = await db.prepare(`SELECT id FROM usuarios WHERE nick = ?`).bind(alvo.nickAlvo).first<{ id: number }>()
-      if (existente) return aplicarEfeitoAprovacao(db, tipo, { usuarioId: existente.id }, dadosEspecificos)
+      if (existente) return aplicarEfeitoAprovacao(db, tipo, { usuarioId: existente.id }, dadosEspecificos, contexto)
+    }
+
+    if (tipo === 'bonificacao') {
+      // Gratificação comum continua exigindo um usuário já cadastrado
+      // (o valor/motivo dela não faz sentido pra quem nunca esteve na
+      // organização) — só o subtipo Medalha aceita conceder a alguém
+      // ainda sem conta no CIASystem.
+      const categoria = dadosEspecificos?.categoria as string | undefined
+      if (categoria !== 'medalha') {
+        throw new Error(`gratificação comum não aceita alvo por nick — só o subtipo Medalha aceita conceder a alguém ainda não cadastrado`)
+      }
+
+      // Nick já tem conta (membro, convidado ou externo de uma medalha
+      // anterior) — reaproveita em vez de tentar criar duplicata; a
+      // mesma pessoa pode receber várias medalhas ao longo do tempo.
+      const existente = await db.prepare(`SELECT id FROM usuarios WHERE nick = ?`).bind(alvo.nickAlvo).first<{ id: number }>()
+      if (existente) return aplicarEfeitoAprovacao(db, tipo, { usuarioId: existente.id }, dadosEspecificos, contexto)
+
+      // Cria uma conta "externa" só pra existir como alvo da medalha —
+      // eh_externo=1 (ver 0055) marca que não é membro, não é
+      // convidado, e não é conta institucional de verdade, apesar de
+      // usar tipo='conta_oficial' por baixo dos panos (mesmo motivo do
+      // convidado: único valor aceito pelo CHECK com corpo/patente NULL).
+      const { meta } = await db
+        .prepare(
+          `INSERT INTO usuarios (nick, tipo, corpo, patente_atual_id, status, eh_externo, data_ingresso)
+           VALUES (?, 'conta_oficial', NULL, NULL, 'ativo', 1, ${AGORA})`
+        )
+        .bind(alvo.nickAlvo)
+        .run()
+      const usuarioId = Number(meta.last_row_id)
+      await concederMedalha(db, usuarioId, dadosEspecificos, contexto)
+      const depois = await db.prepare(`SELECT patente_atual_id, corpo, status, tag, nick, exoneracao_ate FROM usuarios WHERE id = ?`).bind(usuarioId).first()
+      return { usuarioId, antes: null, depois }
     }
 
     if (tipo === 'contratacao' || tipo === 'venda_cargo' || tipo === 'integracao') {
@@ -333,10 +416,15 @@ export async function aplicarEfeitoAprovacao(
     }
 
     case 'desligamento_desonroso':
+      // Desligado desonroso perde admin (se tivesse) e é derrubado de
+      // qualquer sessão já aberta na hora — sem isso, um admin desligado
+      // desonrosamente mantinha acesso administrativo pleno até o access
+      // token expirar sozinho (até 1h) e o flag de admin nunca era limpo.
       await db
-        .prepare(`UPDATE usuarios SET status = 'desligado_desonroso', atualizado_em = ${AGORA} WHERE id = ?`)
+        .prepare(`UPDATE usuarios SET status = 'desligado_desonroso', administrador_sistema = 0, atualizado_em = ${AGORA} WHERE id = ?`)
         .bind(usuarioId)
         .run()
+      await revogarTodasSessoes(db, usuarioId)
       break
 
     // Convidado num alvo que já existe é sempre a ação 'exclusao' (a
@@ -366,13 +454,19 @@ export async function aplicarEfeitoAprovacao(
     }
 
     case 'exoneracao': {
+      // Mesma trava do desligamento desonroso: zera admin e revoga
+      // sessões na hora — requireAuth já bloqueia 'exonerado' a cada
+      // request, mas sem isso o flag de admin ficava sujo pra sempre
+      // (se a pessoa um dia voltasse por reintegração, herdaria admin
+      // de volta sem ninguém ter decidido isso).
       const exoneracaoAte = (dadosEspecificos?.exoneracao_ate as string | undefined) ?? null
       await db
         .prepare(
-          `UPDATE usuarios SET status = 'exonerado', exoneracao_ate = ?, atualizado_em = ${AGORA} WHERE id = ?`
+          `UPDATE usuarios SET status = 'exonerado', exoneracao_ate = ?, administrador_sistema = 0, atualizado_em = ${AGORA} WHERE id = ?`
         )
         .bind(exoneracaoAte, usuarioId)
         .run()
+      await revogarTodasSessoes(db, usuarioId)
       break
     }
 
@@ -406,11 +500,24 @@ export async function aplicarEfeitoAprovacao(
       break
     }
 
+    // Gratificação comum (categoria ausente ou 'gratificacao'): sem
+    // efeito sobre `usuarios` por enquanto — o requerimento ainda é
+    // aprovado e vira `historico` (valor_gratificacao/motivo_gratificacao_id
+    // não são gravados hoje; gap pré-existente, fora do escopo deste
+    // pedido). Categoria 'medalha': concede a medalha de verdade.
+    case 'bonificacao': {
+      const categoria = dadosEspecificos?.categoria as string | undefined
+      if (categoria === 'medalha') {
+        await concederMedalha(db, usuarioId, dadosEspecificos, contexto)
+      }
+      break
+    }
+
     default:
-      // turno_tarefa / bonificacao / advertencia / cancelamento:
-      // dependem de módulos ainda não implementados ou de lógica
-      // própria mais complexa. Sem efeito sobre `usuarios` por
-      // enquanto — o requerimento ainda é aprovado e vira `historico`.
+      // turno_tarefa / advertencia / cancelamento: dependem de módulos
+      // ainda não implementados ou de lógica própria mais complexa.
+      // Sem efeito sobre `usuarios` por enquanto — o requerimento ainda
+      // é aprovado e vira `historico`.
       break
   }
 
@@ -491,8 +598,28 @@ export async function reverterEfeitoAlvo(db: D1Database, requerimentoId: string 
 
   if (antes === null) {
     // Era uma porta de entrada (o usuário não existia antes deste
-    // requerimento) — reverter significa desfazer a criação. Precisa
-    // limpar TODAS as referências que apontam pra esse usuário
+    // requerimento) — reverter significa desfazer a criação. Mas só
+    // faz sentido apagar a conta se NADA mais aconteceu com ela desde
+    // então: se a pessoa já foi promovida, recebeu medalha, entrou em
+    // grupo etc., cancelar a entrada original apagaria esse histórico
+    // inteiro (e a conta junto) — recusa nesse caso, em vez de fazer
+    // isso silenciosamente. `historico` é o espelho permanente de toda
+    // ação já aplicada (ver services/requerimentos.ts), então qualquer
+    // linha além da própria entrada já é sinal de acúmulo.
+    const outroHistorico = await db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM historico
+         WHERE usuario_id = ? AND NOT (requerimento_id = ? AND requerimento_alvo_id = ?)`
+      )
+      .bind(usuarioId, requerimentoId, alvoId)
+      .first<{ n: number }>()
+    if ((outroHistorico?.n ?? 0) > 0) {
+      throw new Error(
+        `essa conta já acumulou ${outroHistorico!.n} outra(s) ação(ões) desde a entrada — cancelar a porta de entrada apagaria esse histórico e a conta inteira; use desligamento ou exoneração em vez de cancelar`
+      )
+    }
+
+    // Precisa limpar TODAS as referências que apontam pra esse usuário
     // primeiro (nenhuma tem ON DELETE CASCADE), senão o DELETE falha.
     // `notificacoes` é a mais comum de esquecer: toda aprovação já
     // notifica o próprio alvo ("Seu requerimento foi aprovado"), então
@@ -500,12 +627,21 @@ export async function reverterEfeitoAlvo(db: D1Database, requerimentoId: string 
     // menos uma linha lá — sem limpar isso, o DELETE final falhava
     // (FK), o erro era engolido pelo catch antigo, e o usuário (com
     // status 'exonerado' etc.) ficava travado pra sempre.
+    // Medalha concedida por esse mesmo requerimento (ex: porta de
+    // entrada de uma conta externa criada só pra receber uma Medalha)
+    // — sem apagar isso antes, o DELETE FROM usuarios abaixo falha (FK,
+    // medalhas.usuario_id não tem CASCADE).
+    await db.prepare(`DELETE FROM medalhas WHERE requerimento_alvo_id = ?`).bind(alvoId).run()
     await db.prepare(`DELETE FROM historico WHERE usuario_id = ?`).bind(usuarioId).run()
     await db.prepare(`DELETE FROM notificacoes WHERE usuario_id = ?`).bind(usuarioId).run()
     await db.prepare(`UPDATE requerimento_alvos SET usuario_id = NULL WHERE usuario_id = ?`).bind(usuarioId).run()
     await db.prepare(`UPDATE requerimento_alvos SET decidido_por_id = NULL WHERE decidido_por_id = ?`).bind(usuarioId).run()
     await db.prepare(`DELETE FROM usuarios WHERE id = ?`).bind(usuarioId).run()
   } else {
+    // Idem — se esse requerimento tinha concedido uma medalha a um
+    // alvo que já existia (não uma porta de entrada), desfaz a
+    // concessão junto com o resto do efeito.
+    await db.prepare(`DELETE FROM medalhas WHERE requerimento_alvo_id = ?`).bind(alvoId).run()
     await db.prepare(
       `UPDATE usuarios SET patente_atual_id = ?, corpo = ?, status = ?, tag = ?, nick = ?, exoneracao_ate = ?, atualizado_em = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`
     ).bind(antes.patente_atual_id, antes.corpo, antes.status, antes.tag, antes.nick, antes.exoneracao_ate ?? null, usuarioId).run()
