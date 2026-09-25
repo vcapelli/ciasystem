@@ -776,7 +776,7 @@ async function montarFormularioRequerimento(config) {
       renderPreviewCarregando();
       debounce = setTimeout(async () => {
         await promessaMe;
-        if (meAtual && nick.toLowerCase() === meAtual.nick.toLowerCase()) {
+        if (!config.permiteAutoAlvo && meAtual && nick.toLowerCase() === meAtual.nick.toLowerCase()) {
           renderPreviewVazio('Você não pode ser o alvo do próprio requerimento.');
           return;
         }
