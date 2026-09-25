@@ -585,8 +585,17 @@
     const primeiroIngresso = reqsIngresso[reqsIngresso.length - 1] || reqsAprovados[reqsAprovados.length - 1];
     const diasNaPolicia = diasDesde(dataEfetivaIngresso(primeiroIngresso));
 
+    // Mesmo bug que "dias no posto" tinha antes de dataEfetivaUltimoAto
+    // existir (ver comentário acima): pra Integração, `criado_em` só
+    // reflete quando o registro foi migrado pro sistema novo, não a data
+    // histórica do último ato funcional — reaproveita o mesmo helper em
+    // vez de usar `requerimentos[0].criado_em` direto, senão a
+    // identificação mostrada aqui (a mesma copiada pra missão do jogo)
+    // sai com a data de hoje pra qualquer Integração recém-postada com
+    // datas históricas, mesmo com `data`/`data_ultimo_ato_funcional`
+    // preenchidos no requerimento.
     const textoIdentificacao = requerimentos[0]
-      ? montarIdentificacao(perfil.nick, requerimentos[0].tipo, requerimentos[0].autor_tag, requerimentos[0].criado_em)
+      ? montarIdentificacao(perfil.nick, requerimentos[0].tipo, requerimentos[0].autor_tag, dataEfetivaUltimoAto(requerimentos[0]))
       : `${perfil.nick}${perfil.tag ? ` [${perfil.tag}]` : ''}`;
 
     container.innerHTML = `
