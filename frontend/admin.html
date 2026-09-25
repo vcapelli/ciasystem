@@ -71,6 +71,7 @@
       { id: 'menu', label: 'Menu' },
       { id: 'configuracoes', label: 'Configurações' },
       { id: 'usuarios', label: 'Usuários' },
+      { id: 'integracao-lote', label: 'Integração em Lote' },
       { id: 'logs', label: 'Logs' },
     ];
     return `
@@ -2441,6 +2442,184 @@
     });
   }
 
+  // ---------- Integração em lote ----------
+  // Registra vários requerimentos de Integração de uma vez a partir de
+  // um JSON colado — pensado pra migrar de uma tacada só um bloco de
+  // gente que já está na organização há tempo (planilha antiga), em vez
+  // de preencher o formulário individual (/requerimentos/integracao.html)
+  // um por um. Cada item do JSON vira exatamente um POST /requerimentos
+  // com tipo='integracao' — a MESMA rota usada pelo formulário
+  // individual, com as mesmas regras (só admin, sem checagem de
+  // hierarquia, já auto-aprovado na hora) — este painel só resolve o
+  // nome da patente pra id e monta o corpo da requisição; toda a
+  // validação de verdade (TAG em uso, patente inválida, nick
+  // duplicado...) continua sendo feita no servidor, igual ao formulário.
+  // Processado em série (não em paralelo) — item por item, esperando a
+  // resposta de cada um antes do próximo — pra manter a ordem previsível
+  // e pra dois itens que competem pela mesma TAG nunca corrida entre si.
+  function exemploJsonIntegracaoLote() {
+    return JSON.stringify([
+      {
+        nick: 'NomeDoJogador',
+        patente: 'Soldado',
+        tag: 'abc',
+        data_ingresso: '2025-01-10',
+        data_ultimo_ato: '2025-06-01',
+        motivo: 'Migração da planilha antiga',
+      },
+    ], null, 2);
+  }
+
+  async function carregarIntegracaoLote() {
+    const raiz = document.getElementById('conteudo-aba');
+    raiz.innerHTML = `
+      <div class="bg-card border border-border rounded-2xl shadow-sm p-5 mb-5">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Integração em lote</h2>
+        <p class="text-xs text-muted mb-3">
+          Cole um JSON com uma lista de requerimentos de Integração pra registrar de uma vez.
+          Cada item tem os mesmos campos do <a href="/requerimentos/integracao.html" class="text-accent hover:underline">formulário individual de Integração</a>
+          e vira um requerimento separado, já auto-aprovado — se algum item falhar (nick duplicado,
+          TAG em uso, patente inválida, nome de patente não encontrado...), o erro aparece no
+          resultado e os demais itens continuam sendo processados normalmente.
+        </p>
+        <p class="text-xs text-muted mb-3">
+          Campos de cada item: <code class="bg-basebg px-1 rounded">nick</code> (obrigatório) ·
+          <code class="bg-basebg px-1 rounded">patente</code> (obrigatório — nome exato da patente/cargo,
+          ex: "Soldado", "3º Sargento", "Tenente"; se o mesmo nome existir em mais de um corpo, informe
+          também <code class="bg-basebg px-1 rounded">corpo</code>: "militar" ou "executivo") ·
+          <code class="bg-basebg px-1 rounded">tag</code> (nova TAG do alvo, opcional) ·
+          <code class="bg-basebg px-1 rounded">data_ingresso</code> (AAAA-MM-DD, opcional — data histórica de ingresso) ·
+          <code class="bg-basebg px-1 rounded">data_ultimo_ato</code> (AAAA-MM-DD, opcional — data do último ato funcional) ·
+          <code class="bg-basebg px-1 rounded">motivo</code> (opcional — vai pra "Motivo/fundamentação").
+        </p>
+        <textarea id="lote-integracao-json" rows="14" spellcheck="false"
+          class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-accent">${escapeHtml(exemploJsonIntegracaoLote())}</textarea>
+        <div class="flex items-center gap-3 mt-3">
+          <button id="btn-processar-lote-integracao" type="button" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">
+            Processar
+          </button>
+          <p id="lote-integracao-progresso" class="text-xs text-muted"></p>
+        </div>
+        <p id="lote-integracao-erro-json" class="hidden text-xs text-red-400 mt-2"></p>
+      </div>
+      <div id="lote-integracao-resultado"></div>
+    `;
+
+    // Mapa nome-da-patente (minúsculo) -> lista de patentes com esse
+    // nome (quase sempre 1 só; a lista existe só pra poder acusar
+    // ambiguidade se algum dia dois corpos usarem o mesmo nome).
+    const respPatentes = await apiFetch('/patentes');
+    const patentes = respPatentes.ok ? await respPatentes.json() : [];
+    const patentesPorNome = new Map();
+    for (const p of patentes) {
+      const chave = p.nome.trim().toLowerCase();
+      if (!patentesPorNome.has(chave)) patentesPorNome.set(chave, []);
+      patentesPorNome.get(chave).push(p);
+    }
+
+    const meResp = await apiFetch('/usuarios/me');
+    const me = meResp.ok ? await meResp.json() : null;
+
+    function resolverPatente(item) {
+      const nomePatente = String(item.patente ?? '').trim();
+      if (!nomePatente) return { erro: 'campo "patente" é obrigatório' };
+      const candidatos = patentesPorNome.get(nomePatente.toLowerCase()) || [];
+      if (!candidatos.length) return { erro: `patente "${item.patente}" não encontrada` };
+      if (candidatos.length === 1) return { patente: candidatos[0] };
+      const corpoPedido = String(item.corpo ?? '').trim().toLowerCase();
+      if (!corpoPedido) {
+        return { erro: `patente "${item.patente}" existe em mais de um corpo — informe também "corpo": "militar" ou "executivo"` };
+      }
+      const patente = candidatos.find((p) => p.corpo === corpoPedido);
+      if (!patente) return { erro: `patente "${item.patente}" não encontrada no corpo "${item.corpo}"` };
+      return { patente };
+    }
+
+    document.getElementById('btn-processar-lote-integracao').addEventListener('click', async () => {
+      const erroJsonEl = document.getElementById('lote-integracao-erro-json');
+      const progressoEl = document.getElementById('lote-integracao-progresso');
+      const resultadoEl = document.getElementById('lote-integracao-resultado');
+      const botao = document.getElementById('btn-processar-lote-integracao');
+      erroJsonEl.classList.add('hidden');
+      resultadoEl.innerHTML = '';
+
+      let itens;
+      try {
+        itens = JSON.parse(document.getElementById('lote-integracao-json').value);
+        if (!Array.isArray(itens) || !itens.length) throw new Error('o JSON precisa ser uma lista com ao menos 1 item');
+      } catch (err) {
+        erroJsonEl.textContent = `JSON inválido: ${err.message}`;
+        erroJsonEl.classList.remove('hidden');
+        return;
+      }
+
+      botao.disabled = true;
+      const resultados = [];
+
+      // Cada item processado dentro de try/catch próprio — um item com
+      // formato inesperado (ex: um número solto onde se esperava texto)
+      // vira um erro reportado só pra ele, sem interromper o laço e
+      // deixar os itens seguintes sem processar.
+      for (let i = 0; i < itens.length; i++) {
+        const item = itens[i] || {};
+        progressoEl.textContent = `Processando ${i + 1} de ${itens.length}…`;
+        const nickBruto = String(item.nick ?? '(vazio)');
+
+        try {
+          const nick = String(item.nick ?? '').trim();
+          if (!nick) throw new Error('campo "nick" é obrigatório');
+
+          const { patente, erro: erroPatente } = resolverPatente(item);
+          if (erroPatente) throw new Error(erroPatente);
+
+          const dados_especificos = { patente_destino_id: patente.id };
+          if (item.data_ingresso) dados_especificos.data = String(item.data_ingresso);
+          if (item.data_ultimo_ato) dados_especificos.data_ultimo_ato_funcional = String(item.data_ultimo_ato);
+          const tagUtilizada = String(item.tag_utilizada ?? '').trim() || me?.tag;
+          if (tagUtilizada) dados_especificos.tag_utilizada = tagUtilizada;
+
+          const motivo = String(item.motivo ?? '').trim();
+          const tagAplicada = String(item.tag ?? '').trim();
+
+          const resp = await apiFetch('/requerimentos', {
+            method: 'POST',
+            body: JSON.stringify({
+              tipo: 'integracao',
+              alvos: [nick],
+              dados_especificos,
+              fundamentacao: motivo || undefined,
+              tag_aplicada: tagAplicada || undefined,
+            }),
+          });
+          const dados = await resp.json().catch(() => ({}));
+          resultados.push(resp.ok
+            ? { nick, ok: true, tag_requerimento: dados.tag_requerimento }
+            : { nick, ok: false, erro: dados.erro || `erro HTTP ${resp.status}` });
+        } catch (err) {
+          resultados.push({ nick: nickBruto, ok: false, erro: err.message || 'falha ao processar esse item' });
+        }
+      }
+
+      botao.disabled = false;
+      progressoEl.textContent = '';
+
+      const sucessos = resultados.filter((r) => r.ok).length;
+      resultadoEl.innerHTML = `
+        <div class="bg-card border border-border rounded-2xl shadow-sm p-5">
+          <h3 class="text-sm font-semibold mb-3">Resultado: ${sucessos}/${resultados.length} processados com sucesso</h3>
+          <div class="space-y-1 max-h-96 overflow-y-auto">
+            ${resultados.map((r) => `
+              <div class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg ${r.ok ? 'bg-green-500/10' : 'bg-red-500/10'}">
+                <p class="text-sm shrink-0">${escapeHtml(r.nick)}</p>
+                <p class="text-xs text-right ${r.ok ? 'text-green-600' : 'text-red-600'}">${r.ok ? `Registrado — ${escapeHtml(r.tag_requerimento || '')}` : escapeHtml(r.erro)}</p>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    });
+  }
+
   const CARREGADORES_ABA = {
     hierarquia: carregarHierarquia,
     permissoes: carregarPermissoes,
@@ -2455,6 +2634,7 @@
     menu: carregarMenuAdmin,
     configuracoes: carregarConfiguracoes,
     usuarios: carregarUsuarios,
+    'integracao-lote': carregarIntegracaoLote,
     logs: carregarLogs,
   };
 
