@@ -2466,6 +2466,8 @@
         data_ingresso: '2025-01-10',
         data_ultimo_ato: '2025-06-01',
         motivo: 'Migração da planilha antiga',
+        sua_tag: 'vca',
+        postar_como: 'Setor Administrativo',
       },
     ], null, 2);
   }
@@ -2483,15 +2485,28 @@
           resultado e os demais itens continuam sendo processados normalmente.
         </p>
         <p class="text-xs text-muted mb-3">
-          Campos de cada item: <code class="bg-basebg px-1 rounded">nick</code> (obrigatório) ·
-          <code class="bg-basebg px-1 rounded">patente</code> (obrigatório — nome exato da patente/cargo,
-          ex: "Soldado", "3º Sargento", "Tenente"; se o mesmo nome existir em mais de um corpo, informe
-          também <code class="bg-basebg px-1 rounded">corpo</code>: "militar" ou "executivo") ·
-          <code class="bg-basebg px-1 rounded">tag</code> (nova TAG do alvo, opcional) ·
-          <code class="bg-basebg px-1 rounded">data_ingresso</code> (AAAA-MM-DD, opcional — data histórica de ingresso) ·
-          <code class="bg-basebg px-1 rounded">data_ultimo_ato</code> (AAAA-MM-DD, opcional — data do último ato funcional) ·
-          <code class="bg-basebg px-1 rounded">motivo</code> (opcional — vai pra "Motivo/fundamentação").
+          Campos de cada item — só <code class="bg-basebg px-1 rounded">nick</code> e
+          <code class="bg-basebg px-1 rounded">patente</code> são obrigatórios, todo o resto é opcional:
         </p>
+        <ul class="text-xs text-muted mb-3 space-y-1 list-disc list-inside">
+          <li><code class="bg-basebg px-1 rounded">nick</code> — obrigatório, o alvo da integração.</li>
+          <li><code class="bg-basebg px-1 rounded">patente</code> — obrigatório, nome exato da patente/cargo destino
+            (ex: "Soldado", "3º Sargento", "Tenente"); se o mesmo nome existir em mais de um corpo, informe
+            também <code class="bg-basebg px-1 rounded">corpo</code>: "militar" ou "executivo".</li>
+          <li><code class="bg-basebg px-1 rounded">tag</code> — opcional, a "Nova TAG" do alvo. Sem ela, a
+            integração acontece sem atribuir TAG nenhuma (dá pra atribuir depois por um requerimento de TAG).</li>
+          <li><code class="bg-basebg px-1 rounded">data_ingresso</code> (AAAA-MM-DD) — opcional, data histórica de ingresso.</li>
+          <li><code class="bg-basebg px-1 rounded">data_ultimo_ato</code> (AAAA-MM-DD) — opcional, data do último ato funcional.</li>
+          <li><code class="bg-basebg px-1 rounded">motivo</code> — opcional, vai pra "Motivo/fundamentação".</li>
+          <li><code class="bg-basebg px-1 rounded">sua_tag</code> — opcional, equivalente ao campo "Sua TAG" do
+            formulário individual: a TAG de quem processou, que aparece na identificação
+            ("Nick [TAG] data") e em "Requerido por". Aceita qualquer texto (até 10 caracteres) — não precisa
+            ser uma TAG real de ninguém, útil pra preservar quem processou o registro na planilha antiga.
+            Se omitido, usa a sua própria TAG.</li>
+          <li><code class="bg-basebg px-1 rounded">postar_como</code> — opcional, equivalente a "Postar em nome
+            de": o nick exato de uma conta institucional já cadastrada, pra postar o requerimento em nome dela
+            em vez do seu usuário. Se omitido, posta como você mesmo.</li>
+        </ul>
         <textarea id="lote-integracao-json" rows="14" spellcheck="false"
           class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-accent">${escapeHtml(exemploJsonIntegracaoLote())}</textarea>
         <div class="flex items-center gap-3 mt-3">
@@ -2519,6 +2534,12 @@
 
     const meResp = await apiFetch('/usuarios/me');
     const me = meResp.ok ? await meResp.json() : null;
+
+    // Contas institucionais disponíveis pra "postar_como" — mesma lista
+    // que o seletor "Postar em nome de" do formulário individual usa.
+    const respContas = await apiFetch('/usuarios?tipo=conta_oficial');
+    const contas = respContas.ok ? await respContas.json() : [];
+    const contasPorNick = new Map(contas.map((cta) => [cta.nick.trim().toLowerCase(), cta]));
 
     function resolverPatente(item) {
       const nomePatente = String(item.patente ?? '').trim();
@@ -2575,8 +2596,29 @@
           const dados_especificos = { patente_destino_id: patente.id };
           if (item.data_ingresso) dados_especificos.data = String(item.data_ingresso);
           if (item.data_ultimo_ato) dados_especificos.data_ultimo_ato_funcional = String(item.data_ultimo_ato);
-          const tagUtilizada = String(item.tag_utilizada ?? '').trim() || me?.tag;
+
+          // "Sua TAG": se informada, vira tag_customizada (só admin pode
+          // usar — é o próprio caso aqui) pra também gravar de verdade em
+          // requerimentos.tag_grupo_override (autor_tag exibido), igual ao
+          // formulário individual quando a opção "Outra TAG (digitar)" é
+          // usada. dados_especificos.tag_utilizada acompanha, pra manter a
+          // mesma TAG na linha de identificação do card. Sem ela, cai no
+          // mesmo default do formulário: a própria TAG do admin.
+          const suaTag = String(item.sua_tag ?? '').trim();
+          const tagUtilizada = suaTag || me?.tag;
           if (tagUtilizada) dados_especificos.tag_utilizada = tagUtilizada;
+
+          // "Postar em nome de": nick de uma conta institucional — resolve
+          // pro id que a API espera (postar_como_conta_id). Erro claro se
+          // o nick não bater com nenhuma conta institucional cadastrada,
+          // em vez de deixar o servidor recusar com uma mensagem genérica.
+          const postarComoNick = String(item.postar_como ?? '').trim();
+          let postarComoContaId;
+          if (postarComoNick) {
+            const conta = contasPorNick.get(postarComoNick.toLowerCase());
+            if (!conta) throw new Error(`conta institucional "${item.postar_como}" não encontrada em "Postar em nome de"`);
+            postarComoContaId = conta.id;
+          }
 
           const motivo = String(item.motivo ?? '').trim();
           const tagAplicada = String(item.tag ?? '').trim();
@@ -2589,6 +2631,8 @@
               dados_especificos,
               fundamentacao: motivo || undefined,
               tag_aplicada: tagAplicada || undefined,
+              tag_customizada: suaTag || undefined,
+              postar_como_conta_id: postarComoContaId,
             }),
           });
           const dados = await resp.json().catch(() => ({}));
