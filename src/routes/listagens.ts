@@ -185,22 +185,33 @@ listagens.get('/:tipo', async (c) => {
   // 'bonificacao' — reinício mensal é só um efeito do filtro por mês,
   // não existe zeragem/job nenhum: o mês anterior continua consultável
   // via `mes`, e a lista de meses disponíveis alimenta o seletor.
+  //
+  // Medalha (dados_especificos.categoria = 'medalha', ver 0055) NÃO é
+  // gratificação em raros — não tem valor_gratificacao nenhum pra
+  // somar, então entra aqui excluída (o WHERE abaixo tira essas linhas
+  // do JOIN inteiro, não só da soma) — sem isso, quem só recebeu
+  // medalha aparecia no ranking com "+null" (SUM de um grupo 100%
+  // NULL). COALESCE cobre o resto (gratificação comum sem
+  // valor_gratificacao gravado — gap pré-existente, documentado em
+  // claude/medalha-honrarias-2026-09-25.md) pra nunca mais exibir a
+  // string "null" aqui.
   if (tipo === 'gratificacao') {
     const mes = c.req.query('mes') || new Date().toISOString().slice(0, 7)
+    const FILTRO_NAO_MEDALHA = `(r.dados_especificos IS NULL OR json_extract(r.dados_especificos, '$.categoria') IS NOT 'medalha')`
 
     const { results: itens } = await db.prepare(
-      `SELECT u.id, u.nick, u.tag, SUM(r.valor_gratificacao) AS total
+      `SELECT u.id, u.nick, u.tag, COALESCE(SUM(r.valor_gratificacao), 0) AS total
        FROM requerimentos r
        JOIN requerimento_alvos ra ON ra.requerimento_id = r.id
        JOIN usuarios u ON u.id = ra.usuario_id
-       WHERE r.tipo = 'bonificacao' AND r.status = 'aprovado' AND strftime('%Y-%m', r.criado_em) = ?
+       WHERE r.tipo = 'bonificacao' AND r.status = 'aprovado' AND strftime('%Y-%m', r.criado_em) = ? AND ${FILTRO_NAO_MEDALHA}
        GROUP BY u.id
        ORDER BY total DESC, u.nick`
     ).bind(mes).all<{ id: number; nick: string; tag: string | null; total: number }>()
 
     const { results: mesesDisponiveis } = await db.prepare(
       `SELECT DISTINCT strftime('%Y-%m', r.criado_em) AS mes
-       FROM requerimentos r WHERE r.tipo = 'bonificacao' AND r.status = 'aprovado'
+       FROM requerimentos r WHERE r.tipo = 'bonificacao' AND r.status = 'aprovado' AND ${FILTRO_NAO_MEDALHA}
        ORDER BY mes DESC`
     ).all<{ mes: string }>()
 

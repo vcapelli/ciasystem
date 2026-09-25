@@ -46,10 +46,10 @@ function medalhaAindaVigente(m) {
 }
 
 function renderCardHonraria(m) {
-  // nick/tag/motivo são texto livre (motivo vem de
-  // requerimentos.fundamentacao) — sempre escapar antes de interpolar.
+  // nick/motivo são texto livre (motivo vem de requerimentos.fundamentacao)
+  // — sempre escapar antes de interpolar. Só o nick aparece no card
+  // (sem a TAG) — pedido do Vitor (25/09/2026).
   const nickEsc = escapeHtml(m.nick);
-  const tagEsc = m.tag ? escapeHtml(m.tag) : '';
   const motivoEsc = escapeHtml(m.motivo || '');
   const avatar = m.figure ? avatarUrl(m.figure, 'mini', '2') : null;
 
@@ -60,7 +60,7 @@ function renderCardHonraria(m) {
           ? `<img src="${avatar}" class="w-full h-[190%] object-cover object-top -mt-8 transition-transform duration-300 group-hover:-translate-y-[18px]" alt="">`
           : `<span class="w-full h-full flex items-center justify-center text-2xl font-bold">${nickEsc.slice(0, 2).toUpperCase()}</span>`}
       </span>
-      <span class="text-sm font-semibold px-3 py-1 rounded-full bg-accent/15 text-accent">${nickEsc}${tagEsc ? ` [${tagEsc}]` : ''}</span>
+      <span class="text-sm font-semibold px-3 py-1 rounded-full bg-accent/15 text-accent">${nickEsc}</span>
       <p class="text-sm text-dark min-h-[1.25rem]">${motivoEsc || '<span class="text-muted italic">Sem motivo registrado.</span>'}</p>
       ${m.expira_em ? `
         <p class="text-xs text-muted flex items-center gap-1.5">
