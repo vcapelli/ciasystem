@@ -172,7 +172,7 @@
         ${cardTotal('fa-solid fa-bolt', `Eventos (${janelaAtual}d)`, totais.eventos)}
         ${cardTotal('fa-solid fa-network-wired', 'IPs distintos', totais.ips_distintos)}
         ${cardTotal('fa-solid fa-users', 'Usuários ativos', totais.usuarios_ativos)}
-        ${cardTotal('fa-solid fa-triangle-exclamation', 'Alertas de IP agora', totais.alertas_ip_ativos, totais.alertas_ip_ativos > 0)}
+        ${cardTotal('fa-solid fa-triangle-exclamation', 'IPs repetidos', totais.alertas_ip_ativos, totais.alertas_ip_ativos > 0)}
       </div>
 
       <div class="mb-5">
@@ -188,7 +188,7 @@
 
       ${totais.alertas_ip_ativos > 0 ? `
         <div class="mt-5 bg-red-500/10 border border-red-500/30 rounded-2xl p-4 text-sm text-red-700 flex items-center justify-between">
-          <span><i class="fa-solid fa-triangle-exclamation"></i> Há ${totais.alertas_ip_ativos} IP${totais.alertas_ip_ativos === 1 ? '' : 's'} em uso por mais de uma conta agora.</span>
+          <span><i class="fa-solid fa-triangle-exclamation"></i> Há ${totais.alertas_ip_ativos} IP${totais.alertas_ip_ativos === 1 ? '' : 's'} já usado${totais.alertas_ip_ativos === 1 ? '' : 's'} por mais de uma conta (histórico completo, não só agora).</span>
           <a href="/ips-usuarios.html" class="font-semibold hover:underline whitespace-nowrap ml-3">Ver detalhes →</a>
         </div>
       ` : ''}

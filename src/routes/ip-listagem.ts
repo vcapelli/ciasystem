@@ -18,6 +18,37 @@ export async function podeVerListagemIp(db: D1Database, usuarioId: number): Prom
   return permitido !== null
 }
 
+// Alerta de possível fake: toda conta que já dividiu, em QUALQUER
+// momento do histórico registrado em logs_eventos (não só o IP mais
+// recente), um mesmo IP com outra conta. Antes o alerta olhava só
+// `ultimo_ip` de cada conta, o que tinha o mesmo problema já corrigido
+// na busca (GET /ip-listagem/busca-ip): só pegava a colisão se as duas
+// contas estivessem com aquele IP como o ATUAL ao mesmo tempo — uma
+// fake que hoje já está noutro IP, mas dividiu um IP com a conta
+// principal em algum momento do passado, passava batido. Pedido do
+// Vitor em 25/09/2026. Não é prova automática de multi-conta — pode ser
+// rede/wifi compartilhada por coincidência (fica dito na UI).
+async function buscarAlertasIpDuplicado(
+  db: D1Database
+): Promise<{ ip: string; contas: { id: number; nick: string }[] }[]> {
+  const { results } = await db.prepare(
+    `SELECT DISTINCT le.ip, u.id AS usuario_id, u.nick
+     FROM logs_eventos le
+     JOIN usuarios u ON u.id = le.usuario_id
+     WHERE le.ip IS NOT NULL AND u.tipo = 'jogador'`
+  ).all<{ ip: string; usuario_id: number; nick: string }>()
+
+  const porIp: Record<string, { id: number; nick: string }[]> = {}
+  for (const r of results) {
+    porIp[r.ip] ??= []
+    porIp[r.ip].push({ id: r.usuario_id, nick: r.nick })
+  }
+
+  return Object.entries(porIp)
+    .filter(([, contas]) => contas.length > 1)
+    .map(([ip, contas]) => ({ ip, contas }))
+}
+
 // --- Permissões (quem pode ver a listagem) — só admin do sistema mexe ---
 
 ipListagem.get('/permissoes', async (c) => {
@@ -113,23 +144,11 @@ ipListagem.get('/dashboard', async (c) => {
          GROUP BY status ORDER BY total DESC`
     ).bind(desde).all<{ status: number; total: number }>(),
 
-    // Mesma lógica de colisão da listagem principal (último IP visto
-    // por conta), mas só a contagem — não precisa da lista de contas
-    // aqui, só o número pro card de totais.
-    c.env.DB.prepare(
-      `SELECT COUNT(*) AS total_alertas FROM (
-         SELECT ultimo_ip FROM (
-           SELECT (
-             SELECT le.ip FROM logs_eventos le
-             WHERE le.usuario_id = u.id AND le.ip IS NOT NULL
-             ORDER BY le.criado_em DESC LIMIT 1
-           ) AS ultimo_ip
-           FROM usuarios u WHERE u.tipo = 'jogador'
-         )
-         WHERE ultimo_ip IS NOT NULL
-         GROUP BY ultimo_ip HAVING COUNT(*) > 1
-       )`
-    ).first<{ total_alertas: number }>(),
+    // Mesma detecção de colisão da listagem principal (agora pelo
+    // HISTÓRICO COMPLETO de IPs, não só o mais recente — ver
+    // buscarAlertasIpDuplicado) — aqui só o número entra no card de
+    // totais, não a lista de contas.
+    buscarAlertasIpDuplicado(c.env.DB),
   ])
 
   // Preenche os dias sem nenhum evento com 0 — sem isso o gráfico
@@ -148,7 +167,7 @@ ipListagem.get('/dashboard', async (c) => {
       eventos: totais?.total_eventos ?? 0,
       ips_distintos: totais?.total_ips_distintos ?? 0,
       usuarios_ativos: totais?.total_usuarios_ativos ?? 0,
-      alertas_ip_ativos: alertas?.total_alertas ?? 0,
+      alertas_ip_ativos: alertas.length,
     },
     eventos_por_dia: eventosPorDia,
     eventos_por_tipo: porTipo.results ?? [],
@@ -160,37 +179,28 @@ ipListagem.get('/dashboard', async (c) => {
 // --- Listagem em si ---
 
 // GET /ip-listagem — todo usuário com o último IP visto (via
-// logs_eventos), mais um bloco de alertas: qualquer IP usado por MAIS
-// DE UMA conta diferente entra na lista de suspeitos.
+// logs_eventos), mais um bloco de alertas: qualquer IP já usado, em
+// qualquer momento do histórico, por MAIS DE UMA conta diferente entra
+// na lista de suspeitos (ver buscarAlertasIpDuplicado).
 ipListagem.get('/', async (c) => {
   const usuarioId = c.get('usuarioId')
   if (!(await podeVerListagemIp(c.env.DB, usuarioId))) {
     return c.json({ erro: 'sem permissão pra ver essa listagem' }, 403)
   }
 
-  const { results: usuariosLista } = await c.env.DB.prepare(
-    `SELECT u.id, u.nick, u.tag, u.tipo, u.status, p.nome AS patente_nome,
-       (SELECT le.ip FROM logs_eventos le WHERE le.usuario_id = u.id AND le.ip IS NOT NULL ORDER BY le.criado_em DESC LIMIT 1) AS ultimo_ip,
-       (SELECT le.criado_em FROM logs_eventos le WHERE le.usuario_id = u.id AND le.ip IS NOT NULL ORDER BY le.criado_em DESC LIMIT 1) AS ultimo_acesso_em,
-       (SELECT COUNT(DISTINCT le.ip) FROM logs_eventos le WHERE le.usuario_id = u.id AND le.ip IS NOT NULL) AS total_ips_distintos
-     FROM usuarios u
-     LEFT JOIN patentes p ON p.id = u.patente_atual_id
-     WHERE u.tipo = 'jogador'
-     ORDER BY u.nick`
-  ).all<{ id: number; nick: string; ultimo_ip: string | null }>()
-
-  // Agrupa por IP pra achar quem compartilha o mesmo IP mais recente
-  // com outra conta — indício de multi-conta, não prova definitiva
-  // (pode ser rede/wifi compartilhada por coincidência).
-  const porIp: Record<string, { id: number; nick: string }[]> = {}
-  for (const u of usuariosLista) {
-    if (!u.ultimo_ip) continue
-    porIp[u.ultimo_ip] ??= []
-    porIp[u.ultimo_ip].push({ id: u.id, nick: u.nick })
-  }
-  const alertas = Object.entries(porIp)
-    .filter(([, contas]) => contas.length > 1)
-    .map(([ip, contas]) => ({ ip, contas }))
+  const [{ results: usuariosLista }, alertas] = await Promise.all([
+    c.env.DB.prepare(
+      `SELECT u.id, u.nick, u.tag, u.tipo, u.status, p.nome AS patente_nome,
+         (SELECT le.ip FROM logs_eventos le WHERE le.usuario_id = u.id AND le.ip IS NOT NULL ORDER BY le.criado_em DESC LIMIT 1) AS ultimo_ip,
+         (SELECT le.criado_em FROM logs_eventos le WHERE le.usuario_id = u.id AND le.ip IS NOT NULL ORDER BY le.criado_em DESC LIMIT 1) AS ultimo_acesso_em,
+         (SELECT COUNT(DISTINCT le.ip) FROM logs_eventos le WHERE le.usuario_id = u.id AND le.ip IS NOT NULL) AS total_ips_distintos
+       FROM usuarios u
+       LEFT JOIN patentes p ON p.id = u.patente_atual_id
+       WHERE u.tipo = 'jogador'
+       ORDER BY u.nick`
+    ).all<{ id: number; nick: string; ultimo_ip: string | null }>(),
+    buscarAlertasIpDuplicado(c.env.DB),
+  ])
 
   return c.json({ usuarios: usuariosLista, alertas })
 })
