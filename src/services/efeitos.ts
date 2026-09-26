@@ -5,11 +5,13 @@
 // Duas formas de identificar o alvo:
 //   - `{ usuarioId }` — alvo já existe em `usuarios` (todos os tipos
 //     "de progressão": promocao, rebaixamento, licenca etc.)
-//   - `{ nickAlvo }` — alvo AINDA NÃO existe (só as 3 portas de
-//     entrada: instrucao_inicial, contratacao, e venda_cargo quando
-//     é ingresso novo no Corpo Executivo). Nesses casos, esta função
-//     CRIA a linha em `usuarios` e devolve o `usuarioId` gerado, pra
-//     a rota fazer o backfill de `requerimento_alvos.usuario_id`.
+//   - `{ nickAlvo }` — alvo AINDA NÃO existe (portas de entrada:
+//     instrucao_inicial, contratacao, venda_cargo, integracao, exoneracao,
+//     convidado, bonificacao/medalha e reforma — cada uma cria a conta do
+//     seu jeito, ver os `if (tipo === ...)` logo abaixo). Nesses casos,
+//     esta função CRIA a linha em `usuarios` e devolve o `usuarioId`
+//     gerado, pra a rota fazer o backfill de
+//     `requerimento_alvos.usuario_id`.
 
 import { ehContaProtegida, NICK_CONTA_PROTEGIDA } from './protecao-conta'
 import { revogarTodasSessoes } from './auth'
@@ -297,6 +299,24 @@ export async function aplicarEfeitoAprovacao(
       return { usuarioId, antes: null, depois }
     }
 
+    if (tipo === 'reforma') {
+      // Reforma de alguém que nunca foi cadastrado no CIASystem —
+      // migração de registro histórico (pedido do Vitor em 25/09/2026),
+      // exclusivo de admin (checagem em requerimentos.ts). Se o nick já
+      // tiver conta, reaproveita o branch "alvo já existe" abaixo (mesmo
+      // efeito de status/patente) em vez de falhar com "já existe uma
+      // conta com esse nick" — mesma lógica de Integração/Medalha acima.
+      const existente = await db.prepare(`SELECT id FROM usuarios WHERE nick = ?`).bind(alvo.nickAlvo).first<{ id: number }>()
+      if (existente) return aplicarEfeitoAprovacao(db, tipo, { usuarioId: existente.id }, dadosEspecificos, contexto)
+
+      const patente = await buscarPatente(db, dadosEspecificos?.patente_destino_id)
+      const tag = dadosEspecificos?.tag as string | undefined
+      const usuarioId = await criarUsuarioDeEntrada(db, alvo.nickAlvo, patente.id, patente.corpo, tag)
+      await db.prepare(`UPDATE usuarios SET status = 'reformado', atualizado_em = ${AGORA} WHERE id = ?`).bind(usuarioId).run()
+      const depois = await db.prepare(`SELECT patente_atual_id, corpo, status, tag, nick, exoneracao_ate FROM usuarios WHERE id = ?`).bind(usuarioId).first()
+      return { usuarioId, antes: null, depois }
+    }
+
     throw new Error(`tipo '${tipo}' não suporta alvo por nick (usuário precisa já existir)`)
   }
 
@@ -392,8 +412,7 @@ export async function aplicarEfeitoAprovacao(
         .run()
       break
 
-    case 'desligamento_honroso':
-    case 'reforma': {
+    case 'desligamento_honroso': {
       // "Volta a civil": sai de todos os grupos e perde a TAG (some das
       // listagens), mas mantém patente/corpo como registro histórico —
       // o schema não permite jogador sem patente/corpo. O histórico de
@@ -405,9 +424,49 @@ export async function aplicarEfeitoAprovacao(
 
       await db.prepare(`UPDATE usuario_grupos SET ativo = 0 WHERE usuario_id = ?`).bind(usuarioId).run()
       await db
-        .prepare(`UPDATE usuarios SET status = ?, tag = NULL, atualizado_em = ${AGORA} WHERE id = ?`)
-        .bind(tipo === 'reforma' ? 'reformado' : 'desligado_honroso', usuarioId)
+        .prepare(`UPDATE usuarios SET status = 'desligado_honroso', tag = NULL, atualizado_em = ${AGORA} WHERE id = ?`)
+        .bind(usuarioId)
         .run()
+
+      // Grava quais grupos ficaram inativos, junto do snapshot "antes"
+      // — sem isso, cancelar depois não saberia quais grupos devolver.
+      ;(antes as Record<string, unknown>).grupos_ativos = gruposAtivos.results.map((g) => g.grupo_id)
+      break
+    }
+
+    case 'reforma': {
+      // Mesmo efeito de "volta a civil" do desligamento honroso (sai
+      // dos grupos, perde a TAG), mas reforma também aceita registrar
+      // em que patente/corpo a pessoa se reformou
+      // (dados_especificos.patente_destino_id) — pedido do Vitor em
+      // 25/09/2026, útil tanto pra corrigir o cadastro de quem já foi
+      // reformado com uma patente diferente da atual quanto pra
+      // migração via porta de entrada (ver acima). Quando não
+      // informado, preserva o comportamento de sempre: patente/corpo
+      // continuam como estavam (registro histórico do posto em que a
+      // pessoa realmente serviu).
+      const gruposAtivos = await db
+        .prepare(`SELECT grupo_id FROM usuario_grupos WHERE usuario_id = ? AND ativo = 1`)
+        .bind(usuarioId)
+        .all<{ grupo_id: number }>()
+
+      await db.prepare(`UPDATE usuario_grupos SET ativo = 0 WHERE usuario_id = ?`).bind(usuarioId).run()
+
+      const patenteDestinoId = dadosEspecificos?.patente_destino_id as number | undefined
+      if (patenteDestinoId) {
+        const patente = await buscarPatente(db, patenteDestinoId)
+        await db
+          .prepare(
+            `UPDATE usuarios SET status = 'reformado', tag = NULL, patente_atual_id = ?, corpo = ?, atualizado_em = ${AGORA} WHERE id = ?`
+          )
+          .bind(patente.id, patente.corpo, usuarioId)
+          .run()
+      } else {
+        await db
+          .prepare(`UPDATE usuarios SET status = 'reformado', tag = NULL, atualizado_em = ${AGORA} WHERE id = ?`)
+          .bind(usuarioId)
+          .run()
+      }
 
       // Grava quais grupos ficaram inativos, junto do snapshot "antes"
       // — sem isso, cancelar depois não saberia quais grupos devolver.

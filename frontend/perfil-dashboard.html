@@ -66,11 +66,23 @@
     return `https://imaging.habblet.city/avatarimage?${params.toString()}`;
   }
 
+  const MESES_DASHBOARD = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   function formatarDataCurta(iso) {
     if (!iso) return '—';
+    // Data pura (ex: dados_especificos.data_ultimo_ato_funcional /
+    // data_reforma, vindas de um input type="date", sem horário) —
+    // 'new Date("2026-07-26")' é interpretado como meia-noite UTC, e os
+    // getters abaixo (getDate/getMonth) leem em horário LOCAL. Em fuso
+    // negativo (ex: BRT/UTC-3) meia-noite UTC já é o dia anterior às
+    // 21h local, então o dia exibido "anda pra trás" um dia. Pra data
+    // pura, lê os componentes direto da string, sem conversão de fuso
+    // nenhuma — mesma correção já usada em formatarDataCurtaReq
+    // (assets/requerimentos.js). Datas com horário (criado_em, um
+    // instante de verdade) continuam pelo caminho de sempre.
+    const soData = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+    if (soData) return `${soData[3]} ${MESES_DASHBOARD[Number(soData[2]) - 1]} ${soData[1]}`;
     const d = new Date(iso);
-    const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-    return `${String(d.getDate()).padStart(2,'0')} ${MESES[d.getMonth()]} ${d.getFullYear()}`;
+    return `${String(d.getDate()).padStart(2,'0')} ${MESES_DASHBOARD[d.getMonth()]} ${d.getFullYear()}`;
   }
 
   // Fluxo de definir/alterar senha — a sessão logada já prova quem é a
@@ -571,7 +583,19 @@
       } catch { return r.criado_em; }
     }
     function dataEfetivaUltimoAto(r) {
-      if (!r || r.tipo !== 'integracao') return r?.criado_em;
+      if (!r) return r?.criado_em;
+      // Mesmo raciocínio de Integração: reforma também aceita registrar
+      // uma data histórica própria (data_reforma) — sem isso, a
+      // "Identificação" do perfil (textoIdentificacao, que usa o
+      // requerimento mais recente de QUALQUER tipo) mostraria a data de
+      // hoje pra um reformado recém-migrado com data histórica.
+      if (r.tipo === 'reforma') {
+        try {
+          const dados = r.dados_especificos ? JSON.parse(r.dados_especificos) : {};
+          return dados.data_reforma || r.criado_em;
+        } catch { return r.criado_em; }
+      }
+      if (r.tipo !== 'integracao') return r.criado_em;
       try {
         const dados = r.dados_especificos ? JSON.parse(r.dados_especificos) : {};
         return dados.data_ultimo_ato_funcional || dados.data || r.criado_em;

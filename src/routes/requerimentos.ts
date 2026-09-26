@@ -73,6 +73,24 @@ requerimentos.post('/', async (c) => {
     return c.json({ erro: 'só administradores do sistema podem postar requerimentos de integração' }, 403)
   }
 
+  // Reforma de alguém que ainda não está cadastrado no CIASystem
+  // (porta de entrada) é uma correção/migração de registro histórico —
+  // mesma lógica da Integração: exclusivo de admin. A página de reforma
+  // manda o alvo sempre como nick (texto), já exista a conta ou não, então
+  // aqui resolve se cada nick já corresponde a um membro: se sim, é uma
+  // reforma normal de quem já existe (liberada pra quem tiver competência
+  // hierárquica normal — reforma não passa por checagem de hierarquia,
+  // ver acaoHierarquiaDoTipo); só bloqueia quando o nick é de fato novo.
+  if (body.tipo === 'reforma' && !autor.administrador_sistema) {
+    for (const item of body.alvos) {
+      if (typeof item === 'number') continue
+      const existente = await c.env.DB.prepare(`SELECT id FROM usuarios WHERE nick = ?`).bind(item).first<{ id: number }>()
+      if (!existente) {
+        return c.json({ erro: 'só administradores do sistema podem postar reforma de alguém que ainda não está cadastrado no CIASystem' }, 403)
+      }
+    }
+  }
+
   // Contratação: sem ser administrador do sistema, só pode contratar
   // pra uma patente do Corpo Militar estritamente ABAIXO da sua própria
   // — nunca igual/superior à sua, e nunca no Corpo Executivo.

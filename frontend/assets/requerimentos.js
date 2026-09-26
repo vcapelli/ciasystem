@@ -130,10 +130,15 @@ function renderCardRequerimento(r, patentesMapa, meAtual, apendiceExtra = '', mo
     ? ` - {Licença: ${formatarDataCurtaReq(r.criado_em)} até ${formatarDataCurtaReq(dadosEspecificos.data_retorno)}}`
     : '';
 
-  // Integração: usa a data histórica informada (ingresso real na
-  // organização) na identificação em vez da data de hoje, que só
-  // reflete quando o registro foi migrado pro sistema novo.
-  const dataIdentificacao = (r.tipo === 'integracao' && dadosEspecificos.data) ? dadosEspecificos.data : r.criado_em;
+  // Integração/Reforma: usam a data histórica informada (ingresso real
+  // na organização / data real da reforma) na identificação em vez da
+  // data de hoje, que só reflete quando o registro foi migrado ou
+  // corrigido no sistema novo.
+  const dataIdentificacao = (r.tipo === 'integracao' && dadosEspecificos.data)
+    ? dadosEspecificos.data
+    : (r.tipo === 'reforma' && dadosEspecificos.data_reforma)
+      ? dadosEspecificos.data_reforma
+      : r.criado_em;
 
   const nickPrincipalSeguro = alvoPrincipal ? escapeHtml(alvoPrincipal.nick) : null;
   const tagAlvoSegura = escapeHtml(alvoPrincipal?.tag || '---');
@@ -159,6 +164,7 @@ function renderCardRequerimento(r, patentesMapa, meAtual, apendiceExtra = '', mo
   if (dadosEspecificos.data_retorno) linhasExtras.push(`<b>Data de retorno:</b> ${formatarDataCurtaReq(dadosEspecificos.data_retorno)}`);
   if (r.tipo === 'integracao' && dadosEspecificos.data) linhasExtras.push(`<b>Data de ingresso (histórica):</b> ${formatarDataCurtaReq(dadosEspecificos.data)}`);
   if (r.tipo === 'integracao' && dadosEspecificos.data_ultimo_ato_funcional) linhasExtras.push(`<b>Data do último requerimento (histórica):</b> ${formatarDataCurtaReq(dadosEspecificos.data_ultimo_ato_funcional)}`);
+  if (r.tipo === 'reforma' && dadosEspecificos.data_reforma) linhasExtras.push(`<b>Data de reforma (histórica):</b> ${formatarDataCurtaReq(dadosEspecificos.data_reforma)}`);
   if (dadosEspecificos.exoneracao_ate) linhasExtras.push(`<b>Exoneração até:</b> ${formatarDataCurtaReq(dadosEspecificos.exoneracao_ate)}`);
   if (r.tipo === 'bonificacao' && dadosEspecificos.categoria === 'medalha') {
     const rotulosMedalha = { temporaria: 'Temporária', efetiva: 'Efetiva', honraria_particular: 'Honraria Particular', honra: 'Medalha de Honra' };
@@ -343,12 +349,14 @@ function formatarDataHoraReq(iso) {
  *   patenteCorpo: 'militar' | 'executivo' | null,
  *   filtrarPatentePorAutor: bool,      // Contratação: patente < patente do autor (ou todas, se admin)
  *   patenteFiltroPorAlvo: bool,        // promoção/rebaixamento: filtra pela patente atual do alvo
+ *   patenteIrrestrita: bool,           // Reforma: carrega todas as patentes, de qualquer corpo
  *   tiposComPatente: [tipo, ...],
  *   tiposComCrime: [tipo, ...],        // também mostra o campo "Provas"
  *   tiposComTag: [tipo, ...],
  *   tiposComPermissao: [tipo, ...],
  *   tiposComDataRetorno: [tipo, ...],  // licença
  *   tiposComDataIntegracao: [tipo, ...], // integração: duas datas históricas independentes — ingresso e último ato funcional
+ *   tiposComDataReforma: [tipo, ...],  // reforma: data histórica única
  *   tiposComExoneracao: [tipo, ...],   // temporária/indeterminada
  *   tipoVoltaLicencaCondicional: bool, // só habilita 'volta_licenca' se o alvo estiver de licença
  *   usaNovoNick: bool,                 // transferência de conta
@@ -464,6 +472,12 @@ async function montarFormularioRequerimento(config) {
                   <input id="req-data-ultimo-ato" type="date" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
                   <p class="text-xs text-muted mt-1">Data da última promoção/ato dela no sistema antigo (base do "tempo no posto" e dos dias mínimos pra próxima promoção). Se não souber, deixe em branco e ela usa a data de ingresso acima. Preencher só um dos dois campos aplica o mesmo valor aos dois — como era antes de existir esse segundo campo.</p>
                 </div>
+              </div>
+
+              <div id="req-campo-data-reforma" class="hidden">
+                <label class="block text-xs text-muted mb-1">Data de reforma</label>
+                <input id="req-data-reforma" type="date" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+                <p class="text-xs text-muted mt-1">Data real da reforma, se for diferente de hoje (ex: migração de um registro antigo). Se não souber, deixe em branco.</p>
               </div>
 
               <div id="req-campo-exoneracao" class="hidden space-y-3">
@@ -586,6 +600,7 @@ async function montarFormularioRequerimento(config) {
   const campoPermissao = document.getElementById('req-campo-permissao');
   const campoDataRetorno = document.getElementById('req-campo-data-retorno');
   const campoDataIntegracao = document.getElementById('req-campo-data-integracao');
+  const campoDataReforma = document.getElementById('req-campo-data-reforma');
   const campoExoneracao = document.getElementById('req-campo-exoneracao');
   const campoNovoNick = document.getElementById('req-campo-novo-nick');
   const previewEl = document.getElementById('req-alvo-preview');
@@ -788,6 +803,20 @@ async function montarFormularioRequerimento(config) {
             const historicoResp = await apiFetch(`/requerimentos/alvo/${perfil.id}`);
             const historico = historicoResp.ok ? await historicoResp.json() : [];
             renderPreviewUsuario(perfil, historico[0]?.criado_em);
+
+            // Pré-preenche o campo de patente com a patente atual do
+            // alvo já existente — sem isso, o <select> sempre manda
+            // ALGUM valor (a primeira opção) mesmo sem o operador
+            // mexer nele, o que sobrescreveria silenciosamente a
+            // patente de um membro real ao reformá-lo sem querer.
+            // Deixar como veio preserva o registro correto; só um nick
+            // realmente novo (porta de entrada) ou uma correção
+            // deliberada do admin acabam mandando um valor diferente.
+            const campoPatenteAtivo = (config.tiposComPatente || []).includes(selectTipo.value);
+            if (campoPatenteAtivo && perfil.patente_atual_id) {
+              const selectPatente = document.getElementById('req-patente');
+              if (selectPatente) selectPatente.value = perfil.patente_atual_id;
+            }
             return;
           }
         }
@@ -859,6 +888,19 @@ async function montarFormularioRequerimento(config) {
     }
     patentesCacheCompleta = todasPatentes;
     document.getElementById('req-patente').innerHTML = patentesCacheCompleta.map((p) => `<option value="${p.id}">${p.nome}</option>`).join('');
+  } else if (config.patenteIrrestrita) {
+    // Reforma se aplica a qualquer corpo/patente (a pessoa pode ter se
+    // reformado como Militar ou Executivo) — diferente de
+    // filtrarPatentePorAutor (só abaixo da patente do autor) e de
+    // patenteCorpo (um corpo fixo só), aqui carrega tudo.
+    await promessaMe;
+    const resp = await apiFetch('/patentes');
+    let todasPatentes = resp.ok ? await resp.json() : [];
+    if (!meAtual?.administrador_sistema) {
+      todasPatentes = todasPatentes.filter((p) => !p.eh_suprema);
+    }
+    document.getElementById('req-patente').innerHTML = todasPatentes
+      .map((p) => `<option value="${p.id}">${p.nome}${p.corpo === 'executivo' ? ' (Executivo)' : ''}</option>`).join('');
   }
 
   // Carrega crimes (se essa página usa esse campo)
@@ -885,6 +927,7 @@ async function montarFormularioRequerimento(config) {
     campoPermissao.classList.toggle('hidden', !(config.tiposComPermissao || []).includes(tipoAtual));
     campoDataRetorno.classList.toggle('hidden', !(config.tiposComDataRetorno || []).includes(tipoAtual));
     campoDataIntegracao.classList.toggle('hidden', !(config.tiposComDataIntegracao || []).includes(tipoAtual));
+    campoDataReforma.classList.toggle('hidden', !(config.tiposComDataReforma || []).includes(tipoAtual));
     campoExoneracao.classList.toggle('hidden', !(config.tiposComExoneracao || []).includes(tipoAtual));
     if (campoNovoNick) campoNovoNick.classList.toggle('hidden', !config.usaNovoNick);
     atualizarCamposMedalha();
@@ -980,6 +1023,9 @@ async function montarFormularioRequerimento(config) {
     }
     if ((config.tiposComDataIntegracao || []).includes(tipo) && document.getElementById('req-data-ultimo-ato').value) {
       dadosEspecificos.data_ultimo_ato_funcional = document.getElementById('req-data-ultimo-ato').value;
+    }
+    if ((config.tiposComDataReforma || []).includes(tipo) && document.getElementById('req-data-reforma').value) {
+      dadosEspecificos.data_reforma = document.getElementById('req-data-reforma').value;
     }
     if ((config.tiposComExoneracao || []).includes(tipo)) {
       const duracao = document.getElementById('req-exoneracao-tipo').value;

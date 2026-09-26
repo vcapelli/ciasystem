@@ -22,6 +22,28 @@ type MembroBase = Omit<MembroListagem, 'ultimo_tipo' | 'ultimo_autor_tag' | 'ult
 // esteja gravada no registro.
 const EXCLUI_DESLIGADOS_EXONERADOS = `u.status NOT IN ('desligado_honroso', 'desligado_desonroso', 'exonerado')`
 
+// Integração e Reforma guardam uma data histórica própria dentro de
+// dados_especificos (data/data_ultimo_ato_funcional pra integração,
+// data_reforma pra reforma) — o `criado_em` do requerimento só reflete
+// quando ele foi registrado no sistema, não a data real do ato (que
+// pode ser bem anterior, ex: migração de um cadastro antigo da
+// planilha). Sem isso, a "identificação" mostrada nas listagens sai com
+// a data de hoje em vez da data histórica (mesmo bug já corrigido no
+// perfil-dashboard.html e no card de requerimento — ver notas-tecnicas
+// no projeto: essa lógica tende a se duplicar entre arquivos e precisa
+// ficar sincronizada em todos eles).
+function dataEfetivaIdentificacao(tipo: string, dadosEspecificosJson: string | null, criadoEm: string): string {
+  if (!dadosEspecificosJson) return criadoEm
+  try {
+    const dados = JSON.parse(dadosEspecificosJson) as Record<string, unknown>
+    if (tipo === 'integracao') return (dados.data_ultimo_ato_funcional as string) || (dados.data as string) || criadoEm
+    if (tipo === 'reforma') return (dados.data_reforma as string) || criadoEm
+    return criadoEm
+  } catch {
+    return criadoEm
+  }
+}
+
 // Preenche, pra cada usuário, o tipo/TAG do autor/data do requerimento
 // mais recente onde ele foi alvo — o frontend usa isso pra montar a
 // mesma "identificação" (nick [prefixo+TAG] data) usada nos cards de
@@ -32,15 +54,15 @@ async function anexarIdentificacao(db: D1Like, membros: MembroBase[]): Promise<M
   const ids = membros.map((m) => m.id)
   const placeholders = ids.map(() => '?').join(',')
   const { results } = await db.prepare(
-    `SELECT ra.usuario_id, r.tipo, r.criado_em, COALESCE(r.tag_grupo_override, au.tag) AS autor_tag
+    `SELECT ra.usuario_id, r.tipo, r.criado_em, r.dados_especificos, COALESCE(r.tag_grupo_override, au.tag) AS autor_tag
      FROM requerimento_alvos ra
      JOIN requerimentos r ON r.id = ra.requerimento_id
      LEFT JOIN usuarios au ON au.id = r.autor_id
      WHERE ra.usuario_id IN (${placeholders})
      ORDER BY r.criado_em DESC`
-  ).bind(...ids).all<{ usuario_id: number; tipo: string; criado_em: string; autor_tag: string | null }>()
+  ).bind(...ids).all<{ usuario_id: number; tipo: string; criado_em: string; dados_especificos: string | null; autor_tag: string | null }>()
 
-  const maisRecentePorUsuario: Record<number, { tipo: string; criado_em: string; autor_tag: string | null }> = {}
+  const maisRecentePorUsuario: Record<number, typeof results[number]> = {}
   for (const r of results) {
     if (!(r.usuario_id in maisRecentePorUsuario)) maisRecentePorUsuario[r.usuario_id] = r
   }
@@ -51,7 +73,7 @@ async function anexarIdentificacao(db: D1Like, membros: MembroBase[]): Promise<M
       ...m,
       ultimo_tipo: info?.tipo ?? null,
       ultimo_autor_tag: info?.autor_tag ?? null,
-      ultimo_requerimento_em: info?.criado_em ?? null,
+      ultimo_requerimento_em: info ? dataEfetivaIdentificacao(info.tipo, info.dados_especificos, info.criado_em) : null,
     }
   })
 }
