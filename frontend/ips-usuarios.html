@@ -49,25 +49,89 @@
   let todosUsuarios = [];
   let ipsSuspeitos = new Set();
 
+  // Clicar na linha expande o histórico completo de IPs daquele usuário
+  // (pedido do Vitor em 25/09/2026) — usuariosExpandidos controla quais
+  // linhas estão abertas, e ipsUsuarioCache guarda o resultado de
+  // GET /ip-listagem/usuario/:id pra não refazer a busca toda vez que a
+  // linha é recolhida/reaberta (só busca de novo se a página recarregar).
+  let usuariosExpandidos = new Set();
+  let ipsUsuarioCache = new Map();
+
   function formatarDataIp(iso) {
     if (!iso) return 'nunca';
     return new Date(iso).toLocaleString('pt-BR');
   }
 
-  function renderLinha(u) {
-    const suspeito = u.ultimo_ip && ipsSuspeitos.has(u.ultimo_ip);
+  function renderPainelIps(ips) {
+    if (!ips) {
+      return `<div class="px-4 pb-3 text-xs text-muted">Carregando IPs…</div>`;
+    }
+    if (!ips.length) {
+      return `<div class="px-4 pb-3 text-xs text-muted">Nenhum IP registrado ainda.</div>`;
+    }
+    // Já vem ordenado por último acesso decrescente (mais recente
+    // primeiro) direto do backend — ver GET /ip-listagem/usuario/:id.
     return `
-      <div class="flex items-center justify-between px-4 py-3 ${suspeito ? 'bg-red-500/5' : ''}">
-        <div>
-          <p class="text-sm font-semibold">${u.nick}${u.tag ? ` <span class="text-muted font-normal">[${u.tag}]</span>` : ''}</p>
-          <p class="text-xs text-muted">${u.patente_nome || '—'} · último acesso ${formatarDataIp(u.ultimo_acesso_em)}</p>
-        </div>
-        <div class="text-right">
-          <p class="text-sm font-mono ${suspeito ? 'text-red-600 font-bold' : ''}">${u.ultimo_ip || '—'}</p>
-          <p class="text-xs text-muted">${u.total_ips_distintos || 0} IP${u.total_ips_distintos === 1 ? '' : 's'} distinto${u.total_ips_distintos === 1 ? '' : 's'}</p>
+      <div class="px-4 pb-3">
+        <div class="bg-basebg border border-border rounded-xl divide-y divide-border overflow-hidden">
+          ${ips.map((r) => {
+            const suspeito = ipsSuspeitos.has(r.ip);
+            return `
+              <div class="flex items-center justify-between gap-3 px-3 py-2 text-xs ${suspeito ? 'bg-red-500/5' : ''}">
+                <span class="font-mono ${suspeito ? 'text-red-600 font-bold' : ''}">${escapeHtml(r.ip)}</span>
+                <span class="text-muted text-right">
+                  ${r.total_acessos} acesso${r.total_acessos === 1 ? '' : 's'} · último ${formatarDataIp(r.ultimo_acesso_em)}
+                  <br class="sm:hidden">· desde ${formatarDataIp(r.primeiro_acesso_em)}
+                </span>
+              </div>
+            `;
+          }).join('')}
         </div>
       </div>
     `;
+  }
+
+  function renderLinha(u) {
+    const suspeito = u.ultimo_ip && ipsSuspeitos.has(u.ultimo_ip);
+    const expandido = usuariosExpandidos.has(u.id);
+    const nickEsc = escapeHtml(u.nick);
+    const tagEsc = u.tag ? escapeHtml(u.tag) : '';
+    const patenteEsc = escapeHtml(u.patente_nome || '—');
+    const ultimoIpEsc = escapeHtml(u.ultimo_ip || '—');
+    return `
+      <div>
+        <div data-linha-usuario="${u.id}" class="flex items-center justify-between gap-3 px-4 py-3 cursor-pointer hover:bg-basebg/60 transition-colors ${suspeito ? 'bg-red-500/5' : ''}">
+          <div class="min-w-0">
+            <p class="text-sm font-semibold truncate">${nickEsc}${tagEsc ? ` <span class="text-muted font-normal">[${tagEsc}]</span>` : ''}</p>
+            <p class="text-xs text-muted">${patenteEsc} · último acesso ${formatarDataIp(u.ultimo_acesso_em)}</p>
+          </div>
+          <div class="flex items-center gap-3 shrink-0">
+            <div class="text-right">
+              <p class="text-sm font-mono ${suspeito ? 'text-red-600 font-bold' : ''}">${ultimoIpEsc}</p>
+              <p class="text-xs text-muted">${u.total_ips_distintos || 0} IP${u.total_ips_distintos === 1 ? '' : 's'} distinto${u.total_ips_distintos === 1 ? '' : 's'}</p>
+            </div>
+            <i class="fa-solid fa-chevron-${expandido ? 'up' : 'down'} text-muted text-xs"></i>
+          </div>
+        </div>
+        ${expandido ? renderPainelIps(ipsUsuarioCache.get(u.id)) : ''}
+      </div>
+    `;
+  }
+
+  async function alternarExpansao(usuarioId) {
+    if (usuariosExpandidos.has(usuarioId)) {
+      usuariosExpandidos.delete(usuarioId);
+      filtrarERenderizar();
+      return;
+    }
+    usuariosExpandidos.add(usuarioId);
+    filtrarERenderizar();
+
+    if (!ipsUsuarioCache.has(usuarioId)) {
+      const resp = await apiFetch(`/ip-listagem/usuario/${usuarioId}`);
+      ipsUsuarioCache.set(usuarioId, resp.ok ? await resp.json() : []);
+      filtrarERenderizar();
+    }
   }
 
   function renderAlertas(alertas) {
@@ -79,8 +143,8 @@
         <div class="space-y-1.5">
           ${alertas.map((a) => `
             <p class="text-xs text-red-700">
-              <span class="font-mono font-semibold">${a.ip}</span> —
-              ${a.contas.map((c) => c.nick).join(', ')}
+              <span class="font-mono font-semibold">${escapeHtml(a.ip)}</span> —
+              ${a.contas.map((c) => escapeHtml(c.nick)).join(', ')}
             </p>
           `).join('')}
         </div>
@@ -99,6 +163,10 @@
     lista.innerHTML = filtrados.length
       ? filtrados.map(renderLinha).join('')
       : '<p class="text-sm text-muted p-4">Nenhum usuário encontrado.</p>';
+
+    lista.querySelectorAll('[data-linha-usuario]').forEach((el) => {
+      el.addEventListener('click', () => alternarExpansao(Number(el.dataset.linhaUsuario)));
+    });
   }
 
   document.getElementById('busca-ip-usuario').addEventListener('input', filtrarERenderizar);

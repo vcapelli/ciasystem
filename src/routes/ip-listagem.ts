@@ -195,4 +195,29 @@ ipListagem.get('/', async (c) => {
   return c.json({ usuarios: usuariosLista, alertas })
 })
 
+// GET /ip-listagem/usuario/:usuarioId — todos os IPs distintos já usados
+// por essa conta (agrupados a partir de logs_eventos), cada um com
+// quantas vezes apareceu e quando foi visto pela primeira/última vez.
+// Ordenado por último acesso decrescente (IP mais recente primeiro) —
+// pedido do Vitor em 25/09/2026, pra expandir a linha do usuário na
+// listagem principal (GET /ip-listagem) e ver o histórico completo, não
+// só o último IP.
+ipListagem.get('/usuario/:usuarioId', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  if (!(await podeVerListagemIp(c.env.DB, usuarioId))) {
+    return c.json({ erro: 'sem permissão pra ver essa listagem' }, 403)
+  }
+
+  const alvoId = c.req.param('usuarioId')
+  const { results } = await c.env.DB.prepare(
+    `SELECT ip, COUNT(*) AS total_acessos, MIN(criado_em) AS primeiro_acesso_em, MAX(criado_em) AS ultimo_acesso_em
+     FROM logs_eventos
+     WHERE usuario_id = ? AND ip IS NOT NULL
+     GROUP BY ip
+     ORDER BY ultimo_acesso_em DESC`
+  ).bind(alvoId).all<{ ip: string; total_acessos: number; primeiro_acesso_em: string; ultimo_acesso_em: string }>()
+
+  return c.json(results)
+})
+
 export default ipListagem
