@@ -153,12 +153,38 @@
     `;
   }
 
-  function filtrarERenderizar() {
+  // Contador de chamadas — evita que uma resposta antiga (de uma busca
+  // já trocada) sobrescreva o resultado de uma busca mais nova quando as
+  // duas chegam fora de ordem. Bug relatado pelo Vitor em 25/09/2026: a
+  // busca só comparava com `ultimo_ip` de cada conta, então uma conta
+  // cujo IP pesquisado não é mais o mais recente dela nunca aparecia —
+  // só a conta pra quem aquele IP AINDA é o atual. Por isso agora
+  // completa com GET /ip-listagem/busca-ip, que olha o histórico
+  // completo de IPs, não só o mais recente.
+  let buscaSequencia = 0;
+
+  async function filtrarERenderizar() {
     const termo = document.getElementById('busca-ip-usuario').value.trim().toLowerCase();
     const lista = document.getElementById('lista-ips');
-    const filtrados = termo
-      ? todosUsuarios.filter((u) => u.nick.toLowerCase().includes(termo) || (u.ultimo_ip || '').includes(termo))
-      : todosUsuarios;
+
+    let filtrados;
+    if (!termo) {
+      filtrados = todosUsuarios;
+    } else {
+      const minhaSequencia = ++buscaSequencia;
+      const idsEncontrados = new Set(
+        todosUsuarios
+          .filter((u) => u.nick.toLowerCase().includes(termo) || (u.ultimo_ip || '').includes(termo))
+          .map((u) => u.id)
+      );
+
+      const resp = await apiFetch(`/ip-listagem/busca-ip?ip=${encodeURIComponent(termo)}`);
+      if (minhaSequencia !== buscaSequencia) return; // busca já foi trocada por outra mais recente
+      const idsPorHistorico = resp.ok ? await resp.json() : [];
+      idsPorHistorico.forEach((id) => idsEncontrados.add(id));
+
+      filtrados = todosUsuarios.filter((u) => idsEncontrados.has(u.id));
+    }
 
     lista.innerHTML = filtrados.length
       ? filtrados.map(renderLinha).join('')
@@ -169,7 +195,11 @@
     });
   }
 
-  document.getElementById('busca-ip-usuario').addEventListener('input', filtrarERenderizar);
+  let debounceBuscaIp;
+  document.getElementById('busca-ip-usuario').addEventListener('input', () => {
+    clearTimeout(debounceBuscaIp);
+    debounceBuscaIp = setTimeout(filtrarERenderizar, 300);
+  });
 
   montarLayout('/ips-usuarios.html').then(async (me) => {
     if (!me) return;

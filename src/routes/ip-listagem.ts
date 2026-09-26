@@ -220,4 +220,28 @@ ipListagem.get('/usuario/:usuarioId', async (c) => {
   return c.json(results)
 })
 
+// GET /ip-listagem/busca-ip?ip=X — ids de conta que já usaram, EM
+// QUALQUER MOMENTO do histórico, um IP contendo esse texto — não só o
+// mais recente. Bug relatado pelo Vitor em 25/09/2026: a busca da
+// listagem principal (GET /ip-listagem) filtra no cliente comparando só
+// com `ultimo_ip` de cada conta, então uma conta que já usou aquele IP
+// mas não é mais o IP atual dela nunca aparecia na busca — só a conta
+// pra quem aquele IP AINDA é o mais recente. Esse endpoint completa a
+// busca no cliente com o histórico completo (ver ips-usuarios.html).
+ipListagem.get('/busca-ip', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  if (!(await podeVerListagemIp(c.env.DB, usuarioId))) {
+    return c.json({ erro: 'sem permissão pra ver essa listagem' }, 403)
+  }
+
+  const ip = c.req.query('ip')?.trim()
+  if (!ip) return c.json([])
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT DISTINCT usuario_id FROM logs_eventos WHERE usuario_id IS NOT NULL AND ip LIKE ?`
+  ).bind(`%${ip}%`).all<{ usuario_id: number }>()
+
+  return c.json(results.map((r) => r.usuario_id))
+})
+
 export default ipListagem
