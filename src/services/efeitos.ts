@@ -301,11 +301,15 @@ export async function aplicarEfeitoAprovacao(
 
     if (tipo === 'reforma') {
       // Reforma de alguém que nunca foi cadastrado no CIASystem —
-      // migração de registro histórico (pedido do Vitor em 25/09/2026),
-      // exclusivo de admin (checagem em requerimentos.ts). Se o nick já
-      // tiver conta, reaproveita o branch "alvo já existe" abaixo (mesmo
-      // efeito de status/patente) em vez de falhar com "já existe uma
-      // conta com esse nick" — mesma lógica de Integração/Medalha acima.
+      // migração/correção de registro histórico (pedido do Vitor em
+      // 25/09/2026). Aberta pra qualquer um postar (não é exclusiva de
+      // admin, ao contrário de Integração) — o requerimento nasce
+      // 'pendente' igual a qualquer outro, então só tem efeito depois
+      // que alguém com permissão de aprovar decidir por ele. Se o nick
+      // já tiver conta, reaproveita o branch "alvo já existe" abaixo
+      // (mesmo efeito de status/patente) em vez de falhar com "já
+      // existe uma conta com esse nick" — mesma lógica de
+      // Integração/Medalha acima.
       const existente = await db.prepare(`SELECT id FROM usuarios WHERE nick = ?`).bind(alvo.nickAlvo).first<{ id: number }>()
       if (existente) return aplicarEfeitoAprovacao(db, tipo, { usuarioId: existente.id }, dadosEspecificos, contexto)
 

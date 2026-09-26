@@ -153,9 +153,16 @@ function renderCardRequerimento(r, patentesMapa, meAtual, apendiceExtra = '', mo
   linhasExtras.push(`<b>${ehInstrucaoInicial ? 'Recruta(s) aprovado(s)' : 'Alvo'}:</b> ${alvosTexto}`);
   if (dadosEspecificos.patente_destino_id && patentesMapa[dadosEspecificos.patente_destino_id]) {
     const nomeDestino = patentesMapa[dadosEspecificos.patente_destino_id];
-    const idAntiga = alvoPrincipal?.patente_antes_id ?? alvoPrincipal?.patente_atual_id_agora;
-    const nomeAntiga = idAntiga ? patentesMapa[idAntiga] : null;
-    linhasExtras.push(`<b>Destino:</b> ${nomeAntiga && nomeAntiga !== nomeDestino ? `${nomeAntiga} > ${nomeDestino}` : nomeDestino}`);
+    if (r.tipo === 'reforma') {
+      // Reforma não é uma progressão (não tem "de X pra Y") — é o posto
+      // em que a pessoa se reformou, então o rótulo é diferente do
+      // genérico usado por promoção/contratação/etc.
+      linhasExtras.push(`<b>Destino:</b> Oficial Reforma (${nomeDestino})`);
+    } else {
+      const idAntiga = alvoPrincipal?.patente_antes_id ?? alvoPrincipal?.patente_atual_id_agora;
+      const nomeAntiga = idAntiga ? patentesMapa[idAntiga] : null;
+      linhasExtras.push(`<b>Destino:</b> ${nomeAntiga && nomeAntiga !== nomeDestino ? `${nomeAntiga} > ${nomeDestino}` : nomeDestino}`);
+    }
   }
   if (dadosEspecificos.novo_nick) linhasExtras.push(`<b>Novo nickname:</b> ${escapeHtml(dadosEspecificos.novo_nick)}`);
   if (r.tag_aplicada) linhasExtras.push(`<b>Nova TAG:</b> ${escapeHtml(r.tag_aplicada)}`);
