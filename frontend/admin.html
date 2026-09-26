@@ -689,45 +689,132 @@
   // ---------- Configurações ----------
   async function carregarConfiguracoes() {
     const raiz = document.getElementById('conteudo-aba');
-    const config = await buscarConfiguracoes();
+    const [config, gruposResp] = await Promise.all([buscarConfiguracoes(), apiFetch('/grupos')]);
+
+    // Ordem local (em memória) dos grupos, pra arrastar/mover com as
+    // setas sem precisar ir no servidor a cada passo — só grava tudo de
+    // uma vez quando clica "Salvar ordem" (PATCH /grupos/reordenar).
+    // Pedido do Vitor em 25/09/2026.
+    let ordemGrupos = (gruposResp.ok ? await gruposResp.json() : [])
+      .slice()
+      .sort((a, b) => (a.ordem - b.ordem) || a.nome.localeCompare(b.nome));
+    let indiceArrastando = null;
+
+    function itemOrdemHtml(g, i, total) {
+      return `
+        <div draggable="true" data-ordem-indice="${i}" class="flex items-center gap-2 bg-basebg border border-border rounded-lg px-2.5 py-2 cursor-move">
+          <i class="fa-solid fa-grip-vertical text-muted text-xs"></i>
+          <span class="h-6 w-6 rounded bg-card border border-border flex items-center justify-center overflow-hidden shrink-0">
+            ${g.imagem_url ? `<img src="${g.imagem_url}" class="max-w-full max-h-full object-contain" alt="">` : '<i class="fa-solid fa-building text-muted text-xs"></i>'}
+          </span>
+          <span class="text-sm flex-1 min-w-0 truncate">${escapeHtml(g.nome)} <span class="text-muted">(${escapeHtml(g.codigo)})</span></span>
+          <button type="button" data-ordem-mover="up" data-ordem-indice-btn="${i}" class="text-muted hover:text-dark px-1 py-1 rounded transition-colors ${i === 0 ? 'opacity-30 pointer-events-none' : ''}"><i class="fa-solid fa-chevron-up"></i></button>
+          <button type="button" data-ordem-mover="down" data-ordem-indice-btn="${i}" class="text-muted hover:text-dark px-1 py-1 rounded transition-colors ${i === total - 1 ? 'opacity-30 pointer-events-none' : ''}"><i class="fa-solid fa-chevron-down"></i></button>
+        </div>
+      `;
+    }
+
+    function renderListaOrdem() {
+      const lista = document.getElementById('lista-ordem-grupos');
+      if (!lista) return;
+      lista.innerHTML = ordemGrupos.length
+        ? ordemGrupos.map((g, i) => itemOrdemHtml(g, i, ordemGrupos.length)).join('')
+        : '<p class="text-sm text-muted">Nenhum grupo cadastrado ainda.</p>';
+      ligarListaOrdem();
+    }
+
+    function ligarListaOrdem() {
+      const lista = document.getElementById('lista-ordem-grupos');
+      lista.querySelectorAll('[data-ordem-mover]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const i = Number(btn.dataset.ordemIndiceBtn);
+          const alvo = btn.dataset.ordemMover === 'up' ? i - 1 : i + 1;
+          if (alvo < 0 || alvo >= ordemGrupos.length) return;
+          [ordemGrupos[i], ordemGrupos[alvo]] = [ordemGrupos[alvo], ordemGrupos[i]];
+          renderListaOrdem();
+        });
+      });
+      lista.querySelectorAll('[data-ordem-indice]').forEach((el) => {
+        el.addEventListener('dragstart', () => {
+          indiceArrastando = Number(el.dataset.ordemIndice);
+          el.classList.add('opacity-50');
+        });
+        el.addEventListener('dragend', () => el.classList.remove('opacity-50'));
+        el.addEventListener('dragover', (e) => e.preventDefault());
+        el.addEventListener('drop', (e) => {
+          e.preventDefault();
+          const destino = Number(el.dataset.ordemIndice);
+          if (indiceArrastando === null || destino === indiceArrastando) return;
+          const [movido] = ordemGrupos.splice(indiceArrastando, 1);
+          ordemGrupos.splice(destino, 0, movido);
+          indiceArrastando = null;
+          renderListaOrdem();
+        });
+      });
+    }
 
     raiz.innerHTML = `
-      <div class="bg-card border border-border rounded-2xl shadow-sm p-5 max-w-lg">
-        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-1">Logo do sistema</h2>
-        <p class="text-xs text-muted mb-3">Usada na navbar, na tela de login e como ícone do site (favicon).</p>
-        <div class="flex items-center gap-3 mb-3">
-          <span class="h-12 w-12 rounded-lg bg-basebg border border-border overflow-hidden flex items-center justify-center shrink-0">
-            ${config.logo_url ? `<img src="${config.logo_url}" class="w-full h-full object-contain" alt="Logo atual">` : '<i class="fa-solid fa-image text-muted"></i>'}
-          </span>
-          <input id="config-logo-url" value="${config.logo_url || ''}" placeholder="https://…" class="flex-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
-        </div>
-        <button id="btn-salvar-logo" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Salvar</button>
-        <p id="config-msg" class="hidden text-xs mt-2"></p>
-      </div>
+      <div class="flex flex-col lg:flex-row gap-5 items-start">
+        <div class="flex flex-col gap-5 max-w-lg w-full">
+          <div class="bg-card border border-border rounded-2xl shadow-sm p-5">
+            <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-1">Logo do sistema</h2>
+            <p class="text-xs text-muted mb-3">Usada na navbar, na tela de login e como ícone do site (favicon).</p>
+            <div class="flex items-center gap-3 mb-3">
+              <span class="h-12 w-12 rounded-lg bg-basebg border border-border overflow-hidden flex items-center justify-center shrink-0">
+                ${config.logo_url ? `<img src="${config.logo_url}" class="w-full h-full object-contain" alt="Logo atual">` : '<i class="fa-solid fa-image text-muted"></i>'}
+              </span>
+              <input id="config-logo-url" value="${config.logo_url || ''}" placeholder="https://…" class="flex-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            </div>
+            <button id="btn-salvar-logo" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Salvar</button>
+            <p id="config-msg" class="hidden text-xs mt-2"></p>
+          </div>
 
-      <div class="bg-card border border-border rounded-2xl shadow-sm p-5 max-w-lg mt-5">
-        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-1">Fundo da tela de login</h2>
-        <p class="text-xs text-muted mb-3">Imagem de fundo mostrada atrás do card de login. Deixe em branco pra usar o fundo padrão.</p>
-        <div class="flex items-center gap-3 mb-3">
-          <span class="h-12 w-20 rounded-lg bg-basebg border border-border overflow-hidden flex items-center justify-center shrink-0">
-            ${config.login_fundo_url ? `<img src="${config.login_fundo_url}" class="w-full h-full object-cover" alt="Fundo atual">` : '<i class="fa-solid fa-image text-muted"></i>'}
-          </span>
-          <input id="config-login-fundo-url" value="${config.login_fundo_url || ''}" placeholder="https://…" class="flex-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+          <div class="bg-card border border-border rounded-2xl shadow-sm p-5">
+            <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-1">Fundo da tela de login</h2>
+            <p class="text-xs text-muted mb-3">Imagem de fundo mostrada atrás do card de login. Deixe em branco pra usar o fundo padrão.</p>
+            <div class="flex items-center gap-3 mb-3">
+              <span class="h-12 w-20 rounded-lg bg-basebg border border-border overflow-hidden flex items-center justify-center shrink-0">
+                ${config.login_fundo_url ? `<img src="${config.login_fundo_url}" class="w-full h-full object-cover" alt="Fundo atual">` : '<i class="fa-solid fa-image text-muted"></i>'}
+              </span>
+              <input id="config-login-fundo-url" value="${config.login_fundo_url || ''}" placeholder="https://…" class="flex-1 bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            </div>
+            <div class="flex flex-col gap-2 mb-3 text-sm">
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="radio" name="config-login-fundo-modo" value="fixa" class="accent-current" ${config.login_fundo_modo !== 'repetir' ? 'checked' : ''}>
+                Imagem fixa (cobre a tela inteira, sem repetir)
+              </label>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="radio" name="config-login-fundo-modo" value="repetir" class="accent-current" ${config.login_fundo_modo === 'repetir' ? 'checked' : ''}>
+                Repetir em mosaico (background-repeat, no tamanho original da imagem)
+              </label>
+            </div>
+            <button id="btn-salvar-login-fundo" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Salvar</button>
+            <p id="config-login-fundo-msg" class="hidden text-xs mt-2"></p>
+          </div>
         </div>
-        <div class="flex flex-col gap-2 mb-3 text-sm">
-          <label class="flex items-center gap-2 cursor-pointer">
-            <input type="radio" name="config-login-fundo-modo" value="fixa" class="accent-current" ${config.login_fundo_modo !== 'repetir' ? 'checked' : ''}>
-            Imagem fixa (cobre a tela inteira, sem repetir)
-          </label>
-          <label class="flex items-center gap-2 cursor-pointer">
-            <input type="radio" name="config-login-fundo-modo" value="repetir" class="accent-current" ${config.login_fundo_modo === 'repetir' ? 'checked' : ''}>
-            Repetir em mosaico (background-repeat, no tamanho original da imagem)
-          </label>
+
+        <div class="bg-card border border-border rounded-2xl shadow-sm p-5 max-w-lg w-full">
+          <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-1">Ordem dos grupos</h2>
+          <p class="text-xs text-muted mb-3">Prioridade de exibição quando alguém pertence a vários grupos — ex: COR antes de CRH aparece "COR/CRH" na listagem e no perfil. Arraste pra reordenar ou use as setas. Grupo novo entra sempre no final.</p>
+          <div id="lista-ordem-grupos" class="space-y-1.5 mb-3"></div>
+          <button id="btn-salvar-ordem-grupos" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Salvar ordem</button>
+          <p id="config-ordem-grupos-msg" class="hidden text-xs mt-2"></p>
         </div>
-        <button id="btn-salvar-login-fundo" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Salvar</button>
-        <p id="config-login-fundo-msg" class="hidden text-xs mt-2"></p>
       </div>
     `;
+
+    renderListaOrdem();
+
+    document.getElementById('btn-salvar-ordem-grupos').addEventListener('click', async () => {
+      const msg = document.getElementById('config-ordem-grupos-msg');
+      const resp = await apiFetch('/grupos/reordenar', {
+        method: 'PATCH',
+        body: JSON.stringify({ ids: ordemGrupos.map((g) => g.id) }),
+      });
+      msg.classList.remove('hidden');
+      msg.textContent = resp.ok ? 'Salvo!' : 'Não foi possível salvar.';
+      msg.className = `text-xs mt-2 ${resp.ok ? 'text-green-600' : 'text-red-500'}`;
+    });
 
     document.getElementById('btn-salvar-logo').addEventListener('click', async () => {
       const msg = document.getElementById('config-msg');

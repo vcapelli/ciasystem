@@ -161,13 +161,55 @@ grupos.post('/', async (c) => {
   }
 
   try {
+    // ordem vem de uma subquery (MAX(ordem)+1) em vez de deixar no
+    // DEFAULT 0 da coluna — senão todo grupo novo nasceria com a maior
+    // prioridade possível (0), na frente de tudo que já existe. Pedido
+    // do Vitor em 25/09/2026: grupo novo entra no FINAL da ordem, e só
+    // se move de lá se um admin do sistema reordenar manualmente (ver
+    // PATCH /grupos/reordenar).
     const { meta } = await c.env.DB.prepare(
-      `INSERT INTO grupos (codigo, nome, slug, tipo, permite_aulas, imagem_url, cor, oculto) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO grupos (codigo, nome, slug, tipo, permite_aulas, imagem_url, cor, oculto, ordem)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(ordem), 0) + 1 FROM grupos))`
     ).bind(body.codigo, body.nome, body.slug, body.tipo, body.permite_aulas ? 1 : 0, body.imagem_url ?? null, body.cor ?? null, body.oculto ? 1 : 0).run()
     return c.json({ id: meta.last_row_id }, 201)
-  } catch {
-    return c.json({ erro: 'já existe um grupo com esse código ou slug' }, 409)
+  } catch (err) {
+    // Mesmo cuidado do PATCH /:slug logo abaixo: só atribui a
+    // código/slug quando o SQLite realmente reclamar de UNIQUE, pra não
+    // esconder um erro sem relação (ex: coluna faltando por migração
+    // pendente) atrás de uma mensagem enganosa.
+    const mensagem = err instanceof Error ? err.message : String(err)
+    if (mensagem.includes('UNIQUE')) {
+      return c.json({ erro: 'já existe um grupo com esse código ou slug' }, 409)
+    }
+    return c.json({ erro: mensagem }, 500)
   }
+})
+
+// PATCH /grupos/reordenar — recebe a lista de ids de grupo na ordem
+// desejada (do topo pro final) e regrava `ordem` de todo mundo de uma
+// vez, em lote atômico. Só admin do sistema — a ordem é global (afeta
+// a exibição em todos os perfis/listagens). Precisa ficar declarado
+// ANTES de PATCH /:slug pra não ser confundido com um slug de grupo
+// literal chamado "reordenar" (mesmo cuidado já tomado com GET
+// /todos-cursos e GET /onde-sou-admin acima). Pedido do Vitor em
+// 25/09/2026 — UI de arrastar/setas na aba Configurações do admin.
+grupos.patch('/reordenar', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  if (!(await ehAdmin(c.env.DB, usuarioId))) {
+    return c.json({ erro: 'só administradores do sistema reordenam os grupos' }, 403)
+  }
+
+  const body = await c.req.json<{ ids: number[] }>()
+  if (!Array.isArray(body.ids) || !body.ids.length) {
+    return c.json({ erro: 'ids é obrigatório e precisa ser uma lista' }, 400)
+  }
+
+  const stmts = body.ids.map((id, indice) =>
+    c.env.DB.prepare(`UPDATE grupos SET ordem = ? WHERE id = ?`).bind(indice, id)
+  )
+  await c.env.DB.batch(stmts)
+
+  return c.json({ ok: true })
 })
 
 grupos.patch('/:slug', async (c) => {
