@@ -77,6 +77,10 @@
   }
 
   function renderCardDecreto(d) {
+    // titulo/resumo/categoria_nome/grupo_nome/autor_nick são texto
+    // livre cadastrado por admin de grupo (ou o nick da conta) — sem
+    // escapeHtml, um decreto malicioso executava HTML/JS pra qualquer
+    // um que abrisse o Diário Oficial.
     return `
       <a href="/diario-oficial/${d.id}" class="block border border-border rounded-xl p-4 hover:border-accent transition-colors">
         <div class="flex items-start gap-3">
@@ -85,17 +89,17 @@
           </span>
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2 flex-wrap mb-1">
-              <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-basebg border border-border text-muted capitalize">${d.tipo}</span>
-              <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-accent/10 text-accent capitalize">${d.status}</span>
-              <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-basebg border border-border text-muted">${d.categoria_nome}</span>
+              <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-basebg border border-border text-muted capitalize">${escapeHtml(d.tipo)}</span>
+              <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-accent/10 text-accent capitalize">${escapeHtml(d.status)}</span>
+              <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-basebg border border-border text-muted">${escapeHtml(d.categoria_nome)}</span>
               <span class="text-xs text-muted font-mono">DECRETO-${d.numero}/${d.ano}</span>
             </div>
-            <p class="text-sm font-bold leading-snug">${d.titulo}</p>
-            <p class="text-xs text-muted mt-1 line-clamp-1">${d.resumo}</p>
+            <p class="text-sm font-bold leading-snug">${escapeHtml(d.titulo)}</p>
+            <p class="text-xs text-muted mt-1 line-clamp-1">${escapeHtml(d.resumo)}</p>
             <div class="flex items-center justify-between mt-2 flex-wrap gap-y-1">
-              <p class="text-xs text-muted">${d.grupo_nome}</p>
+              <p class="text-xs text-muted">${escapeHtml(d.grupo_nome)}</p>
               <div class="flex items-center gap-3 text-xs text-muted">
-                <span><i class="fa-regular fa-user"></i> por: ${d.autor_nick}</span>
+                <span><i class="fa-regular fa-user"></i> por: ${escapeHtml(d.autor_nick)}</span>
                 <span><i class="fa-regular fa-clock"></i> ${formatarDataCurtaDecreto(d.criado_em)}</span>
                 <span><i class="fa-regular fa-eye"></i> ${d.visualizacoes}</span>
               </div>

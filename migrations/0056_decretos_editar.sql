@@ -1,0 +1,11 @@
+-- =====================================================================
+-- EDIÇÃO DE DECRETOS DO DIÁRIO OFICIAL
+-- =====================================================================
+-- Pedido do Vitor (25/09/2026): poder editar um decreto já publicado
+-- (título, resumo, conteúdo, categoria) — antes só existia POST
+-- (publicar) e GET, sem nenhum jeito de corrigir um decreto depois de
+-- postado. `atualizado_em` fica NULL enquanto o decreto nunca foi
+-- editado (pra distinguir de "editado na mesma hora que foi criado");
+-- `numero`, `ano` e `grupo_id` continuam imutáveis — não fazem parte
+-- do PATCH (ver src/routes/decretos.ts).
+ALTER TABLE decretos ADD COLUMN atualizado_em TEXT;

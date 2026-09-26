@@ -26,6 +26,8 @@
         <div id="conteudo-decreto" class="bg-card border border-border rounded-2xl shadow-sm p-6">
           <p class="text-sm text-muted">Carregando…</p>
         </div>
+
+        <div id="form-editar-decreto-wrap" class="hidden bg-card border border-border rounded-2xl shadow-sm p-6 mt-4"></div>
       </div>
     </div>
     <div id="layout-footer"></div>
@@ -34,21 +36,41 @@
 <script src="/assets/api.js"></script>
 <script src="/assets/footer.js"></script>
 <script src="/assets/layout.js"></script>
+<script src="/assets/editor-html.js"></script>
 <script>
+  let meAtual = null;
+  let gruposOndeSouAdmin = [];
+  let categorias = [];
+  let decretoAtual = null;
+
   function formatarDataDecreto(iso) {
     return new Date(iso).toLocaleString('pt-BR');
+  }
+
+  function podeEditarDecreto(d) {
+    if (!meAtual) return false;
+    if (meAtual.administrador_sistema) return true;
+    return gruposOndeSouAdmin.some((g) => g.id === d.grupo_id);
   }
 
   async function carregar() {
     const id = location.pathname.split('/').filter(Boolean)[1];
     const container = document.getElementById('conteudo-decreto');
+    document.getElementById('form-editar-decreto-wrap').classList.add('hidden');
     const resp = await apiFetch(`/decretos/${id}`);
     if (!resp.ok) {
       container.innerHTML = '<p class="text-sm text-red-500">Decreto não encontrado.</p>';
       return;
     }
     const d = await resp.json();
+    decretoAtual = d;
 
+    // titulo/resumo/categoria_nome/grupo_nome/autor_nick vêm de texto
+    // livre cadastrado por admins de grupo (ou pelo próprio nick de
+    // conta) — sem escapeHtml aqui, um decreto com aspas/tags no título
+    // executava HTML/JS arbitrário pra qualquer um que abrisse essa
+    // página. `d.conteudo` continua sem escapar de propósito: é HTML de
+    // verdade produzido pelo editor visual, não texto livre.
     container.innerHTML = `
       <div class="flex items-start gap-3 mb-4">
         <span class="h-11 w-11 rounded-lg bg-basebg border border-border flex items-center justify-center overflow-hidden shrink-0 p-1.5">
@@ -56,31 +78,113 @@
         </span>
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-2 flex-wrap mb-1">
-            <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-basebg border border-border text-muted capitalize">${d.tipo}</span>
-            <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-accent/10 text-accent capitalize">${d.status}</span>
-            <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-basebg border border-border text-muted">${d.categoria_nome}</span>
+            <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-basebg border border-border text-muted capitalize">${escapeHtml(d.tipo)}</span>
+            <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-accent/10 text-accent capitalize">${escapeHtml(d.status)}</span>
+            <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-basebg border border-border text-muted">${escapeHtml(d.categoria_nome)}</span>
             <span class="text-xs text-muted font-mono">DECRETO-${d.numero}/${d.ano}</span>
           </div>
-          <h1 class="text-xl font-display font-bold leading-snug">${d.titulo}</h1>
-          <p class="text-sm text-muted mt-1">${d.resumo}</p>
+          <h1 class="text-xl font-display font-bold leading-snug">${escapeHtml(d.titulo)}</h1>
+          <p class="text-sm text-muted mt-1">${escapeHtml(d.resumo)}</p>
         </div>
+        ${podeEditarDecreto(d) ? `
+          <button id="btn-editar-decreto" class="shrink-0 text-xs font-semibold px-3 py-2 rounded-lg bg-basebg border border-border text-muted hover:bg-border/40 transition-colors">
+            <i class="fa-solid fa-pen"></i> Editar
+          </button>
+        ` : ''}
       </div>
 
       <div class="flex items-center justify-between text-xs text-muted border-y border-border py-2.5 mb-5">
-        <p>${d.grupo_nome}</p>
+        <p>${escapeHtml(d.grupo_nome)}</p>
         <div class="flex items-center gap-3">
-          <span><i class="fa-regular fa-user"></i> por: ${d.autor_nick}</span>
+          <span><i class="fa-regular fa-user"></i> por: ${escapeHtml(d.autor_nick)}</span>
           <span><i class="fa-regular fa-clock"></i> ${formatarDataDecreto(d.criado_em)}</span>
+          ${d.atualizado_em ? `<span><i class="fa-regular fa-pen-to-square"></i> editado em ${formatarDataDecreto(d.atualizado_em)}</span>` : ''}
           <span><i class="fa-regular fa-eye"></i> ${d.visualizacoes}</span>
         </div>
       </div>
 
       <div class="text-sm whitespace-pre-wrap">${d.conteudo}</div>
     `;
+
+    document.getElementById('btn-editar-decreto')?.addEventListener('click', () => abrirFormEditarDecreto(d));
   }
 
-  montarLayout('/diario-oficial.html').then((me) => {
+  function abrirFormEditarDecreto(d) {
+    const wrap = document.getElementById('form-editar-decreto-wrap');
+    const abrindo = wrap.classList.contains('hidden');
+    wrap.classList.add('hidden');
+    if (!abrindo) return;
+    wrap.classList.remove('hidden');
+
+    wrap.innerHTML = `
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-muted mb-3">Editar decreto</h2>
+      <form id="form-decreto-editar" class="space-y-3">
+        <div>
+          <label class="block text-xs text-muted mb-1">Categoria</label>
+          <select id="dec-edit-categoria" required class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            ${categorias.map((cat) => `<option value="${cat.id}" ${cat.id === d.categoria_id ? 'selected' : ''}>${escapeHtml(cat.nome)}</option>`).join('')}
+          </select>
+        </div>
+        <input id="dec-edit-titulo" placeholder="Título do decreto" required class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+        <input id="dec-edit-resumo" placeholder="Resumo (uma linha)" required class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+        <div>
+          <label class="block text-xs text-muted mb-1">Conteúdo completo</label>
+          ${htmlEditorHtml('dec-edit-conteudo', d.conteudo)}
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="submit" class="text-sm font-semibold bg-accent hover:bg-accent-dark text-white rounded-lg px-4 py-2 transition-colors">Salvar alterações</button>
+          <button type="button" id="btn-cancelar-editar-decreto" class="text-sm font-semibold bg-basebg border border-border text-muted rounded-lg px-4 py-2 hover:bg-border/40 transition-colors">Cancelar</button>
+        </div>
+        <p id="dec-edit-erro" class="hidden text-xs text-red-500"></p>
+      </form>
+    `;
+    ligarEditorHtml('dec-edit-conteudo');
+    // Preenchido via .value em vez de embutir no template (value="...")
+    // — escapeHtml() não escapa aspas duplas, então título/resumo com
+    // uma aspa dentro quebraria o atributo e injetava HTML arbitrário
+    // (mesmo cuidado já tomado no import em lote de Integração).
+    document.getElementById('dec-edit-titulo').value = d.titulo;
+    document.getElementById('dec-edit-resumo').value = d.resumo;
+
+    document.getElementById('btn-cancelar-editar-decreto').addEventListener('click', () => {
+      wrap.classList.add('hidden');
+    });
+
+    document.getElementById('form-decreto-editar').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const erroEl = document.getElementById('dec-edit-erro');
+      erroEl.classList.add('hidden');
+
+      const resp = await apiFetch(`/decretos/${d.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          categoria_id: Number(document.getElementById('dec-edit-categoria').value),
+          titulo: document.getElementById('dec-edit-titulo').value.trim(),
+          resumo: document.getElementById('dec-edit-resumo').value.trim(),
+          conteudo: document.getElementById('dec-edit-conteudo-textarea').value,
+        }),
+      });
+      if (!resp.ok) {
+        const dados = await resp.json().catch(() => ({}));
+        erroEl.textContent = dados.erro || 'Não foi possível salvar as alterações.';
+        erroEl.classList.remove('hidden');
+        return;
+      }
+      wrap.classList.add('hidden');
+      await carregar();
+    });
+  }
+
+  montarLayout('/diario-oficial.html').then(async (me) => {
     if (!me) return;
+    meAtual = me;
+
+    const [gruposResp, categoriasResp] = await Promise.all([
+      apiFetch('/grupos/onde-sou-admin'), apiFetch('/decretos/categorias'),
+    ]);
+    gruposOndeSouAdmin = gruposResp.ok ? await gruposResp.json() : [];
+    categorias = categoriasResp.ok ? await categoriasResp.json() : [];
+
     carregar();
   });
 </script>

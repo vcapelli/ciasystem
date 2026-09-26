@@ -116,6 +116,51 @@ decretos.post('/', async (c) => {
   return c.json({ id: lastRowId, numero, ano }, 201)
 })
 
+// PATCH /decretos/:id — edita um decreto já publicado. Só admin do
+// MESMO grupo que publicou (ou admin do sistema) — mesma competência
+// exigida pra publicar em nome do grupo, igual ao POST acima.
+// numero/ano/grupo_id são identidade do decreto e não entram aqui —
+// só o conteúdo editorial (categoria, título, resumo, conteúdo) pode
+// mudar depois de publicado.
+decretos.patch('/:id', async (c) => {
+  const usuarioId = c.get('usuarioId')
+  const id = c.req.param('id')
+
+  const decreto = await c.env.DB.prepare(`SELECT grupo_id FROM decretos WHERE id = ?`)
+    .bind(id).first<{ grupo_id: number }>()
+  if (!decreto) return c.json({ erro: 'decreto não encontrado' }, 404)
+
+  if (!(await ehAdminDoGrupo(c.env.DB, usuarioId, decreto.grupo_id))) {
+    return c.json({ erro: 'só administradores desse grupo podem editar esse decreto' }, 403)
+  }
+
+  const body = await c.req.json<{
+    categoria_id?: number; titulo?: string; resumo?: string; conteudo?: string
+  }>()
+
+  const campos: string[] = []
+  const valores: unknown[] = []
+  if (body.categoria_id !== undefined) { campos.push('categoria_id = ?'); valores.push(body.categoria_id) }
+  if (body.titulo !== undefined) {
+    if (!body.titulo.trim()) return c.json({ erro: 'título não pode ficar vazio' }, 400)
+    campos.push('titulo = ?'); valores.push(body.titulo.trim())
+  }
+  if (body.resumo !== undefined) {
+    if (!body.resumo.trim()) return c.json({ erro: 'resumo não pode ficar vazio' }, 400)
+    campos.push('resumo = ?'); valores.push(body.resumo.trim())
+  }
+  if (body.conteudo !== undefined) {
+    if (!body.conteudo.trim()) return c.json({ erro: 'conteúdo não pode ficar vazio' }, 400)
+    campos.push('conteudo = ?'); valores.push(body.conteudo.trim())
+  }
+  if (!campos.length) return c.json({ ok: true })
+
+  campos.push(`atualizado_em = strftime('%Y-%m-%dT%H:%M:%SZ','now')`)
+  await c.env.DB.prepare(`UPDATE decretos SET ${campos.join(', ')} WHERE id = ?`).bind(...valores, id).run()
+
+  return c.json({ ok: true })
+})
+
 // GET /decretos?pagina=N&categoria_id=N — lista paginada (10 por
 // página), mais recente primeiro, com filtro opcional de categoria.
 decretos.get('/', async (c) => {
