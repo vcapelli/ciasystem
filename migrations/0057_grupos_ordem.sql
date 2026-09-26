@@ -1,0 +1,13 @@
+-- =====================================================================
+-- ORDEM DE PRIORIDADE DOS GRUPOS
+-- =====================================================================
+-- Pedido do Vitor (25/09/2026): quando um usuário pertence a vários
+-- grupos ao mesmo tempo (ex: COR e CRH), a identificação combinada
+-- (listagem de Corpo de Oficiais/Executivo, e o perfil) deve seguir uma
+-- ordem de prioridade definida pelos admins do sistema — ex: COR
+-- (ordem 1) antes de CRH (ordem 2) → aparece "COR/CRH", nunca "CRH/COR".
+-- Quanto MENOR o número, maior a prioridade (aparece primeiro). Default
+-- 0 pra todo grupo já existente, então antes de alguém configurar as
+-- ordens manualmente eles empatam e caem no desempate por nome (ver
+-- `ORDER BY g.ordem ASC, g.nome ASC` em GET /grupos/usuario/:id).
+ALTER TABLE grupos ADD COLUMN ordem INTEGER NOT NULL DEFAULT 0;

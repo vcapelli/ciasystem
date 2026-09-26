@@ -1088,6 +1088,11 @@
           <label class="flex items-center gap-2 text-sm">
             <input id="gc-oculto" type="checkbox" ${grupo.oculto ? 'checked' : ''}> Oculto (só admin do sistema e membros veem que existe)
           </label>
+          <div>
+            <label class="block text-xs text-muted mb-1">Ordem de prioridade</label>
+            <input id="gc-ordem" type="number" step="1" value="${grupo.ordem ?? 0}" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
+            <p class="text-xs text-muted mt-1">Quanto menor o número, mais cedo esse grupo aparece quando um usuário está em vários (ex: COR = 1, CRH = 2 → aparece "COR/CRH" na listagem e no perfil).</p>
+          </div>
         ` : ''}
         <button type="submit" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Salvar</button>
         <p id="form-config-erro" class="hidden text-xs text-red-400"></p>
@@ -1303,6 +1308,7 @@
           cor: document.getElementById('gc-cor').value,
           permite_aulas: document.getElementById('gc-aulas').checked,
           oculto: me.administrador_sistema ? document.getElementById('gc-oculto').checked : undefined,
+          ordem: me.administrador_sistema ? Number(document.getElementById('gc-ordem').value || 0) : undefined,
         }),
       });
       if (!resposta.ok) {

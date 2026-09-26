@@ -17,10 +17,14 @@ interface MembroListagem {
 
 type MembroBase = Omit<MembroListagem, 'ultimo_tipo' | 'ultimo_autor_tag' | 'ultimo_requerimento_em'>
 
-// Usuários desligados/exonerados só aparecem nas próprias listagens
-// deles — nunca nas de hierarquia/TAGs, mesmo que a patente/TAG ainda
-// esteja gravada no registro.
-const EXCLUI_DESLIGADOS_EXONERADOS = `u.status NOT IN ('desligado_honroso', 'desligado_desonroso', 'exonerado')`
+// Usuários desligados/exonerados/reformados só aparecem nas próprias
+// listagens deles (`desligados`, `reformados`) — nunca nas de
+// hierarquia/TAGs, mesmo que a patente/TAG ainda esteja gravada no
+// registro. Reforma (pedido do Vitor em 25/09/2026) preserva
+// `patente_atual_id`/`corpo` como registro histórico (ver
+// `src/services/efeitos.ts`), então sem essa exclusão um reformado
+// continuava aparecendo normalmente em Corpo de Oficiais/Executivo/etc.
+const EXCLUI_INATIVOS = `u.status NOT IN ('desligado_honroso', 'desligado_desonroso', 'exonerado', 'reformado')`
 
 // Integração e Reforma guardam uma data histórica própria dentro de
 // dados_especificos (data/data_ultimo_ato_funcional pra integração,
@@ -139,7 +143,7 @@ listagens.get('/:tipo', async (c) => {
   // --- TAGs: lista única, achatada — nick, TAG e avatar ---
   if (tipo === 'tags') {
     const { results } = await db.prepare(
-      `SELECT nick, tag FROM usuarios u WHERE tag IS NOT NULL AND ${EXCLUI_DESLIGADOS_EXONERADOS} ORDER BY nick`
+      `SELECT nick, tag FROM usuarios u WHERE tag IS NOT NULL AND ${EXCLUI_INATIVOS} ORDER BY nick`
     ).all()
     return c.json({ tipoVisual: 'flat', itens: results })
   }
@@ -271,7 +275,7 @@ listagens.get('/:tipo', async (c) => {
   const { results: membros } = await db.prepare(
     `SELECT ${SELECT_MEMBRO}, u.patente_atual_id
      FROM usuarios u JOIN patentes p ON p.id = u.patente_atual_id
-     WHERE (${FILTRO_PATENTES_JOIN[tipo]}) AND ${EXCLUI_DESLIGADOS_EXONERADOS}
+     WHERE (${FILTRO_PATENTES_JOIN[tipo]}) AND ${EXCLUI_INATIVOS}
      ORDER BY p.ordem DESC, u.nick`
   ).all<{ patente_atual_id: number } & MembroBase>()
 

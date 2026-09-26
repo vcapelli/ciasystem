@@ -175,18 +175,22 @@ grupos.patch('/:slug', async (c) => {
   const slug = c.req.param('slug')
   const body = await c.req.json<{
     nome?: string; tipo?: string; permite_aulas?: boolean; ativo?: boolean
-    imagem_url?: string; banner_url?: string; cor?: string; slug?: string; oculto?: boolean
+    imagem_url?: string; banner_url?: string; cor?: string; slug?: string; oculto?: boolean; ordem?: number
   }>()
 
   const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
   if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
 
-  // Trocar de tipo, ocultar/desocultar ou desativar o grupo continua
-  // exclusivo do admin do sistema — o resto (nome, banner, logo, cor,
-  // aulas, slug) um admin do grupo já pode mexer.
+  // Trocar de tipo, ocultar/desocultar, desativar o grupo ou mudar a
+  // ordem de prioridade continua exclusivo do admin do sistema — o
+  // resto (nome, banner, logo, cor, aulas, slug) um admin do grupo já
+  // pode mexer. `ordem` é global (afeta a exibição combinada "COR/CRH"
+  // em TODOS os perfis/listagens, não só a página deste grupo), então
+  // não pode ficar na mão de um admin de um grupo só — pedido do Vitor
+  // em 25/09/2026.
   const admin = await ehAdmin(c.env.DB, usuarioId)
-  if ((body.tipo !== undefined || body.ativo !== undefined || body.oculto !== undefined) && !admin) {
-    return c.json({ erro: 'só administradores do sistema mudam o tipo, ocultam ou desativam o grupo' }, 403)
+  if ((body.tipo !== undefined || body.ativo !== undefined || body.oculto !== undefined || body.ordem !== undefined) && !admin) {
+    return c.json({ erro: 'só administradores do sistema mudam o tipo, ocultam, desativam ou reordenam o grupo' }, 403)
   }
   if (!admin && !(await ehAdminDoGrupo(c.env.DB, usuarioId, grupo.id))) {
     return c.json({ erro: 'sem permissão de administrador neste grupo' }, 403)
@@ -201,7 +205,7 @@ grupos.patch('/:slug', async (c) => {
         nome = COALESCE(?, nome), tipo = COALESCE(?, tipo),
         permite_aulas = COALESCE(?, permite_aulas), ativo = COALESCE(?, ativo),
         imagem_url = COALESCE(?, imagem_url), banner_url = COALESCE(?, banner_url), cor = COALESCE(?, cor),
-        slug = COALESCE(?, slug), oculto = COALESCE(?, oculto)
+        slug = COALESCE(?, slug), oculto = COALESCE(?, oculto), ordem = COALESCE(?, ordem)
        WHERE id = ?`
     )
       .bind(
@@ -211,6 +215,7 @@ grupos.patch('/:slug', async (c) => {
         body.imagem_url ?? null, body.banner_url ?? null, body.cor ?? null,
         body.slug ?? null,
         body.oculto === undefined ? null : (body.oculto ? 1 : 0),
+        body.ordem ?? null,
         grupo.id
       )
       .run()
@@ -1095,13 +1100,20 @@ grupos.get('/usuario/:usuarioId', async (c) => {
   const usuarioId = c.req.param('usuarioId')
   const admin = await ehAdmin(c.env.DB, visitanteId)
 
+  // Ordenado por g.ordem (prioridade definida pelo admin do sistema —
+  // ver PATCH /grupos/:slug) e só por nome no empate. É essa ordem que
+  // define a sequência da identificação combinada "COR/CRH" tanto na
+  // listagem (frontend/assets/listagens.js) quanto no perfil
+  // (frontend/perfil-dashboard.html) — os dois só consomem o array na
+  // ordem em que ele chega, sem reordenar no cliente. Pedido do Vitor
+  // em 25/09/2026.
   const { results } = await c.env.DB.prepare(
-    `SELECT g.id, g.codigo, g.nome, g.slug, g.tipo, g.imagem_url, g.oculto, gn.nome AS nivel_nome, gn.abreviacao AS nivel_abreviacao
+    `SELECT g.id, g.codigo, g.nome, g.slug, g.tipo, g.imagem_url, g.oculto, g.ordem, gn.nome AS nivel_nome, gn.abreviacao AS nivel_abreviacao
      FROM usuario_grupos ug
      JOIN grupos g ON g.id = ug.grupo_id
      JOIN grupo_niveis gn ON gn.id = ug.nivel_id
      WHERE ug.usuario_id = ? AND ug.ativo = 1
-     ORDER BY g.nome`
+     ORDER BY g.ordem ASC, g.nome ASC`
   ).bind(usuarioId).all<{ id: number; oculto: number }>()
 
   // Grupo oculto não aparece no perfil de terceiros pra quem não é
