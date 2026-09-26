@@ -1093,6 +1093,10 @@
             <input id="gc-ordem" type="number" step="1" value="${grupo.ordem ?? 0}" class="w-full bg-basebg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
             <p class="text-xs text-muted mt-1">Quanto menor o número, mais cedo esse grupo aparece quando um usuário está em vários (ex: COR = 1, CRH = 2 → aparece "COR/CRH" na listagem e no perfil).</p>
           </div>
+          <label class="flex items-center gap-2 text-sm">
+            <input id="gc-aparece-listagem" type="checkbox" ${grupo.aparece_listagem === 0 ? '' : 'checked'}> Aparece na identificação combinada da listagem
+          </label>
+          <p class="text-xs text-muted -mt-2">Desmarcado, o grupo continua existindo normalmente (membros, página etc.), só não entra na abreviação depois do nome na listagem — ex: some o "- ST" de "MrThiiagoM [ACM] 25 Set 2026 - ST".</p>
         ` : ''}
         <button type="submit" class="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Salvar</button>
         <p id="form-config-erro" class="hidden text-xs text-red-400"></p>
@@ -1309,6 +1313,7 @@
           permite_aulas: document.getElementById('gc-aulas').checked,
           oculto: me.administrador_sistema ? document.getElementById('gc-oculto').checked : undefined,
           ordem: me.administrador_sistema ? Number(document.getElementById('gc-ordem').value || 0) : undefined,
+          aparece_listagem: me.administrador_sistema ? document.getElementById('gc-aparece-listagem').checked : undefined,
         }),
       });
       if (!resposta.ok) {

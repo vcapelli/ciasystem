@@ -55,9 +55,14 @@ function renderLinhaMembro(u, formatoExoneracao, tipo) {
       : `${nickEsc}${tagEsc ? ` [${tagEsc}]` : ' [---]'}`;
   }
 
-  const mostrarGrupos = (tipo === 'corpo-de-oficiais' || tipo === 'corpo-executivo') && u.grupos?.length;
+  // Grupo com aparece_listagem = false continua existindo normalmente
+  // (membros, página, etc.) só não entra nessa abreviação combinada —
+  // é um controle à parte do "oculto" (que esconde a existência do
+  // grupo), pedido do Vitor em 25/09/2026.
+  const gruposNaListagem = u.grupos?.filter((g) => g.aparece_listagem) ?? [];
+  const mostrarGrupos = (tipo === 'corpo-de-oficiais' || tipo === 'corpo-executivo') && gruposNaListagem.length;
   if (mostrarGrupos) {
-    identificacao += ` - ${u.grupos.map(computarAbreviacaoGrupo).map(escapeHtml).join('/')}`;
+    identificacao += ` - ${gruposNaListagem.map(computarAbreviacaoGrupo).map(escapeHtml).join('/')}`;
   }
 
   return `

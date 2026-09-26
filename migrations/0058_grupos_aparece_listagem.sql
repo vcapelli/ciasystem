@@ -1,0 +1,19 @@
+-- =====================================================================
+-- GRUPO APARECER (OU NÃO) NA IDENTIFICAÇÃO COMBINADA DA LISTAGEM
+-- =====================================================================
+-- Pedido do Vitor (25/09/2026): a listagem de Corpo de Oficiais/Executivo
+-- mostra, depois do nick/TAG/data, os grupos do usuário abreviados (ex:
+-- "MrThiiagoM [ACM] 25 Set 2026 - ST"). Alguns grupos não devem entrar
+-- nessa lista curta mesmo que o usuário seja membro deles — ex: um grupo
+-- "ST" mais discreto, que continua existindo normalmente (tem página,
+-- membros, etc.) mas não deve poluir a identificação pública da listagem.
+--
+-- Isso é DIFERENTE do já existente `oculto` (que esconde a EXISTÊNCIA do
+-- grupo de quem não é membro/admin) — um grupo pode ser perfeitamente
+-- visível e mesmo assim não querer aparecer nessa abreviação. Por isso é
+-- uma coluna nova, não uma reinterpretação de `oculto`.
+--
+-- Default 1 (aparece) preserva o comportamento atual pra todo grupo já
+-- cadastrado — só passa a sumir da listagem depois que um admin do
+-- sistema desmarcar a opção nas configurações do grupo.
+ALTER TABLE grupos ADD COLUMN aparece_listagem INTEGER NOT NULL DEFAULT 1;

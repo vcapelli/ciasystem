@@ -176,21 +176,26 @@ grupos.patch('/:slug', async (c) => {
   const body = await c.req.json<{
     nome?: string; tipo?: string; permite_aulas?: boolean; ativo?: boolean
     imagem_url?: string; banner_url?: string; cor?: string; slug?: string; oculto?: boolean; ordem?: number
+    aparece_listagem?: boolean
   }>()
 
   const grupo = await c.env.DB.prepare(`SELECT id FROM grupos WHERE slug = ?`).bind(slug).first<{ id: number }>()
   if (!grupo) return c.json({ erro: 'grupo não encontrado' }, 404)
 
-  // Trocar de tipo, ocultar/desocultar, desativar o grupo ou mudar a
-  // ordem de prioridade continua exclusivo do admin do sistema — o
+  // Trocar de tipo, ocultar/desocultar, desativar o grupo, mudar a
+  // ordem de prioridade ou decidir se ele aparece na identificação
+  // combinada da listagem continua exclusivo do admin do sistema — o
   // resto (nome, banner, logo, cor, aulas, slug) um admin do grupo já
-  // pode mexer. `ordem` é global (afeta a exibição combinada "COR/CRH"
-  // em TODOS os perfis/listagens, não só a página deste grupo), então
-  // não pode ficar na mão de um admin de um grupo só — pedido do Vitor
-  // em 25/09/2026.
+  // pode mexer. `ordem` e `aparece_listagem` são globais (afetam a
+  // exibição em TODOS os perfis/listagens, não só a página deste
+  // grupo), então não podem ficar na mão de um admin de um grupo só —
+  // pedido do Vitor em 25/09/2026.
   const admin = await ehAdmin(c.env.DB, usuarioId)
-  if ((body.tipo !== undefined || body.ativo !== undefined || body.oculto !== undefined || body.ordem !== undefined) && !admin) {
-    return c.json({ erro: 'só administradores do sistema mudam o tipo, ocultam, desativam ou reordenam o grupo' }, 403)
+  if (
+    (body.tipo !== undefined || body.ativo !== undefined || body.oculto !== undefined ||
+      body.ordem !== undefined || body.aparece_listagem !== undefined) && !admin
+  ) {
+    return c.json({ erro: 'só administradores do sistema mudam o tipo, ocultam, desativam, reordenam ou controlam a exibição do grupo' }, 403)
   }
   if (!admin && !(await ehAdminDoGrupo(c.env.DB, usuarioId, grupo.id))) {
     return c.json({ erro: 'sem permissão de administrador neste grupo' }, 403)
@@ -205,7 +210,8 @@ grupos.patch('/:slug', async (c) => {
         nome = COALESCE(?, nome), tipo = COALESCE(?, tipo),
         permite_aulas = COALESCE(?, permite_aulas), ativo = COALESCE(?, ativo),
         imagem_url = COALESCE(?, imagem_url), banner_url = COALESCE(?, banner_url), cor = COALESCE(?, cor),
-        slug = COALESCE(?, slug), oculto = COALESCE(?, oculto), ordem = COALESCE(?, ordem)
+        slug = COALESCE(?, slug), oculto = COALESCE(?, oculto), ordem = COALESCE(?, ordem),
+        aparece_listagem = COALESCE(?, aparece_listagem)
        WHERE id = ?`
     )
       .bind(
@@ -216,13 +222,27 @@ grupos.patch('/:slug', async (c) => {
         body.slug ?? null,
         body.oculto === undefined ? null : (body.oculto ? 1 : 0),
         body.ordem ?? null,
+        body.aparece_listagem === undefined ? null : (body.aparece_listagem ? 1 : 0),
         grupo.id
       )
       .run()
 
     return c.json({ ok: true })
-  } catch {
-    return c.json({ erro: 'já existe um grupo com esse slug' }, 409)
+  } catch (err) {
+    // Antes isso virava "já existe um grupo com esse slug" pra QUALQUER
+    // erro do UPDATE, mesmo sem nenhuma relação com slug (ex: mudar só
+    // a imagem/logo já disparava essa mensagem quando a coluna `ordem`
+    // ainda não existia no banco por falta de migração — a mensagem
+    // escondia o erro real "no such column: ordem" e apontava pra causa
+    // errada). Agora só atribui a slug quando o SQLite realmente
+    // reclamar de UNIQUE — qualquer outro erro sobe como 500 com a
+    // mensagem original, pra não mascarar um problema diferente (coluna
+    // faltando, migração pendente, etc.) como se fosse conflito de slug.
+    const mensagem = err instanceof Error ? err.message : String(err)
+    if (mensagem.includes('UNIQUE')) {
+      return c.json({ erro: 'já existe um grupo com esse slug' }, 409)
+    }
+    return c.json({ erro: mensagem }, 500)
   }
 })
 
@@ -1108,7 +1128,7 @@ grupos.get('/usuario/:usuarioId', async (c) => {
   // ordem em que ele chega, sem reordenar no cliente. Pedido do Vitor
   // em 25/09/2026.
   const { results } = await c.env.DB.prepare(
-    `SELECT g.id, g.codigo, g.nome, g.slug, g.tipo, g.imagem_url, g.oculto, g.ordem, gn.nome AS nivel_nome, gn.abreviacao AS nivel_abreviacao
+    `SELECT g.id, g.codigo, g.nome, g.slug, g.tipo, g.imagem_url, g.oculto, g.ordem, g.aparece_listagem, gn.nome AS nivel_nome, gn.abreviacao AS nivel_abreviacao
      FROM usuario_grupos ug
      JOIN grupos g ON g.id = ug.grupo_id
      JOIN grupo_niveis gn ON gn.id = ug.nivel_id
