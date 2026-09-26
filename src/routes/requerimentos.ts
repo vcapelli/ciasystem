@@ -390,12 +390,42 @@ async function buscarRequerimentosComFigure(db: D1Database, whereEOrdenacao: str
   }))
 }
 
+// GET /requerimentos?status=X&tipos=a,b,c&pagina=N — `tipos` filtra por
+// uma lista de tipos (usado pelas páginas de requerimento, que só se
+// interessam pelos tipos daquela página específica — ex: só
+// 'reforma', ou o conjunto de tipos do Corpo de Oficiais). `pagina`
+// ativa a paginação de verdade (10 por página, pedido do Vitor em
+// 25/09/2026) — quando presente, a resposta vira
+// `{ requerimentos, total, pagina, por_pagina }` em vez do array puro
+// de antes. Sem `pagina`, mantém o formato antigo (array direto, `LIMIT
+// 50`) pra não quebrar quem já consumia isso assim (ex: a home, que só
+// quer os 3 mais recentes, e não precisa de paginação nenhuma).
 requerimentos.get('/', async (c) => {
   const status = c.req.query('status')
-  const comFigure = status
-    ? await buscarRequerimentosComFigure(c.env.DB, `WHERE r.status = ? ORDER BY r.criado_em DESC LIMIT 50`, [status])
-    : await buscarRequerimentosComFigure(c.env.DB, `ORDER BY r.criado_em DESC LIMIT 50`)
+  const tiposParam = c.req.query('tipos')
+  const tipos = tiposParam ? tiposParam.split(',').map((t) => t.trim()).filter(Boolean) : null
+  const paginaParam = c.req.query('pagina')
 
+  const condicoes: string[] = []
+  const params: unknown[] = []
+  if (status) { condicoes.push('r.status = ?'); params.push(status) }
+  if (tipos?.length) { condicoes.push(`r.tipo IN (${tipos.map(() => '?').join(', ')})`); params.push(...tipos) }
+  const where = condicoes.length ? `WHERE ${condicoes.join(' AND ')}` : ''
+
+  if (paginaParam) {
+    const pagina = Math.max(1, Number(paginaParam) || 1)
+    const porPagina = 10
+    const offset = (pagina - 1) * porPagina
+
+    const [comFigure, totalRow] = await Promise.all([
+      buscarRequerimentosComFigure(c.env.DB, `${where} ORDER BY r.criado_em DESC LIMIT ? OFFSET ?`, [...params, porPagina, offset]),
+      c.env.DB.prepare(`SELECT COUNT(*) AS n FROM requerimentos r ${where}`).bind(...params).first<{ n: number }>(),
+    ])
+
+    return c.json({ requerimentos: comFigure, total: totalRow?.n ?? 0, pagina, por_pagina: porPagina })
+  }
+
+  const comFigure = await buscarRequerimentosComFigure(c.env.DB, `${where} ORDER BY r.criado_em DESC LIMIT 50`, params)
   return c.json(comFigure)
 })
 

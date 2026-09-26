@@ -546,6 +546,7 @@ async function montarFormularioRequerimento(config) {
       <div id="req-recentes" class="space-y-3">
         <p class="text-sm text-muted">Carregando…</p>
       </div>
+      <div id="req-recentes-paginacao" class="flex items-center justify-center gap-2 mt-3"></div>
     </div>
   `;
 
@@ -950,19 +951,55 @@ async function montarFormularioRequerimento(config) {
     return renderCardRequerimento(r, patentesMapa, meAtual, apendice);
   }
 
+  // Paginação de 10 em 10 (pedido do Vitor em 25/09/2026) — o filtro por
+  // tipo agora é feito no servidor (`tipos=...`), não mais recortando um
+  // array já limitado a 50 no cliente como antes; assim uma página com
+  // tipos raros (ex: Reforma) consegue mesmo assim paginar pro histórico
+  // completo, em vez de ficar presa aos 50 requerimentos mais recentes
+  // de TODOS os tipos do sistema.
+  let paginaRecentes = 1;
+  const valoresTipos = config.tipos.map((t) => t.value).join(',');
+
+  function renderPaginacaoRecentes(total, porPagina) {
+    const paginacao = document.getElementById('req-recentes-paginacao');
+    const totalPaginas = Math.max(1, Math.ceil(total / porPagina));
+    if (totalPaginas <= 1) { paginacao.innerHTML = ''; return; }
+
+    paginacao.innerHTML = `
+      <button id="req-recentes-anterior" ${paginaRecentes === 1 ? 'disabled' : ''} class="h-8 w-8 rounded-lg bg-card border border-border text-sm disabled:opacity-40 hover:bg-basebg transition-colors">
+        <i class="fa-solid fa-chevron-left"></i>
+      </button>
+      <span class="text-xs text-muted px-2">Página ${paginaRecentes} de ${totalPaginas}</span>
+      <button id="req-recentes-proxima" ${paginaRecentes === totalPaginas ? 'disabled' : ''} class="h-8 w-8 rounded-lg bg-card border border-border text-sm disabled:opacity-40 hover:bg-basebg transition-colors">
+        <i class="fa-solid fa-chevron-right"></i>
+      </button>
+    `;
+
+    document.getElementById('req-recentes-anterior')?.addEventListener('click', () => {
+      if (paginaRecentes > 1) { paginaRecentes--; carregarRecentes(); }
+    });
+    document.getElementById('req-recentes-proxima')?.addEventListener('click', () => {
+      if (paginaRecentes < totalPaginas) { paginaRecentes++; carregarRecentes(); }
+    });
+  }
+
   async function carregarRecentes() {
     await promessaMe;
-    const resp = await apiFetch('/requerimentos');
     const container = document.getElementById('req-recentes');
-    if (!resp.ok) { container.innerHTML = '<p class="text-sm text-red-400">Erro ao carregar.</p>'; return; }
+    const resp = await apiFetch(`/requerimentos?tipos=${encodeURIComponent(valoresTipos)}&pagina=${paginaRecentes}`);
+    if (!resp.ok) {
+      container.innerHTML = '<p class="text-sm text-red-400">Erro ao carregar.</p>';
+      document.getElementById('req-recentes-paginacao').innerHTML = '';
+      return;
+    }
 
-    const todos = await resp.json();
-    const valoresTipos = config.tipos.map((t) => t.value);
-    const filtrados = todos.filter((r) => valoresTipos.includes(r.tipo)).slice(0, 10);
+    const { requerimentos, total, por_pagina } = await resp.json();
 
-    container.innerHTML = filtrados.length
-      ? (await Promise.all(filtrados.map(renderCardRecente))).join('')
+    container.innerHTML = requerimentos.length
+      ? (await Promise.all(requerimentos.map(renderCardRecente))).join('')
       : '<p class="text-sm text-muted">Nenhum requerimento deste tipo ainda.</p>';
+
+    renderPaginacaoRecentes(total, por_pagina);
   }
   carregarRecentes();
 
